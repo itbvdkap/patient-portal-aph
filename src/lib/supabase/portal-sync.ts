@@ -41,7 +41,10 @@ export async function requestOnDemandLoginSync(phone: string, citizenId: string)
   }
 
   if (cached.data?.payload_json) {
-    return cached.data.payload_json as LoginVerificationResult;
+    const cachedPayload = cached.data.payload_json as LoginVerificationResult;
+    if (cachedPayload.profiles?.length) {
+      return cachedPayload;
+    }
   }
 
   const attemptId = randomUUID();
