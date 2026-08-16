@@ -1,6 +1,8 @@
 # Cổng thông tin bệnh nhân An Phú
 
-MVP Patient Portal bằng Next.js cho bệnh nhân Bệnh viện Đa khoa An Phú tra cứu lịch sử khám bệnh. Phiên bản này chỉ dùng dữ liệu mô phỏng, không kết nối Oracle và không dùng dữ liệu bệnh nhân thật.
+Repo: `patient-portal-aph`
+
+Patient Portal bằng Next.js cho bệnh nhân Bệnh viện Đa khoa An Phú tra cứu lịch sử khám, xét nghiệm, chẩn đoán hình ảnh, đơn thuốc, BHYT và trạng thái khám hôm nay.
 
 ## Tech stack
 
@@ -28,7 +30,7 @@ npm run dev
 
 Mở `http://localhost:3000`.
 
-## Demo login
+## Demo/local login
 
 - Phone: `0901234567`
 - Patient code: `23006552`
@@ -49,7 +51,13 @@ Không đưa service role key hoặc database credentials vào browser.
 
 ## Supabase setup
 
-Chạy `supabase/schema.sql`, sau đó `supabase/seed.sql`. Schema có UUID primary key, foreign key rõ ràng và đã bật Row Level Security để chuẩn bị policy theo authenticated patient.
+Public deployment dùng Supabase project `patientportal` và on-demand sync theo bệnh nhân. Chạy migration:
+
+```text
+supabase/migrations/202608160001_patient_portal_reporting.sql
+```
+
+Checklist triển khai nằm tại `docs/DEPLOY-PATIENTPORTAL-CHECKLIST.md`.
 
 ## Build production
 
@@ -63,12 +71,12 @@ npm run build
 
 1. Push source lên Git repository.
 2. Import project vào Vercel.
-3. Cấu hình environment variables, tối thiểu `NEXT_PUBLIC_DEMO_MODE=true` cho MVP.
+3. Cấu hình environment variables theo `.env.production.example`.
 4. Deploy bằng preset Next.js mặc định.
 
 ## Architecture
 
-UI chỉ gọi `PatientRepository` trong `src/lib/data`. MVP dùng `MockPatientRepository`; khi tích hợp thật có thể thay bằng repository gọi REST API mà không viết lại các trang.
+UI chỉ gọi `PatientRepository` trong `src/lib/data`. Local có thể dùng PatientApi/OracleDirect; public app dùng `SupabasePatientRepository` khi bật `PATIENT_DATA_MODE=supabase`.
 
 MVP cũng có các endpoint nội bộ dùng session hiện tại:
 
@@ -83,4 +91,4 @@ MVP cũng có các endpoint nội bộ dùng session hiện tại:
 
 ## Oracle integration roadmap
 
-Xem `docs/ORACLE-INTEGRATION.md`. Luồng tương lai là Browser -> HTTPS -> Patient Portal -> Patient API -> Oracle HIS. Không thiết kế API cho bệnh nhân tự truyền MABN để xem dữ liệu người khác.
+Xem `docs/ORACLE-INTEGRATION.md` và `docs/PORTAL-DATA-ARCHITECTURE.md`. Luồng public là Browser -> Vercel -> Supabase reporting DB; chỉ sync agent nội bộ bệnh viện được đọc Oracle HIS bằng user read-only.
