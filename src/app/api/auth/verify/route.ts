@@ -26,10 +26,24 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Vui lòng nhập số điện thoại và CCCD/CMND hợp lệ." }, { status: 400 });
   }
 
-  const body =
-    process.env.PATIENT_DATA_MODE === "supabase"
-      ? await verifyWithSupabase(parsed.data.phone, parsed.data.citizenId)
-      : await verifyWithPatientApi(parsed.data.phone, parsed.data.citizenId);
+  let body: VerifyLoginEnvelope | null;
+  try {
+    body =
+      process.env.PATIENT_DATA_MODE === "supabase"
+        ? await verifyWithSupabase(parsed.data.phone, parsed.data.citizenId)
+        : await verifyWithPatientApi(parsed.data.phone, parsed.data.citizenId);
+  } catch (error) {
+    console.error("Patient login verification failed", error);
+    return NextResponse.json(
+      {
+        error:
+          process.env.PATIENT_DATA_MODE === "supabase"
+            ? "Hệ thống đồng bộ hồ sơ chưa phản hồi. Vui lòng thử lại sau vài giây."
+            : "Không kết nối được API nội bộ bệnh viện. Vui lòng kiểm tra sync agent hoặc chuyển PATIENT_DATA_MODE=supabase.",
+      },
+      { status: 503 },
+    );
+  }
 
   if (!body) {
     return NextResponse.json({ error: "Không xác minh được thông tin đăng nhập." }, { status: 401 });
