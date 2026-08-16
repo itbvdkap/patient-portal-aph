@@ -16,6 +16,11 @@ interface VerifyLoginEnvelope {
     hisPatientCode: string;
     fullName: string;
     phone: string;
+    profiles?: Array<{
+      hisPatientCode: string;
+      fullName: string;
+      relationship?: string;
+    }>;
   };
 }
 
@@ -52,7 +57,7 @@ export async function POST(request: Request) {
   const maxAge = 60 * 60 * 8;
   const sessionId = randomUUID();
   const accountKey = loginLookupHash(parsed.data.phone, parsed.data.citizenId);
-  const profiles = [{ mabn: body.data.hisPatientCode, fullName: body.data.fullName }];
+  const profiles = normalizeProfiles(body.data);
   const result = NextResponse.json({ data: body.data });
 
   result.cookies.set(demoSessionCookie, createPatientSessionCookie(body.data.hisPatientCode, maxAge, { sessionId, accountKey, profiles }), {
@@ -69,6 +74,7 @@ export async function POST(request: Request) {
     mabn: body.data.hisPatientCode,
     fullName: body.data.fullName,
     phone: body.data.phone,
+    profiles,
     request,
     maxAgeSeconds: maxAge,
   }).catch(() => undefined);
@@ -118,6 +124,28 @@ async function verifyWithSupabase(phone: string, citizenId: string): Promise<Ver
       hisPatientCode: data.hisPatientCode,
       fullName: data.fullName,
       phone: data.phone,
+      profiles: data.profiles,
     },
   };
+}
+
+function normalizeProfiles(data: VerifyLoginEnvelope["data"]) {
+  const source = data.profiles?.length
+    ? data.profiles
+    : [{ hisPatientCode: data.hisPatientCode, fullName: data.fullName, relationship: "Bản thân" }];
+  const seen = new Set<string>();
+  const profiles: Array<{ mabn: string; fullName?: string; relationship?: string }> = [];
+
+  for (const profile of source) {
+    const mabn = profile.hisPatientCode?.trim();
+    if (!mabn || seen.has(mabn)) continue;
+    seen.add(mabn);
+    profiles.push({ mabn, fullName: profile.fullName, relationship: profile.relationship });
+  }
+
+  if (!seen.has(data.hisPatientCode)) {
+    profiles.unshift({ mabn: data.hisPatientCode, fullName: data.fullName, relationship: "Bản thân" });
+  }
+
+  return profiles;
 }

@@ -101,4 +101,10 @@ public sealed record PatientSummaryDto(
 public sealed record PatientLoginVerificationDto(
     string HisPatientCode,
     string FullName,
-    string Phone);
+    string Phone,
+    IReadOnlyList<PatientLinkedProfileDto> Profiles);
+
+public sealed record PatientLinkedProfileDto(
+    string HisPatientCode,
+    string FullName,
+    string Relationship);

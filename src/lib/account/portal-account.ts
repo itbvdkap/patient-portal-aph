@@ -39,6 +39,7 @@ export async function recordPortalLoginSession({
   mabn,
   fullName,
   phone,
+  profiles,
   request,
   maxAgeSeconds,
 }: {
@@ -47,6 +48,7 @@ export async function recordPortalLoginSession({
   mabn: string;
   fullName: string;
   phone: string;
+  profiles?: Array<{ mabn: string; fullName?: string; relationship?: string }>;
   request: Request;
   maxAgeSeconds: number;
 }) {
@@ -65,16 +67,19 @@ export async function recordPortalLoginSession({
     "upsert portal account",
   );
 
+  const linkedProfiles = normalizeLinkedProfiles(profiles, mabn, fullName);
   await throwOnError(
-    supabase.from("portal_account_profiles").upsert({
-      account_key: accountKey,
-      mabn,
-      display_name: fullName,
-      relationship: "Bản thân",
-      is_default: true,
-      last_selected_at: now.toISOString(),
-    }),
-    "upsert account profile",
+    supabase.from("portal_account_profiles").upsert(
+      linkedProfiles.map((profile, index) => ({
+        account_key: accountKey,
+        mabn: profile.mabn,
+        display_name: profile.fullName,
+        relationship: index === 0 ? "Bản thân" : profile.relationship ?? "Liên quan",
+        is_default: index === 0,
+        last_selected_at: profile.mabn === mabn ? now.toISOString() : null,
+      })),
+    ),
+    "upsert account profiles",
   );
 
   await throwOnError(
@@ -252,6 +257,29 @@ function deviceLabel(userAgent: string | null) {
   if (/Windows/i.test(ua)) return "Windows";
   if (/Macintosh|Mac OS/i.test(ua)) return "Mac";
   return "Thiết bị";
+}
+
+function normalizeLinkedProfiles(
+  profiles: Array<{ mabn: string; fullName?: string; relationship?: string }> | undefined,
+  primaryMabn: string,
+  primaryFullName: string,
+) {
+  const source = profiles?.length ? profiles : [{ mabn: primaryMabn, fullName: primaryFullName, relationship: "Bản thân" }];
+  const seen = new Set<string>();
+  const normalized: Array<{ mabn: string; fullName: string; relationship?: string }> = [];
+
+  for (const profile of [{ mabn: primaryMabn, fullName: primaryFullName, relationship: "Bản thân" }, ...source]) {
+    const mabn = profile.mabn?.trim();
+    if (!mabn || seen.has(mabn)) continue;
+    seen.add(mabn);
+    normalized.push({
+      mabn,
+      fullName: profile.fullName || (mabn === primaryMabn ? primaryFullName : `Mã BN ${mabn}`),
+      relationship: profile.relationship,
+    });
+  }
+
+  return normalized;
 }
 
 async function throwOnError(promise: PromiseLike<{ error: { message: string } | null }>, action: string) {

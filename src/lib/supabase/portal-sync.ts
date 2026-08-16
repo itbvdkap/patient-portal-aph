@@ -5,6 +5,13 @@ export interface LoginVerificationResult {
   hisPatientCode: string;
   fullName: string;
   phone: string;
+  profiles?: LoginVerificationProfile[];
+}
+
+export interface LoginVerificationProfile {
+  hisPatientCode: string;
+  fullName: string;
+  relationship?: string;
 }
 
 const authPollIntervalMs = Number(process.env.SUPABASE_AUTH_POLL_INTERVAL_MS ?? 1000);

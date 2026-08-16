@@ -60,6 +60,7 @@ public sealed class SupabaseQueueSyncAgent(
             }
 
             await store.PutLoginAsync(payload.Phone, payload.CitizenId, verified.HisPatientCode, verified, cancellationToken);
+            await store.PutAccountProfilesAsync(job.LookupHash, payload.Phone, verified.HisPatientCode, verified.Profiles, cancellationToken);
             await store.CompleteAuthAttemptAsync(job.AttemptId, "success", verified.HisPatientCode, verified, null, cancellationToken);
             logger.LogInformation("Auth attempt {AttemptId} verified patient {Mabn}", job.AttemptId, verified.HisPatientCode);
             return true;

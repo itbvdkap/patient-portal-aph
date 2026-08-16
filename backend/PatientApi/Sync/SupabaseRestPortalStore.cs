@@ -1,6 +1,7 @@
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using PatientApi.Models;
 
 namespace PatientApi.Sync;
 
@@ -73,6 +74,36 @@ public sealed class SupabaseRestPortalStore(HttpClient httpClient, IConfiguratio
             }
         }, cancellationToken);
 
+    public async Task PutAccountProfilesAsync(string accountKey, string phone, string primaryMabn, IReadOnlyList<PatientLinkedProfileDto> profiles, CancellationToken cancellationToken)
+    {
+        var now = DateTimeOffset.UtcNow;
+        await UpsertAsync("portal_accounts?on_conflict=account_key", new[]
+        {
+            new
+            {
+                account_key = accountKey,
+                phone_masked = MaskPhone(phone),
+                primary_mabn = primaryMabn,
+                updated_at = now
+            }
+        }, cancellationToken);
+
+        var rows = profiles.Select((profile, index) => new
+        {
+            account_key = accountKey,
+            mabn = profile.HisPatientCode,
+            display_name = profile.FullName,
+            relationship = index == 0 ? "Bản thân" : profile.Relationship,
+            is_default = index == 0,
+            last_selected_at = index == 0 ? now : (DateTimeOffset?)null
+        }).ToArray();
+
+        if (rows.Length > 0)
+        {
+            await UpsertAsync("portal_account_profiles?on_conflict=account_key,mabn", rows, cancellationToken);
+        }
+    }
+
     public Task PutAsync<T>(string mabn, string resource, string? resourceId, T data, TimeSpan ttl, CancellationToken cancellationToken)
     {
         var now = DateTimeOffset.UtcNow;
@@ -140,6 +171,12 @@ public sealed class SupabaseRestPortalStore(HttpClient httpClient, IConfiguratio
         request.Headers.TryAddWithoutValidation("apikey", _secretKey);
         request.Content = new StringContent(JsonSerializer.Serialize(payload, JsonOptions), Encoding.UTF8, "application/json");
         return request;
+    }
+
+    private static string MaskPhone(string phone)
+    {
+        var digits = new string(phone.Where(char.IsDigit).ToArray());
+        return digits.Length <= 6 ? digits : $"{digits[..3]}****{digits[^3..]}";
     }
 }
 

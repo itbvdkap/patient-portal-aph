@@ -34,7 +34,6 @@ public sealed class OracleHisPatientRepository(IConfiguration configuration) : I
                 or regexp_replace(nvl(dt.CMND, ''), '[^0-9]', '') = :CitizenId
               )
             order by b.MABN desc
-            fetch first 1 rows only
             """;
 
         var normalizedPhone = NormalizeDigits(phone);
@@ -46,18 +45,40 @@ public sealed class OracleHisPatientRepository(IConfiguration configuration) : I
         }
 
         await using var connection = CreateConnection();
-        var row = await connection.QuerySingleOrDefaultAsync(new CommandDefinition(
+        var rows = (await connection.QueryAsync(new CommandDefinition(
             sql,
             new { Phone = normalizedPhone, CitizenId = normalizedCitizenId },
             cancellationToken: cancellationToken,
-            commandTimeout: 20));
+            commandTimeout: 20))).ToList();
 
-        return row is null
-            ? null
-            : new PatientLoginVerificationDto(
+        if (rows.Count == 0)
+        {
+            return null;
+        }
+
+        var profiles = rows
+            .Select(row => new PatientLinkedProfileDto(
                 HisPatientCode: Convert.ToString(row.HISPATIENTCODE) ?? string.Empty,
                 FullName: Convert.ToString(row.FULLNAME) ?? string.Empty,
-                Phone: Convert.ToString(row.PHONE) ?? string.Empty);
+                Relationship: "Liên quan"))
+            .Where(profile => !string.IsNullOrWhiteSpace(profile.HisPatientCode))
+            .GroupBy(profile => profile.HisPatientCode)
+            .Select(group => group.First())
+            .ToList();
+
+        if (profiles.Count == 0)
+        {
+            return null;
+        }
+
+        var primary = profiles[0] with { Relationship = "Bản thân" };
+        profiles[0] = primary;
+
+        return new PatientLoginVerificationDto(
+            HisPatientCode: primary.HisPatientCode,
+            FullName: primary.FullName,
+            Phone: Convert.ToString(rows[0].PHONE) ?? normalizedPhone,
+            Profiles: profiles);
     }
 
     public async Task<PatientDto?> GetPatientAsync(string hisPatientCode, CancellationToken cancellationToken)
