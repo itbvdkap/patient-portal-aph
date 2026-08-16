@@ -11,6 +11,10 @@ if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("ASPNETCORE_ENV
 }
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Host.UseWindowsService(options =>
+{
+    options.ServiceName = "AnPhuPatientPortalSyncAgent";
+});
 
 if (string.IsNullOrWhiteSpace(builder.Configuration["urls"]) &&
     string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("ASPNETCORE_URLS")))
@@ -48,7 +52,8 @@ var app = builder.Build();
 
 app.MapGet("/health", () => Results.Ok(new { status = "healthy", dataMode }));
 
-if (!app.Environment.IsDevelopment())
+var disableHttpsRedirection = app.Configuration.GetValue("PatientPortal:DisableHttpsRedirection", false);
+if (!app.Environment.IsDevelopment() && !disableHttpsRedirection)
 {
     app.UseHttpsRedirection();
 }

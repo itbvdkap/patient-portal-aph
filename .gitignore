@@ -10,6 +10,7 @@ backend/**/appsettings.Development.json
 logs/
 tmp/
 output/
+artifacts/
 *.log
 frontend.out.log
 frontend.err.log
