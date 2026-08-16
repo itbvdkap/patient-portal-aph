@@ -78,13 +78,13 @@ export async function requestOnDemandLoginSync(phone: string, citizenId: string)
 
 export async function enqueuePatientSync(mabn: string, resourceName = "all", resourceId?: string) {
   const supabase = createSupabaseServiceClient();
-  const queued = await supabase.from("portal_sync_jobs").insert({
-    mabn,
-    resource_name: resourceName,
-    resource_id: resourceId ?? null,
-    status: "queued",
-    requested_by: "portal",
-    requested_reason: "on-demand patient access",
+  const queued = await supabase.rpc("portal_enqueue_sync_job", {
+    p_mabn: mabn,
+    p_resource_name: resourceName,
+    p_resource_id: resourceId ?? null,
+    p_maql: null,
+    p_requested_by: "portal",
+    p_requested_reason: "on-demand patient access",
   });
 
   if (queued.error) {

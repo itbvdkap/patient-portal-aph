@@ -46,7 +46,11 @@ public sealed class OracleHisPatientRepository(IConfiguration configuration) : I
         }
 
         await using var connection = CreateConnection();
-        var row = await connection.QuerySingleOrDefaultAsync(sql, new { Phone = normalizedPhone, CitizenId = normalizedCitizenId });
+        var row = await connection.QuerySingleOrDefaultAsync(new CommandDefinition(
+            sql,
+            new { Phone = normalizedPhone, CitizenId = normalizedCitizenId },
+            cancellationToken: cancellationToken,
+            commandTimeout: 20));
 
         return row is null
             ? null
@@ -315,6 +319,11 @@ public sealed class OracleHisPatientRepository(IConfiguration configuration) : I
 
         foreach (var schema in schemas)
         {
+            var procedureIdColumn = await SchemaHasColumnAsync(connection, schema, "V_CHIDINH", "ID_THUCHIEN", cancellationToken)
+                ? "cd.ID_THUCHIEN"
+                : "cd.THUCHIEN";
+            var performedAtExpression = await BuildPerformedAtExpressionAsync(connection, schema, cancellationToken);
+
             var sql = $"""
                 select
                   to_char(cd.ID) || '-' || to_char(kq.ID_TEN) as Id,
@@ -324,21 +333,21 @@ public sealed class OracleHisPatientRepository(IConfiguration configuration) : I
                   kq.KETQUA as Result,
                   dv.TEN as Unit,
                   case when bn.PHAI = 0 then tenxn.CSBT_NAM else tenxn.CSBT_NU end as ReferenceRange,
-                  coalesce(cd.NGAY_KQ, cd.NGAY_YL) as PerformedAt,
+                  {performedAtExpression} as PerformedAt,
                   kq.KQ_BATTHUONG as Abnormal,
                   kq.KQ_BATTHUONG_THAP_CAO as LowHigh
                 from {schema}.v_chidinh cd
                 inner join BTDBN bn on bn.MABN = cd.MABN
                 left join V_GIAVP vp on vp.ID = cd.MAVP
-                inner join XN_PHIEU p on cd.ID_THUCHIEN = p.ID
-                inner join XN_KETQUA kq on cd.ID_THUCHIEN = kq.ID and cd.ID = kq.IDCHIDINH
+                inner join XN_PHIEU p on {procedureIdColumn} = p.ID
+                inner join XN_KETQUA kq on {procedureIdColumn} = kq.ID and cd.ID = kq.IDCHIDINH
                 left join XN_BV_CHITIET xnct on kq.ID_TEN = xnct.ID
                 left join XN_TEN tenxn on tenxn.ID = coalesce(xnct.ID_TEN, kq.ID_TEN)
                 left join XN_DONVI dv on dv.ID = tenxn.DONVI
                 where cd.MABN = :HisPatientCode
                   and kq.KETQUA is not null
                   and (:VisitId is null or to_char(cd.MAVAOVIEN) = :VisitId)
-                order by coalesce(cd.NGAY_KQ, cd.NGAY_YL) desc, tenxn.STT
+                order by {performedAtExpression} desc, tenxn.STT
                 """;
 
             try
@@ -372,11 +381,20 @@ public sealed class OracleHisPatientRepository(IConfiguration configuration) : I
 
         foreach (var schema in schemas)
         {
+            var procedureIdColumn = await SchemaHasColumnAsync(connection, schema, "V_CHIDINH", "ID_THUCHIEN", cancellationToken)
+                ? "cd.ID_THUCHIEN"
+                : "cd.THUCHIEN";
+            var performedDoctorColumn = await SchemaHasColumnAsync(connection, schema, "V_CHIDINH", "MABS_THUCHIEN", cancellationToken)
+                ? "cd.MABS_THUCHIEN"
+                : "cd.MABS";
+            var performedAtExpression = await BuildPerformedAtExpressionAsync(connection, schema, cancellationToken);
+            var performedAtFilter = performedAtExpression == "null" ? "and 1 = 0" : $"and {performedAtExpression} is not null";
+
             var sql = $"""
                 select
                   to_char(cd.ID) as Id,
                   coalesce(to_char(cd.MAVAOVIEN), to_char(cd.MAQL), to_char(cd.ID)) as VisitId,
-                  coalesce(cd.NGAY_KQ, cd.NGAY_YL) as PerformedAt,
+                  {performedAtExpression} as PerformedAt,
                   vp.TEN as TechniqueName,
                   bs_cls.HOTEN as DoctorName,
                   sam.MOTA as SaDescription,
@@ -391,14 +409,14 @@ public sealed class OracleHisPatientRepository(IConfiguration configuration) : I
                 from {schema}.v_chidinh cd
                 inner join V_GIAVP vp on vp.ID = cd.MAVP
                 left join V_LOAIVP loaivp on loaivp.ID = vp.ID_LOAI
-                left join DMBS bs_cls on bs_cls.MA = cd.MABS_THUCHIEN
-                left join SA_BNCDHA sa on sa.COUNT_CDHA = cd.ID_THUCHIEN
-                left join SA_BNCDHA_CT sam on sam.COUNT_CDHA = cd.ID_THUCHIEN
-                left join XQ_BNCDHA_CTXQ xq on xq.COUNT_CDHA = coalesce(sa.COUNT_CDHA, cd.ID_THUCHIEN)
+                left join DMBS bs_cls on bs_cls.MA = {performedDoctorColumn}
+                left join SA_BNCDHA sa on sa.COUNT_CDHA = {procedureIdColumn}
+                left join SA_BNCDHA_CT sam on sam.COUNT_CDHA = {procedureIdColumn}
+                left join XQ_BNCDHA_CTXQ xq on xq.COUNT_CDHA = coalesce(sa.COUNT_CDHA, {procedureIdColumn})
                 where cd.MABN = :HisPatientCode
                   and loaivp.ID_NHOM in (5, 22)
-                  and coalesce(cd.NGAY_KQ, cd.NGAY_YL) is not null
-                order by coalesce(cd.NGAY_KQ, cd.NGAY_YL) desc
+                  {performedAtFilter}
+                order by {performedAtExpression} desc
                 """;
 
             try
@@ -986,6 +1004,44 @@ public sealed class OracleHisPatientRepository(IConfiguration configuration) : I
 
         var rows = await connection.QueryAsync<string>(sql, new { HisPatientCode = hisPatientCode });
         return rows.Select(monthCode => $"HGSOFT_BV{monthCode}").ToList();
+    }
+
+    private static async Task<bool> SchemaHasColumnAsync(OracleConnection connection, string schema, string tableName, string columnName, CancellationToken cancellationToken)
+    {
+        const string sql = """
+            select count(*)
+            from all_tab_columns
+            where owner = :Owner
+              and table_name = :TableName
+              and column_name = :ColumnName
+            """;
+
+        var count = await connection.ExecuteScalarAsync<int>(
+            new CommandDefinition(
+                sql,
+                new
+                {
+                    Owner = schema.ToUpperInvariant(),
+                    TableName = tableName.ToUpperInvariant(),
+                    ColumnName = columnName.ToUpperInvariant()
+                },
+                cancellationToken: cancellationToken,
+                commandTimeout: 10));
+        return count > 0;
+    }
+
+    private static async Task<string> BuildPerformedAtExpressionAsync(OracleConnection connection, string schema, CancellationToken cancellationToken)
+    {
+        var hasResultDate = await SchemaHasColumnAsync(connection, schema, "V_CHIDINH", "NGAY_KQ", cancellationToken);
+        var hasOrderDate = await SchemaHasColumnAsync(connection, schema, "V_CHIDINH", "NGAY_YL", cancellationToken);
+
+        return (hasResultDate, hasOrderDate) switch
+        {
+            (true, true) => "coalesce(cd.NGAY_KQ, cd.NGAY_YL)",
+            (true, false) => "cd.NGAY_KQ",
+            (false, true) => "cd.NGAY_YL",
+            _ => "null"
+        };
     }
 
     private static async Task<IReadOnlyList<string>> GetPatientVisitMonthlySchemasAsync(OracleConnection connection, string hisPatientCode)

@@ -16,6 +16,8 @@ Ngay cap nhat: 2026-08-16
 
 ```text
 supabase/migrations/202608160001_patient_portal_reporting.sql
+supabase/migrations/202608160002_patient_portal_agent_rpc.sql
+supabase/migrations/20260816134439_patient_portal_enqueue_sync_job_rpc.sql
 ```
 
 4. Vao Project Settings -> API va lay:
@@ -55,12 +57,13 @@ Khong set Oracle credential tren Vercel.
 Agent doc Oracle va ghi Supabase reporting DB. Cai dat env/config:
 
 ```text
-ConnectionStrings:PortalReporting=<Supabase Postgres connection string>
 ConnectionStrings:OracleHis=<Oracle read-only connection string>
-PatientPortal:DataMode=Reporting
+SUPABASE_URL=<Supabase Project URL>
+SUPABASE_SECRET_KEY=<Supabase secret/service key>
+AUTH_SYNC_ENCRYPTION_KEY=<giong AUTH_SYNC_ENCRYPTION_KEY tren Vercel>
+PatientPortal:DataMode=OracleDirect
 PatientPortal:EnableSupabaseQueueAgent=true
 PatientPortal:SupabaseQueueConcurrency=3
-PatientPortal:AuthSyncEncryptionKey=<giong AUTH_SYNC_ENCRYPTION_KEY tren Vercel>
 ```
 
 Khuyen nghi ban dau:
@@ -68,6 +71,7 @@ Khuyen nghi ban dau:
 - Chay concurrency `3`.
 - Test 2-3 benh nhan truoc.
 - Theo doi `portal_auth_attempts`, `portal_sync_jobs`, `portal_sync_state`.
+- Agent chi can outbound HTTPS den Supabase va Oracle noi bo; khong mo Oracle credential tren Vercel.
 
 ## Kiem thu dau tien
 
@@ -87,5 +91,5 @@ Nguyen nhan thuong gap:
 - Sync agent chua chay.
 - `AUTH_SYNC_ENCRYPTION_KEY` tren Vercel khac `PatientPortal:AuthSyncEncryptionKey` tren agent.
 - Agent khong ket noi duoc Oracle.
-- Agent khong ket noi duoc Supabase Postgres.
+- Agent khong ket noi duoc Supabase REST/RPC.
 - Migration chua chay du bang.

@@ -3,6 +3,7 @@ using Npgsql;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace PatientApi.Sync;
 
@@ -236,5 +237,14 @@ public sealed class ReportingStore(IConfiguration configuration)
     private sealed record StatusRow(string ResourceName, string? ResourceId, string Status, DateTimeOffset? LastSyncedAt, DateTimeOffset? NextSyncAfter, string? ErrorMessage);
 }
 
-public sealed record AuthAttemptJob(Guid AttemptId, string LookupHash, string EncryptedPayload);
-public sealed record SyncJob(long JobId, string Mabn, string ResourceName, string? ResourceId, string? Maql);
+public sealed record AuthAttemptJob(
+    [property: JsonPropertyName("attempt_id")] Guid AttemptId,
+    [property: JsonPropertyName("lookup_hash")] string LookupHash,
+    [property: JsonPropertyName("encrypted_payload")] string EncryptedPayload);
+
+public sealed record SyncJob(
+    [property: JsonPropertyName("job_id")] long JobId,
+    [property: JsonPropertyName("mabn")] string Mabn,
+    [property: JsonPropertyName("resource_name")] string ResourceName,
+    [property: JsonPropertyName("resource_id")] string? ResourceId,
+    [property: JsonPropertyName("maql")] string? Maql);

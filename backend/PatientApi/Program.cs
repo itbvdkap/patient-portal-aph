@@ -24,6 +24,7 @@ builder.Logging.AddDebug();
 
 builder.Services.AddSingleton<PatientTokenValidator>();
 builder.Services.AddScoped<OracleHisPatientRepository>();
+builder.Services.AddHttpClient<SupabaseRestPortalStore>();
 
 var dataMode = builder.Configuration["PatientPortal:DataMode"] ?? "OracleDirect";
 if (dataMode.Equals("Reporting", StringComparison.OrdinalIgnoreCase))
@@ -31,12 +32,16 @@ if (dataMode.Equals("Reporting", StringComparison.OrdinalIgnoreCase))
     builder.Services.AddSingleton<ReportingStore>();
     builder.Services.AddSingleton<PatientSyncCoordinator>();
     builder.Services.AddHostedService(serviceProvider => serviceProvider.GetRequiredService<PatientSyncCoordinator>());
-    builder.Services.AddHostedService<SupabaseQueueSyncAgent>();
     builder.Services.AddScoped<IPatientRepository, ReportingPatientRepository>();
 }
 else
 {
     builder.Services.AddScoped<IPatientRepository, OracleHisPatientRepository>();
+}
+
+if (builder.Configuration.GetValue("PatientPortal:EnableSupabaseQueueAgent", false))
+{
+    builder.Services.AddHostedService<SupabaseQueueSyncAgent>();
 }
 
 var app = builder.Build();

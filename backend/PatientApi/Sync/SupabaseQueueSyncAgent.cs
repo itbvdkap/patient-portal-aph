@@ -6,7 +6,7 @@ using System.Text.Json;
 namespace PatientApi.Sync;
 
 public sealed class SupabaseQueueSyncAgent(
-    ReportingStore store,
+    SupabaseRestPortalStore store,
     IServiceScopeFactory scopeFactory,
     IConfiguration configuration,
     ILogger<SupabaseQueueSyncAgent> logger) : BackgroundService
@@ -22,7 +22,6 @@ public sealed class SupabaseQueueSyncAgent(
             return;
         }
 
-        await store.EnsureSchemaAsync(stoppingToken);
         var concurrency = Math.Clamp(configuration.GetValue("PatientPortal:SupabaseQueueConcurrency", 3), 1, 5);
         await Task.WhenAll(Enumerable.Range(0, concurrency).Select(_ => ConsumeAsync(stoppingToken)));
     }
@@ -49,6 +48,7 @@ public sealed class SupabaseQueueSyncAgent(
         try
         {
             var payload = Decrypt<AuthPayload>(job.EncryptedPayload);
+            logger.LogInformation("Processing auth attempt {AttemptId}", job.AttemptId);
             using var scope = scopeFactory.CreateScope();
             var oracle = scope.ServiceProvider.GetRequiredService<OracleHisPatientRepository>();
             var verified = await oracle.VerifyLoginAsync(payload.Phone, payload.CitizenId, cancellationToken);
@@ -61,6 +61,7 @@ public sealed class SupabaseQueueSyncAgent(
 
             await store.PutLoginAsync(payload.Phone, payload.CitizenId, verified.HisPatientCode, verified, cancellationToken);
             await store.CompleteAuthAttemptAsync(job.AttemptId, "success", verified.HisPatientCode, verified, null, cancellationToken);
+            logger.LogInformation("Auth attempt {AttemptId} verified patient {Mabn}", job.AttemptId, verified.HisPatientCode);
             return true;
         }
         catch (Exception ex)
@@ -78,10 +79,12 @@ public sealed class SupabaseQueueSyncAgent(
 
         try
         {
+            logger.LogInformation("Processing sync job {JobId} for {Mabn}/{Resource}/{ResourceId}", job.JobId, job.Mabn, job.ResourceName, job.ResourceId);
             using var scope = scopeFactory.CreateScope();
             var oracle = scope.ServiceProvider.GetRequiredService<OracleHisPatientRepository>();
             await SyncResourceAsync(oracle, job, cancellationToken);
             await store.CompleteSyncJobAsync(job, "success", null, DateTimeOffset.UtcNow.Add(PatientSyncCoordinator.Ttl(job.ResourceName)), cancellationToken);
+            logger.LogInformation("Sync job {JobId} completed", job.JobId);
             return true;
         }
         catch (Exception ex)
