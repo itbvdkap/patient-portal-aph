@@ -1,5 +1,7 @@
 import { AppShell } from "@/components/app-shell";
 import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
+import { isPortalSessionActive } from "@/lib/account/portal-account";
 import { getDemoPatientSession } from "@/lib/auth/session";
 import { createPatientRepository } from "@/lib/data";
 
@@ -9,7 +11,16 @@ export default async function PortalLayout({ children }: { children: React.React
   let pendingRegistrationsCount = 0;
   let activeTodayVisitCount = 0;
 
+  if (!session) {
+    redirect("/login");
+  }
+
   if (session) {
+    const isActive = await isPortalSessionActive(session);
+    if (!isActive) {
+      redirect("/login");
+    }
+
     const repository = createPatientRepository();
     const [appointmentsResult, registrationsResult, todayVisitStatusResult] = await Promise.allSettled([
       repository.getAppointments(session.patientId),
