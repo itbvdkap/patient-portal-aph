@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="An Phu Patient">
+  <rect width="512" height="512" rx="64" fill="#0f9f78"/>
+  <circle cx="256" cy="256" r="170" fill="#ffffff"/>
+  <path d="M236 142h40v94h94v40h-94v94h-40v-94h-94v-40h94z" fill="#0b7f62"/>
+</svg>

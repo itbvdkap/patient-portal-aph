@@ -1,0 +1,20 @@
+File quan trọng để tiếp tục sau khi reset:
+
+  - docs/CONTINUE-AFTER-RESTART.md
+
+  Sau khi mở máy lại, bạn chỉ cần vào:
+
+  cd E:\HIS\APP_BENHAN
+
+  Rồi mở file:
+
+  docs/CONTINUE-AFTER-RESTART.md
+
+  Tôi cũng đã kiểm tra:
+
+  - .env.local còn tồn tại
+  - backend/PatientApi/appsettings.Development.json còn tồn tại
+  - backend scaffold còn đủ file
+  - .gitignore đã chặn các file chứa secret local
+
+  Sau khi reset xong, nhắn tôi “tiếp tục” là tôi sẽ bắt đầu từ bước cài .NET SDK 9, build/run backend PatientApi, rồi nối portal sang Oracle thật.

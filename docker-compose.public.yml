@@ -1,0 +1,82 @@
+services:
+  edge:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    environment:
+      PORTAL_DOMAIN: ${PORTAL_DOMAIN}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      portal:
+        condition: service_started
+    networks: [public_edge, portal_private]
+
+  portal:
+    build:
+      context: .
+      dockerfile: Dockerfile.portal
+    restart: unless-stopped
+    environment:
+      PATIENT_API_BASE_URL: http://patient-api:5080
+      PATIENT_API_SERVER_TOKEN: ${PATIENT_API_SERVER_TOKEN}
+      NEXT_PUBLIC_DEMO_MODE: "false"
+    depends_on:
+      patient-api:
+        condition: service_healthy
+    networks: [portal_private]
+
+  patient-api:
+    build:
+      context: .
+      dockerfile: backend/PatientApi/Dockerfile
+    restart: unless-stopped
+    environment:
+      ConnectionStrings__OracleHis: ${ORACLE_HIS_CONNECTION}
+      ConnectionStrings__PortalReporting: Host=reporting-db;Port=5432;Database=patient_portal;Username=portal;Password=${REPORTING_DB_PASSWORD}
+      PatientPortal__ServerToken: ${PATIENT_API_SERVER_TOKEN}
+      PatientPortal__DataMode: Reporting
+      PatientPortal__InitialSyncWaitSeconds: 20
+      PatientPortal__SyncWorkerConcurrency: 3
+    depends_on:
+      reporting-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:5080/health || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    networks: [portal_private, his_readonly]
+
+  reporting-db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: patient_portal
+      POSTGRES_USER: portal
+      POSTGRES_PASSWORD: ${REPORTING_DB_PASSWORD}
+    volumes:
+      - portal_reporting_data:/var/lib/postgresql/data
+      - ./docs/sql/portal_schema_draft.sql:/docker-entrypoint-initdb.d/001-schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U portal -d patient_portal"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [portal_private]
+
+networks:
+  public_edge:
+  portal_private:
+    internal: true
+  his_readonly:
+
+volumes:
+  portal_reporting_data:
+  caddy_data:
+  caddy_config:

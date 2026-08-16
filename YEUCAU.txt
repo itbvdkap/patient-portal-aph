@@ -1,0 +1,916 @@
+Bạn là senior full-stack developer.
+
+Hãy xây dựng hoàn chỉnh một MVP Patient Portal bằng Next.js để bệnh nhân của Bệnh viện/Phòng khám Đa khoa An Phú có thể đăng nhập và tra cứu lịch sử khám bệnh.
+
+MỤC TIÊU
+
+Tạo một web application responsive ưu tiên giao diện mobile, chạy được trên desktop và điện thoại.
+
+Đây là phiên bản DEMO/MVP.
+
+TUYỆT ĐỐI:
+- Không kết nối Oracle thật ở giai đoạn này.
+- Không sử dụng dữ liệu bệnh nhân thật.
+- Tạo mock data/dữ liệu demo.
+- Thiết kế code sao cho sau này có thể thay data provider bằng REST API kết nối Oracle mà không phải viết lại giao diện.
+- Không hard-code secret.
+- Tất cả secret phải nằm trong environment variables.
+- Không expose database credentials ra browser.
+
+--------------------------------------------------
+1. TECH STACK
+--------------------------------------------------
+
+Sử dụng:
+
+- Next.js latest stable
+- App Router
+- TypeScript
+- Tailwind CSS
+- Supabase PostgreSQL
+- Supabase Auth nếu cần
+- Lucide React cho icon
+- Zod để validation
+- React Hook Form nếu cần
+- date-fns để xử lý ngày
+- ESLint
+- Prettier
+
+Project phải deploy được lên Vercel.
+
+--------------------------------------------------
+2. LANGUAGE
+--------------------------------------------------
+
+Toàn bộ giao diện bệnh nhân sử dụng tiếng Việt.
+
+Code, variable, interface và function sử dụng tiếng Anh rõ ràng.
+
+Ví dụ:
+
+Patient
+Visit
+Diagnosis
+Prescription
+LabResult
+ImagingResult
+
+--------------------------------------------------
+3. BRAND
+--------------------------------------------------
+
+Tên ứng dụng:
+
+CỔNG THÔNG TIN BỆNH NHÂN
+BỆNH VIỆN ĐA KHOA AN PHÚ
+
+Thiết kế theo phong cách:
+
+- hiện đại
+- sạch
+- y tế
+- dễ đọc
+- thân thiện với người lớn tuổi
+- ít thao tác
+- mobile-first
+
+Không làm giao diện quá nhiều hiệu ứng.
+
+Header:
+
+Logo placeholder
+Bệnh viện Đa khoa An Phú
+
+Màu sắc nhẹ nhàng, chuyên nghiệp.
+
+--------------------------------------------------
+4. AUTHENTICATION DEMO
+--------------------------------------------------
+
+Tạo màn hình:
+
+/login
+
+Cho phép nhập:
+
+- Số điện thoại
+hoặc
+- Mã bệnh nhân
+
+Phiên bản demo KHÔNG gửi SMS thật.
+
+Có nút:
+
+"Gửi mã OTP"
+
+Sau đó hiện ô nhập OTP.
+
+OTP DEMO mặc định:
+
+123456
+
+Hiển thị nhỏ:
+
+"Mã OTP dùng cho phiên bản thử nghiệm: 123456"
+
+Sau khi đăng nhập thành công:
+
+redirect /dashboard
+
+Tạo architecture để sau này thay demo OTP bằng SMS/Zalo OTP thật.
+
+--------------------------------------------------
+5. DEMO PATIENT
+--------------------------------------------------
+
+Tạo dữ liệu giả:
+
+Mã bệnh nhân:
+23006552
+
+Họ tên:
+NGUYỄN VĂN AN
+
+Ngày sinh:
+15/05/1985
+
+Giới:
+Nam
+
+Số điện thoại:
+0901234567
+
+BHYT:
+DN4010123456789
+
+Giá trị:
+01/01/2026 - 31/12/2026
+
+Địa chỉ:
+TP. Hồ Chí Minh
+
+Không sử dụng thông tin của bệnh nhân thật.
+
+--------------------------------------------------
+6. DASHBOARD
+--------------------------------------------------
+
+Route:
+
+/dashboard
+
+Header:
+
+Xin chào,
+NGUYỄN VĂN AN
+
+Mã bệnh nhân: 23006552
+
+Hiển thị card:
+
+- Lịch sử khám
+- Kết quả xét nghiệm
+- Chẩn đoán hình ảnh
+- Đơn thuốc
+- BHYT
+- Lịch hẹn
+
+Phía dưới:
+
+"Lần khám gần đây"
+
+Hiển thị 3 lần khám gần nhất.
+
+--------------------------------------------------
+7. PATIENT PROFILE
+--------------------------------------------------
+
+Route:
+
+/profile
+
+Thông tin:
+
+- Mã bệnh nhân
+- Họ tên
+- Ngày sinh
+- Giới tính
+- Điện thoại
+- Địa chỉ
+- Số thẻ BHYT
+- Từ ngày
+- Đến ngày
+
+Không cho sửa dữ liệu ở MVP.
+
+--------------------------------------------------
+8. VISIT HISTORY
+--------------------------------------------------
+
+Route:
+
+/visits
+
+Hiển thị danh sách lịch sử khám.
+
+Mỗi card gồm:
+
+Ngày khám
+Khoa khám
+Bác sĩ
+Chẩn đoán chính
+Trạng thái
+
+Tạo khoảng 6 lần khám demo.
+
+Ví dụ:
+
+12/08/2026
+Nội tổng quát
+BS. Nguyễn Minh Thành
+E11.9 - Đái tháo đường type 2
+
+05/06/2026
+Tim mạch
+BS. Trần Văn Hùng
+I10 - Tăng huyết áp
+
+20/03/2026
+Nội tổng quát
+BS. Nguyễn Minh Thành
+E78.5 - Rối loạn lipid máu
+
+Có:
+
+- tìm kiếm
+- lọc theo ngày
+- lọc theo khoa
+
+Click một lần khám:
+
+/visits/[id]
+
+--------------------------------------------------
+9. VISIT DETAIL
+--------------------------------------------------
+
+Trang chi tiết gồm:
+
+THÔNG TIN LẦN KHÁM
+
+Ngày khám
+Khoa
+Bác sĩ
+
+CHẨN ĐOÁN
+
+ICD-10
+Tên bệnh
+Chẩn đoán chính/phụ
+
+DẤU HIỆU SINH TỒN
+
+Huyết áp
+Mạch
+Nhiệt độ
+Cân nặng
+Chiều cao
+BMI
+
+CẬN LÂM SÀNG
+
+Danh sách dịch vụ đã thực hiện.
+
+ĐƠN THUỐC
+
+Tên thuốc
+Hàm lượng
+Đường dùng
+Số lượng
+Liều dùng
+Cách dùng
+
+KẾT QUẢ XÉT NGHIỆM
+
+KẾT QUẢ CHẨN ĐOÁN HÌNH ẢNH
+
+LỜI DẶN BÁC SĨ
+
+NGÀY HẸN TÁI KHÁM
+
+--------------------------------------------------
+10. LAB RESULTS
+--------------------------------------------------
+
+Route:
+
+/lab-results
+
+Các xét nghiệm demo:
+
+Glucose
+HbA1c
+Creatinine
+AST
+ALT
+Cholesterol
+Triglyceride
+HDL-C
+LDL-C
+
+Hiển thị:
+
+Tên xét nghiệm
+Kết quả
+Đơn vị
+Khoảng tham chiếu
+Ngày thực hiện
+
+Nếu kết quả ngoài khoảng tham chiếu:
+
+hiển thị indicator "Cao" hoặc "Thấp".
+
+Không tự đưa ra chẩn đoán y khoa.
+
+--------------------------------------------------
+11. IMAGING
+--------------------------------------------------
+
+Route:
+
+/imaging
+
+Tạo dữ liệu:
+
+Siêu âm bụng
+X-quang ngực
+CT bụng - tiểu khung
+
+Các trường:
+
+Ngày
+Tên kỹ thuật
+Bác sĩ thực hiện
+Mô tả
+Kết luận
+
+Có nút:
+
+"Xem kết quả"
+
+--------------------------------------------------
+12. PRESCRIPTIONS
+--------------------------------------------------
+
+Route:
+
+/prescriptions
+
+Hiển thị đơn thuốc theo từng ngày khám.
+
+Các trường:
+
+Tên thuốc
+Hoạt chất
+Hàm lượng
+Số lượng
+Liều dùng
+Cách sử dụng
+
+Ví dụ dữ liệu demo:
+
+Metformin 500mg
+30 viên
+Sáng 1 viên - chiều 1 viên
+Uống sau ăn
+
+Amlodipine 5mg
+30 viên
+Ngày 1 viên
+Uống buổi sáng
+
+--------------------------------------------------
+13. INSURANCE
+--------------------------------------------------
+
+Route:
+
+/insurance
+
+Hiển thị:
+
+Số thẻ BHYT
+Mã quyền lợi
+Nơi đăng ký KCB ban đầu
+Từ ngày
+Đến ngày
+Trạng thái
+
+Tạo trạng thái:
+
+"Còn hiệu lực"
+
+--------------------------------------------------
+14. APPOINTMENTS
+--------------------------------------------------
+
+Route:
+
+/appointments
+
+Hiển thị:
+
+Ngày tái khám
+Khoa
+Bác sĩ
+Nội dung
+
+MVP chỉ xem.
+
+Chuẩn bị structure để tương lai có thể:
+
+- đăng ký khám
+- chọn bác sĩ
+- chọn ngày
+- chọn giờ
+
+--------------------------------------------------
+15. NAVIGATION
+--------------------------------------------------
+
+Desktop:
+
+Sidebar.
+
+Mobile:
+
+Bottom Navigation.
+
+Các mục chính:
+
+Trang chủ
+Lịch sử khám
+Xét nghiệm
+Đơn thuốc
+Tài khoản
+
+Các chức năng khác đưa vào menu "Thêm".
+
+--------------------------------------------------
+16. DATABASE DESIGN
+--------------------------------------------------
+
+Thiết kế PostgreSQL/Supabase schema gồm:
+
+patients
+patient_accounts
+visits
+diagnoses
+vital_signs
+services
+prescriptions
+prescription_items
+lab_results
+imaging_results
+appointments
+insurance_cards
+audit_logs
+
+Tạo primary key UUID.
+
+Quan hệ phải rõ ràng.
+
+Ví dụ:
+
+patients
+  id UUID PK
+  his_patient_code varchar
+  full_name varchar
+  birth_date date
+  gender varchar
+  phone varchar
+  address text
+  created_at timestamp
+
+visits
+  id UUID PK
+  patient_id UUID FK
+  his_visit_id varchar
+  visit_date timestamp
+  department_name varchar
+  doctor_name varchar
+  status varchar
+  notes text
+
+diagnoses
+  id UUID PK
+  visit_id UUID FK
+  icd10_code varchar
+  diagnosis_name varchar
+  diagnosis_type varchar
+
+--------------------------------------------------
+17. HIS MAPPING
+--------------------------------------------------
+
+Chuẩn bị interface mapping cho Oracle HIS trong tương lai.
+
+Oracle hiện tại có thể có các nguồn:
+
+BTDBN
+TIEPDON
+BENHANDT
+BHYT
+BHYTKB
+BHYTTHUOC
+V_CHIDINH
+V_CHIDINH2
+V_GIAVP
+DMBS
+SA_BNCDHA
+SA_BNCDHA_CT
+SA_LOAICDHA
+D_DMBD
+
+Các field thường sử dụng:
+
+MABN
+HOTEN
+NGAYSINH
+PHAI
+SOTHE
+TUNGAY
+DENNGAY
+MAQL
+NGAY
+NGAYUD
+NGAY_TH_YL
+NGAY_KQ
+MAVP
+MABS_THUCHIEN
+MAICD
+MABENHKHAC
+CHANDOAN
+CHANDOAN_CHITIET
+
+KHÔNG query Oracle trong MVP.
+
+Tạo folder:
+
+src/lib/data
+
+và interface:
+
+PatientRepository
+
+gồm các method:
+
+getCurrentPatient()
+getPatientById()
+getVisits()
+getVisitDetail()
+getLabResults()
+getImagingResults()
+getPrescriptions()
+getInsurance()
+getAppointments()
+
+Tạo:
+
+MockPatientRepository
+
+hoặc
+
+SupabasePatientRepository
+
+UI chỉ được gọi PatientRepository/service layer.
+
+Mục đích:
+
+Sau này tạo:
+
+OracleApiPatientRepository
+
+mà không phải sửa UI.
+
+--------------------------------------------------
+18. FUTURE ORACLE ARCHITECTURE
+--------------------------------------------------
+
+Thêm file:
+
+docs/ORACLE-INTEGRATION.md
+
+Giải thích architecture tương lai:
+
+Browser
+→ HTTPS
+→ Patient Portal
+→ Patient API
+→ Oracle HIS
+
+Tuyệt đối không:
+
+Browser
+→ Oracle trực tiếp.
+
+Oracle username/password không bao giờ nằm trong Next.js client.
+
+Tương lai backend có thể dùng:
+
+ASP.NET Core Web API
+Oracle.ManagedDataAccess
+Dapper
+
+Các endpoint tương lai:
+
+GET /api/me
+
+GET /api/me/visits
+
+GET /api/me/visits/{id}
+
+GET /api/me/lab-results
+
+GET /api/me/imaging-results
+
+GET /api/me/prescriptions
+
+GET /api/me/insurance
+
+GET /api/me/appointments
+
+Không thiết kế endpoint:
+
+/patients/{mabn}
+
+cho bệnh nhân tự truyền MABN.
+
+Backend phải xác định bệnh nhân từ authenticated user/token.
+
+--------------------------------------------------
+19. SECURITY
+--------------------------------------------------
+
+Thiết kế theo nguyên tắc:
+
+- HTTPS only
+- authentication required
+- authorization theo patient
+- không cho bệnh nhân thay MABN để xem người khác
+- Row Level Security khi dùng Supabase
+- không expose service role key
+- environment variables
+- rate limiting design
+- audit log
+- session timeout
+- input validation
+- sanitize error messages
+
+Không log:
+
+password
+OTP
+access token
+refresh token
+
+Tạo audit_logs gồm:
+
+user_id
+patient_id
+action
+resource
+created_at
+ip_address
+
+--------------------------------------------------
+20. DEMO MODE
+--------------------------------------------------
+
+Environment variable:
+
+NEXT_PUBLIC_DEMO_MODE=true
+
+Khi demo mode = true:
+
+- dùng dữ liệu giả
+- OTP = 123456
+- không gửi SMS
+- hiển thị banner:
+
+"PHIÊN BẢN THỬ NGHIỆM - DỮ LIỆU MÔ PHỎNG"
+
+Banner phải xuất hiện trên toàn bộ application.
+
+--------------------------------------------------
+21. UI REQUIREMENTS
+--------------------------------------------------
+
+Responsive:
+
+375px
+430px
+768px
+1024px
+1440px
+
+Không horizontal overflow.
+
+Font dễ đọc.
+
+Button tối thiểu đủ lớn cho touchscreen.
+
+Cards có khoảng cách rõ.
+
+Loading skeleton.
+
+Empty states.
+
+Error states.
+
+Toast notifications.
+
+Confirmation dialogs nếu cần.
+
+--------------------------------------------------
+22. ACCESSIBILITY
+--------------------------------------------------
+
+Sử dụng semantic HTML.
+
+Form phải có label.
+
+Keyboard navigation.
+
+aria-label cho icon button.
+
+Color contrast phù hợp.
+
+--------------------------------------------------
+23. PWA
+--------------------------------------------------
+
+Chuẩn bị cấu trúc để website có thể cài lên màn hình điện thoại như app.
+
+Bao gồm:
+
+manifest
+icons placeholder
+app name
+theme configuration
+
+Tên:
+
+An Phú Patient
+
+--------------------------------------------------
+24. README
+--------------------------------------------------
+
+README.md phải cực kỳ rõ ràng.
+
+Bao gồm:
+
+1. Giới thiệu project
+2. Tech stack
+3. Yêu cầu môi trường
+4. Cài dependency
+5. Chạy development
+6. Demo login
+7. Environment variables
+8. Supabase setup
+9. Build production
+10. Deploy Vercel
+11. Architecture
+12. Oracle integration roadmap
+
+Demo credentials:
+
+Phone:
+0901234567
+
+Patient code:
+23006552
+
+OTP:
+123456
+
+--------------------------------------------------
+25. DATABASE SEED
+--------------------------------------------------
+
+Tạo:
+
+supabase/schema.sql
+supabase/seed.sql
+
+Seed ít nhất:
+
+5 patients
+
+Riêng patient:
+
+23006552
+
+phải có:
+
+6 visits
+nhiều diagnoses
+nhiều prescriptions
+nhiều lab results
+3 imaging results
+insurance
+2 appointments
+
+Tất cả đều là dữ liệu giả.
+
+--------------------------------------------------
+26. PROJECT STRUCTURE
+--------------------------------------------------
+
+Ưu tiên structure rõ ràng:
+
+src/
+  app/
+  components/
+  features/
+  lib/
+    auth/
+    data/
+    supabase/
+  types/
+  utils/
+
+docs/
+
+supabase/
+
+public/
+
+--------------------------------------------------
+27. QUALITY
+--------------------------------------------------
+
+Sau khi implement:
+
+- npm install
+- npm run lint
+- npm run build
+
+Fix tất cả error.
+
+Không để TypeScript error.
+
+Không để import unused.
+
+Không để placeholder code quan trọng chưa implement.
+
+--------------------------------------------------
+28. TESTING
+--------------------------------------------------
+
+Tạo ít nhất một số test cho:
+
+authentication
+patient authorization
+data repository
+visit formatting
+
+--------------------------------------------------
+29. FINAL CHECK
+--------------------------------------------------
+
+Trước khi kết thúc:
+
+1. kiểm tra tất cả routes
+2. kiểm tra mobile responsive
+3. kiểm tra demo authentication
+4. kiểm tra logout
+5. kiểm tra direct URL access khi chưa login
+6. kiểm tra patient isolation
+7. npm run lint
+8. npm run build
+
+Nếu build lỗi, tự sửa đến khi build thành công.
+
+--------------------------------------------------
+30. OUTPUT
+--------------------------------------------------
+
+Hãy trực tiếp tạo project và code.
+
+Không chỉ hướng dẫn tôi cách code.
+
+Tự tạo các file cần thiết.
+
+Tự chạy các command thích hợp.
+
+Sau khi hoàn thành hãy báo:
+
+- project structure
+- các chức năng đã hoàn thành
+- demo account
+- cách chạy local
+- environment variables
+- cách deploy Vercel
+- những phần cần làm khi chuyển sang Oracle HIS thật
