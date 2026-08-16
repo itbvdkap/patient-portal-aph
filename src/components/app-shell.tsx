@@ -21,7 +21,9 @@ import {
   UserRound,
   X,
 } from "lucide-react";
+import { BrandLogo } from "@/components/brand-logo";
 import { DemoBanner } from "@/components/demo-banner";
+import { InstallAppButton } from "@/components/install-app-button";
 
 type NavItem = {
   href: string;
@@ -108,6 +110,7 @@ export function AppShell({
       <div className="mx-auto flex min-h-[calc(100vh-40px)] max-w-[1440px]">
         <aside className="hidden w-64 shrink-0 border-r border-cream-200 bg-cream-50/95 px-3 py-5 shadow-[0_8px_22px_rgba(7,60,57,0.055)] lg:block">
           <Brand />
+          <InstallAppButton className="mt-5 w-full" />
           <nav className="mt-6 space-y-1" aria-label="Điều hướng chính">
             {allItems.map((item) => (
               <NavLink key={item.href} item={item} active={pathname.startsWith(item.href)} />
@@ -139,14 +142,17 @@ export function AppShell({
               )}
               <Brand compact />
             </div>
-            <button
-              type="button"
-              onClick={logout}
-              className="inline-flex h-11 w-11 items-center justify-center rounded-md text-rose-700 hover:bg-rose-50"
-              aria-label="Đăng xuất"
-            >
-              <LogOut aria-hidden="true" className="h-5 w-5" />
-            </button>
+            <div className="flex shrink-0 items-center gap-1">
+              <InstallAppButton compact className="hidden min-[360px]:inline-flex" />
+              <button
+                type="button"
+                onClick={logout}
+                className="inline-flex h-11 w-11 items-center justify-center rounded-md text-rose-700 hover:bg-rose-50"
+                aria-label="Đăng xuất"
+              >
+                <LogOut aria-hidden="true" className="h-5 w-5" />
+              </button>
+            </div>
           </div>
           {children}
         </main>
@@ -181,7 +187,7 @@ export function AppShell({
 function Brand({ compact = false }: { compact?: boolean }) {
   return (
     <div className="flex items-center gap-3">
-      <div className="clinical-mono flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-primary-700 text-base font-black text-white">AP</div>
+      <BrandLogo size={compact ? 38 : 44} />
       <div className="min-w-0">
         <p className="truncate text-sm font-bold text-ink">Bệnh viện Đa khoa An Phú</p>
         {!compact && <p className="mt-0.5 text-xs font-semibold uppercase text-primary-700">Cổng thông tin bệnh nhân</p>}
