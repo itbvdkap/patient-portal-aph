@@ -13,6 +13,9 @@ public sealed class ReportingPatientRepository(ReportingStore store, PatientSync
         return await store.GetLoginAsync<PatientLoginVerificationDto>(phone, citizenId, ct);
     }
 
+    public Task<PatientLoginVerificationDto?> VerifyLinkedProfileAsync(string hisPatientCode, string phone, string citizenId, DateOnly birthDate, CancellationToken ct)
+        => Task.FromResult<PatientLoginVerificationDto?>(null);
+
     public Task<PatientDto?> GetPatientAsync(string mabn, CancellationToken ct) => ReadAsync<PatientDto?>(mabn, "patient_profile", null, ct);
     public Task<PatientSummaryDto> GetSummaryAsync(string mabn, CancellationToken ct) => ReadAsync<PatientSummaryDto>(mabn, "summary", null, ct);
     public Task<IReadOnlyList<VisitDto>> GetVisitsAsync(string mabn, CancellationToken ct) => ReadListAsync<VisitDto>(mabn, "visits", null, ct);

@@ -197,6 +197,43 @@ export async function selectAccountProfile(session: AuthenticatedPatientSession,
   return data.map((profile) => ({ mabn: profile.mabn, fullName: profile.display_name ?? undefined }));
 }
 
+export async function linkAccountProfile(
+  session: AuthenticatedPatientSession,
+  profile: { mabn: string; fullName: string; relationship?: string },
+) {
+  if (!session.accountKey) {
+    return null;
+  }
+
+  const supabase = createSupabaseServiceClient();
+  const now = new Date().toISOString();
+  await throwOnError(
+    supabase.from("portal_account_profiles").upsert({
+      account_key: session.accountKey,
+      mabn: profile.mabn,
+      display_name: profile.fullName,
+      relationship: profile.relationship ?? "Người thân",
+      is_default: false,
+      last_selected_at: now,
+    }),
+    "link account profile",
+  );
+
+  const { data, error } = await supabase
+    .from("portal_account_profiles")
+    .select("mabn,display_name")
+    .eq("account_key", session.accountKey)
+    .order("is_default", { ascending: false })
+    .order("linked_at", { ascending: true });
+
+  if (error || !data) {
+    return null;
+  }
+
+  void enqueuePatientSync(profile.mabn, "all").catch(() => undefined);
+  return data.map((row) => ({ mabn: row.mabn, fullName: row.display_name ?? undefined }));
+}
+
 export async function revokeAllAccountSessions(session: AuthenticatedPatientSession) {
   if (!session.accountKey) return;
 

@@ -51,7 +51,9 @@ public sealed class SupabaseQueueSyncAgent(
             logger.LogInformation("Processing auth attempt {AttemptId}", job.AttemptId);
             using var scope = scopeFactory.CreateScope();
             var oracle = scope.ServiceProvider.GetRequiredService<OracleHisPatientRepository>();
-            var verified = await oracle.VerifyLoginAsync(payload.Phone, payload.CitizenId, cancellationToken);
+            var verified = payload.Mabn is not null && payload.BirthDate is not null
+                ? await oracle.VerifyLinkedProfileAsync(payload.Mabn, payload.Phone, payload.CitizenId, payload.BirthDate.Value, cancellationToken)
+                : await oracle.VerifyLoginAsync(payload.Phone, payload.CitizenId, cancellationToken);
 
             if (verified is null)
             {
@@ -59,8 +61,11 @@ public sealed class SupabaseQueueSyncAgent(
                 return true;
             }
 
-            await store.PutLoginAsync(payload.Phone, payload.CitizenId, verified.HisPatientCode, verified, cancellationToken);
-            await store.PutAccountProfilesAsync(job.LookupHash, payload.Phone, verified.HisPatientCode, verified.Profiles, cancellationToken);
+            if (payload.Mabn is null || payload.BirthDate is null)
+            {
+                await store.PutLoginAsync(payload.Phone, payload.CitizenId, verified.HisPatientCode, verified, cancellationToken);
+                await store.PutAccountProfilesAsync(job.LookupHash, payload.Phone, verified.HisPatientCode, verified.Profiles, cancellationToken);
+            }
             await store.CompleteAuthAttemptAsync(job.AttemptId, "success", verified.HisPatientCode, verified, null, cancellationToken);
             logger.LogInformation("Auth attempt {AttemptId} verified patient {Mabn}", job.AttemptId, verified.HisPatientCode);
             return true;
@@ -150,5 +155,5 @@ public sealed class SupabaseQueueSyncAgent(
         return Convert.FromBase64String(padded);
     }
 
-    private sealed record AuthPayload(string Phone, string CitizenId, string AttemptId);
+    private sealed record AuthPayload(string Phone, string CitizenId, string AttemptId, string? Mabn, DateOnly? BirthDate);
 }

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { CheckCircle2, Loader2, LogOut, ShieldAlert, Smartphone } from "lucide-react";
+import { CheckCircle2, IdCard, Loader2, LogOut, Phone, Plus, ShieldAlert, Smartphone } from "lucide-react";
 import type { AccountDeviceSession, AccountPatientProfile } from "@/lib/account/portal-account";
 import { formatDateTime } from "@/utils/format";
 
@@ -70,6 +70,117 @@ export function ProfileSwitcher({ profiles }: { profiles: AccountPatientProfile[
       ))}
       {message ? <p className="rounded-md bg-amber-100 px-3 py-2 text-sm font-semibold text-amber-900">{message}</p> : null}
     </div>
+  );
+}
+
+export function LinkProfileForm() {
+  const router = useRouter();
+  const [mabn, setMabn] = useState("");
+  const [phone, setPhone] = useState("");
+  const [citizenId, setCitizenId] = useState("");
+  const [birthDate, setBirthDate] = useState("");
+  const [message, setMessage] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  async function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setMessage("");
+    setSubmitting(true);
+
+    try {
+      const response = await fetch("/api/account/link-profile", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mabn, phone, citizenId, birthDate }),
+      });
+      const body = (await response.json().catch(() => null)) as { error?: string; data?: { fullName?: string } } | null;
+
+      if (!response.ok) {
+        setMessage(body?.error ?? "Không liên kết được hồ sơ.");
+        return;
+      }
+
+      setMabn("");
+      setPhone("");
+      setCitizenId("");
+      setBirthDate("");
+      setMessage(`Đã thêm hồ sơ ${body?.data?.fullName ?? ""}`.trim());
+      router.refresh();
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <form onSubmit={submit} className="grid gap-3">
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label className="grid gap-1.5 text-sm font-bold text-ink">
+          Mã bệnh nhân
+          <input
+            value={mabn}
+            onChange={(event) => setMabn(event.target.value)}
+            className="clinical-mono h-11 rounded-md border border-cream-200 bg-white/80 px-3 text-base outline-none focus:border-primary-600 focus:ring-2 focus:ring-primary-100"
+            placeholder="Ví dụ: 23006552"
+            autoComplete="off"
+            required
+          />
+        </label>
+        <label className="grid gap-1.5 text-sm font-bold text-ink">
+          Ngày sinh
+          <input
+            type="date"
+            value={birthDate}
+            onChange={(event) => setBirthDate(event.target.value)}
+            className="clinical-mono h-11 rounded-md border border-cream-200 bg-white/80 px-3 text-base outline-none focus:border-primary-600 focus:ring-2 focus:ring-primary-100"
+            required
+          />
+        </label>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label className="grid gap-1.5 text-sm font-bold text-ink">
+          Số điện thoại
+          <span className="flex h-11 items-center gap-2 rounded-md border border-cream-200 bg-white/80 px-3 focus-within:border-primary-600 focus-within:ring-2 focus-within:ring-primary-100">
+            <Phone aria-hidden="true" className="h-4 w-4 text-primary-700" />
+            <input
+              value={phone}
+              onChange={(event) => setPhone(event.target.value)}
+              className="clinical-mono h-full min-w-0 flex-1 bg-transparent text-base outline-none"
+              placeholder="0911071001"
+              inputMode="tel"
+              autoComplete="tel"
+              required
+            />
+          </span>
+        </label>
+        <label className="grid gap-1.5 text-sm font-bold text-ink">
+          CCCD/CMND
+          <span className="flex h-11 items-center gap-2 rounded-md border border-cream-200 bg-white/80 px-3 focus-within:border-primary-600 focus-within:ring-2 focus-within:ring-primary-100">
+            <IdCard aria-hidden="true" className="h-4 w-4 text-primary-700" />
+            <input
+              value={citizenId}
+              onChange={(event) => setCitizenId(event.target.value)}
+              className="clinical-mono h-full min-w-0 flex-1 bg-transparent text-base outline-none"
+              placeholder="Nhập CCCD/CMND"
+              inputMode="numeric"
+              autoComplete="off"
+              required
+            />
+          </span>
+        </label>
+      </div>
+
+      {message ? <p className="rounded-md bg-cream-100 px-3 py-2 text-sm font-semibold text-slate-700">{message}</p> : null}
+
+      <button
+        type="submit"
+        disabled={submitting}
+        className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-md bg-primary-700 px-4 font-bold text-white hover:bg-primary-800 disabled:cursor-not-allowed disabled:opacity-70"
+      >
+        {submitting ? <Loader2 aria-hidden="true" className="h-5 w-5 animate-spin" /> : <Plus aria-hidden="true" className="h-5 w-5" />}
+        Thêm hồ sơ người thân
+      </button>
+    </form>
   );
 }
 

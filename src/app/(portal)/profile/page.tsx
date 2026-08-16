@@ -1,6 +1,6 @@
 import { cookies } from "next/headers";
 import { Badge, Field, PageHeader, Panel, SectionHeader } from "@/components/ui";
-import { DeviceSessions, ProfileSwitcher } from "@/app/(portal)/profile/account-actions";
+import { DeviceSessions, LinkProfileForm, ProfileSwitcher } from "@/app/(portal)/profile/account-actions";
 import { getAccountOverview } from "@/lib/account/portal-account";
 import { getDemoPatientSession } from "@/lib/auth/session";
 import { createPatientRepository } from "@/lib/data";
@@ -46,6 +46,11 @@ export default async function ProfilePage() {
           <ProfileSwitcher profiles={account.profiles} />
         </Panel>
       </div>
+
+      <Panel className="mt-4">
+        <SectionHeader title="Thêm hồ sơ người thân" />
+        <LinkProfileForm />
+      </Panel>
 
       <Panel className="mt-4">
         <SectionHeader title="Lịch sử đăng nhập / thiết bị" meta={`${account.sessions.length} phiên`} />

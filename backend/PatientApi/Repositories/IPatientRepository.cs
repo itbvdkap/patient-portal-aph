@@ -5,6 +5,7 @@ namespace PatientApi.Repositories;
 public interface IPatientRepository
 {
     Task<PatientLoginVerificationDto?> VerifyLoginAsync(string phone, string citizenId, CancellationToken cancellationToken);
+    Task<PatientLoginVerificationDto?> VerifyLinkedProfileAsync(string hisPatientCode, string phone, string citizenId, DateOnly birthDate, CancellationToken cancellationToken);
     Task<PatientDto?> GetPatientAsync(string hisPatientCode, CancellationToken cancellationToken);
     Task<PatientSummaryDto> GetSummaryAsync(string hisPatientCode, CancellationToken cancellationToken);
     Task<IReadOnlyList<VisitDto>> GetVisitsAsync(string hisPatientCode, CancellationToken cancellationToken);

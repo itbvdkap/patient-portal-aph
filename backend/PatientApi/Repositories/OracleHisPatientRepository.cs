@@ -81,6 +81,69 @@ public sealed class OracleHisPatientRepository(IConfiguration configuration) : I
             Profiles: profiles);
     }
 
+    public async Task<PatientLoginVerificationDto?> VerifyLinkedProfileAsync(string hisPatientCode, string phone, string citizenId, DateOnly birthDate, CancellationToken cancellationToken)
+    {
+        const string sql = """
+            select
+              b.MABN as HisPatientCode,
+              b.HOTEN as FullName,
+              coalesce(dt.DIDONG, dt.NHA, dt.COQUAN) as Phone
+            from BTDBN b
+            inner join DIENTHOAI dt on dt.MABN = b.MABN
+            where b.MABN = :HisPatientCode
+              and trunc(b.NGAYSINH) = :BirthDate
+              and (
+                regexp_replace(nvl(dt.DIDONG, ''), '[^0-9]', '') = :Phone
+                or regexp_replace(nvl(dt.NHA, ''), '[^0-9]', '') = :Phone
+                or regexp_replace(nvl(dt.COQUAN, ''), '[^0-9]', '') = :Phone
+              )
+              and (
+                regexp_replace(nvl(b.CMND, ''), '[^0-9]', '') = :CitizenId
+                or regexp_replace(nvl(b.CMND_BN, ''), '[^0-9]', '') = :CitizenId
+                or regexp_replace(nvl(dt.CMND, ''), '[^0-9]', '') = :CitizenId
+              )
+            fetch first 1 rows only
+            """;
+
+        var normalizedPhone = NormalizeDigits(phone);
+        var normalizedCitizenId = NormalizeDigits(citizenId);
+        var normalizedMabn = hisPatientCode.Trim();
+
+        if (normalizedMabn.Length == 0 || normalizedPhone.Length < 9 || normalizedCitizenId.Length < 9)
+        {
+            return null;
+        }
+
+        await using var connection = CreateConnection();
+        var row = await connection.QuerySingleOrDefaultAsync(new CommandDefinition(
+            sql,
+            new
+            {
+                HisPatientCode = normalizedMabn,
+                Phone = normalizedPhone,
+                CitizenId = normalizedCitizenId,
+                BirthDate = birthDate.ToDateTime(TimeOnly.MinValue)
+            },
+            cancellationToken: cancellationToken,
+            commandTimeout: 20));
+
+        if (row is null)
+        {
+            return null;
+        }
+
+        var profile = new PatientLinkedProfileDto(
+            HisPatientCode: Convert.ToString(row.HISPATIENTCODE) ?? normalizedMabn,
+            FullName: Convert.ToString(row.FULLNAME) ?? string.Empty,
+            Relationship: "Người thân");
+
+        return new PatientLoginVerificationDto(
+            HisPatientCode: profile.HisPatientCode,
+            FullName: profile.FullName,
+            Phone: Convert.ToString(row.PHONE) ?? normalizedPhone,
+            Profiles: new[] { profile });
+    }
+
     public async Task<PatientDto?> GetPatientAsync(string hisPatientCode, CancellationToken cancellationToken)
     {
         const string sql = """
