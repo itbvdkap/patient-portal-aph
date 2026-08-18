@@ -10,6 +10,11 @@ export interface OtpSendResult {
   raw?: unknown;
 }
 
+type ZaloTemplateResponse = {
+  error?: number;
+  message?: string;
+};
+
 export function otpProvider(): OtpProvider {
   return process.env.AUTH_OTP_PROVIDER === "zalo" ? "zalo" : "test";
 }
@@ -87,6 +92,11 @@ async function sendZaloOtp(phone: string, otp: string): Promise<OtpSendResult> {
   const raw = (await response.json().catch(() => null)) as unknown;
   if (!response.ok) {
     throw new Error(`Zalo OTP send failed with status ${response.status}.`);
+  }
+
+  const zaloResult = raw as ZaloTemplateResponse | null;
+  if (zaloResult && typeof zaloResult.error === "number" && zaloResult.error !== 0) {
+    throw new Error(`Zalo OTP send failed: ${zaloResult.message ?? `error ${zaloResult.error}`}`);
   }
 
   return {
