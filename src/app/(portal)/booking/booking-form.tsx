@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import Script from "next/script";
 import {
   BadgeCheck,
@@ -14,10 +14,12 @@ import {
   Loader2,
   MapPin,
   Phone,
+  QrCode,
   Send,
   ShieldCheck,
   Search,
   UserRound,
+  X,
 } from "lucide-react";
 import { Badge, Panel, SectionHeader } from "@/components/ui";
 
@@ -137,6 +139,39 @@ type BookingResponse = {
   };
 };
 
+type CitizenQrData = {
+  idNumber: string;
+  fullName?: string;
+  birthDate?: string;
+  gender?: string;
+  address?: string;
+  issueDate?: string;
+};
+
+type Html5QrcodeScannerInstance = {
+  render: (successCallback: (decodedText: string) => void, errorCallback?: () => void) => void;
+  clear: () => Promise<void>;
+};
+
+type Html5QrcodeScannerConstructor = new (
+  elementId: string,
+  config: {
+    fps: number;
+    qrbox: { width: number; height: number };
+    aspectRatio?: number;
+    rememberLastUsedCamera?: boolean;
+    supportedScanTypes?: unknown[];
+  },
+  verbose: boolean,
+) => Html5QrcodeScannerInstance;
+
+type Html5QrcodeModule = {
+  Html5QrcodeScanner: Html5QrcodeScannerConstructor;
+  Html5QrcodeScanType?: {
+    SCAN_TYPE_CAMERA: unknown;
+  };
+};
+
 function inputClass(hasIcon = false) {
   return `min-h-12 w-full rounded-md border border-cream-200 bg-white px-3 text-sm font-semibold text-ink outline-none transition placeholder:text-slate-400 focus:border-primary-500 focus:ring-2 focus:ring-primary-100 ${
     hasIcon ? "pl-10" : ""
@@ -173,11 +208,43 @@ function formatVnDateInput(value: string) {
   return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
 }
 
+function formatCitizenDate(value: string | undefined) {
+  const digits = String(value ?? "").replace(/\D/g, "");
+  if (digits.length !== 8) return "";
+  return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
+}
+
+function normalizeCitizenGender(value: string | undefined) {
+  const text = String(value ?? "").trim().toLowerCase();
+  if (text === "nam" || text === "male" || text === "m") return "Nam";
+  if (text === "nữ" || text === "nu" || text === "female" || text === "f") return "Nữ";
+  return text ? "Khác" : "";
+}
+
+function parseCitizenQr(raw: string): CitizenQrData | null {
+  const parts = raw.split("|").map((part) => part.trim());
+
+  if (parts.length < 4 || !/^\d{9,12}$/.test(parts[0])) {
+    return null;
+  }
+
+  return {
+    idNumber: parts[0],
+    fullName: parts[2],
+    birthDate: formatCitizenDate(parts[3]),
+    gender: normalizeCitizenGender(parts[4]),
+    address: parts[5],
+    issueDate: formatCitizenDate(parts[6]),
+  };
+}
+
 export function BookingForm({ linkedProfiles = [] }: { linkedProfiles?: BookingPatientProfile[] }) {
   const [form, setForm] = useState<BookingFormState>(initialForm);
   const [patientMode, setPatientMode] = useState<"new" | "old">(linkedProfiles.length ? "old" : "new");
   const [manualPatientCode, setManualPatientCode] = useState("");
   const [lookupMessage, setLookupMessage] = useState("");
+  const [qrScannerOpen, setQrScannerOpen] = useState(false);
+  const [qrMessage, setQrMessage] = useState("");
   const [lookingUp, setLookingUp] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -213,6 +280,24 @@ export function BookingForm({ linkedProfiles = [] }: { linkedProfiles?: BookingP
     setManualPatientCode("");
     setLookupMessage("");
     setForm(initialForm);
+  }
+
+  function applyCitizenQr(data: CitizenQrData) {
+    setPatientMode("new");
+    setQrScannerOpen(false);
+    setQrMessage("Đã lấy thông tin từ QR CCCD.");
+    setError("");
+    setSuccess(null);
+    setForm((current) => ({
+      ...current,
+      oldPatientCode: "",
+      soCCCD: data.idNumber || current.soCCCD,
+      fullName: data.fullName || current.fullName,
+      birthDate: data.birthDate || current.birthDate,
+      gender: data.gender || current.gender,
+      address: data.address || current.address,
+      ngayCap: data.issueDate || current.ngayCap,
+    }));
   }
 
   async function lookupOldPatient() {
@@ -372,7 +457,40 @@ export function BookingForm({ linkedProfiles = [] }: { linkedProfiles?: BookingP
             {lookupMessage ? <p className="rounded-md bg-cream-100 px-3 py-2 text-sm font-semibold text-slate-700">{lookupMessage}</p> : null}
           </div>
         ) : null}
+
+        {patientMode === "new" ? (
+          <div className="mt-3 space-y-3 rounded-md border border-primary-100 bg-primary-50/70 p-3">
+            <div className="flex items-start gap-3">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md bg-white text-primary-800">
+                <QrCode aria-hidden="true" className="h-5 w-5" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="font-serif text-base font-black text-ink">Quét QR CCCD</p>
+                <p className="mt-1 text-sm leading-6 text-slate-700">Dùng camera điện thoại để tự điền CCCD, họ tên, ngày sinh, giới tính và địa chỉ.</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setQrScannerOpen(true);
+                setQrMessage("");
+              }}
+              className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-md bg-primary-800 px-4 text-sm font-black text-white"
+            >
+              <QrCode aria-hidden="true" className="h-4 w-4" />
+              Quét QR CCCD
+            </button>
+            {qrMessage ? <p className="rounded-md bg-white/80 px-3 py-2 text-sm font-semibold text-primary-900">{qrMessage}</p> : null}
+          </div>
+        ) : null}
       </Panel>
+
+      <CitizenQrScanner
+        open={qrScannerOpen}
+        onClose={() => setQrScannerOpen(false)}
+        onResult={applyCitizenQr}
+        onMessage={setQrMessage}
+      />
 
       <Panel>
         <SectionHeader title="Thông tin bệnh nhân" meta="Bắt buộc" />
@@ -647,5 +765,107 @@ export function BookingForm({ linkedProfiles = [] }: { linkedProfiles?: BookingP
         <Badge tone="slate">Dùng chung dữ liệu với benhvienanphu.vn</Badge>
       </div>
     </form>
+  );
+}
+
+function CitizenQrScanner({
+  open,
+  onClose,
+  onResult,
+  onMessage,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onResult: (data: CitizenQrData) => void;
+  onMessage: (message: string) => void;
+}) {
+  const scannerId = useId().replace(/:/g, "");
+  const scannerRef = useRef<Html5QrcodeScannerInstance | null>(null);
+  const [status, setStatus] = useState("Đang chuẩn bị camera...");
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    let cancelled = false;
+
+    async function startScanner() {
+      setStatus("Đang mở camera. Vui lòng cho phép trình duyệt sử dụng camera.");
+
+      try {
+        const qrModule = (await import("html5-qrcode")) as Html5QrcodeModule;
+        if (cancelled) return;
+
+        const supportedScanTypes = qrModule.Html5QrcodeScanType?.SCAN_TYPE_CAMERA
+          ? [qrModule.Html5QrcodeScanType.SCAN_TYPE_CAMERA]
+          : undefined;
+        const scanner = new qrModule.Html5QrcodeScanner(
+          scannerId,
+          {
+            fps: 10,
+            qrbox: { width: 260, height: 260 },
+            aspectRatio: 1,
+            rememberLastUsedCamera: true,
+            supportedScanTypes,
+          },
+          false,
+        );
+
+        scannerRef.current = scanner;
+        scanner.render(
+          (decodedText) => {
+            const data = parseCitizenQr(decodedText);
+            if (!data) {
+              setStatus("QR chưa đúng định dạng CCCD. Vui lòng đưa rõ mã QR trên CCCD vào khung quét.");
+              return;
+            }
+
+            void scannerRef.current?.clear().catch(() => undefined);
+            scannerRef.current = null;
+            onResult(data);
+          },
+          () => undefined,
+        );
+      } catch {
+        setStatus("Không mở được camera. Vui lòng kiểm tra quyền camera hoặc dùng trình duyệt khác trên điện thoại.");
+        onMessage("Không mở được camera để quét QR CCCD.");
+      }
+    }
+
+    void startScanner();
+
+    return () => {
+      cancelled = true;
+      void scannerRef.current?.clear().catch(() => undefined);
+      scannerRef.current = null;
+    };
+  }, [onMessage, onResult, open, scannerId]);
+
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/70 p-3 backdrop-blur-sm sm:p-6">
+      <div className="mx-auto flex h-full max-w-lg flex-col overflow-hidden rounded-md bg-cream-50 shadow-2xl">
+        <div className="flex items-center justify-between border-b border-cream-200 px-4 py-3">
+          <div>
+            <p className="font-serif text-lg font-black text-ink">Quét QR CCCD</p>
+            <p className="text-xs font-semibold text-slate-500">Đưa mã QR trên CCCD vào giữa khung camera</p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex h-10 w-10 items-center justify-center rounded-md border border-cream-200 bg-white text-slate-700"
+            aria-label="Đóng quét QR"
+          >
+            <X aria-hidden="true" className="h-5 w-5" />
+          </button>
+        </div>
+        <div className="flex-1 overflow-auto p-4">
+          <div id={scannerId} className="overflow-hidden rounded-md border border-cream-200 bg-white" />
+          <p className="mt-3 rounded-md bg-cream-100 px-3 py-2 text-sm font-semibold leading-6 text-slate-700">{status}</p>
+        </div>
+      </div>
+    </div>
   );
 }
