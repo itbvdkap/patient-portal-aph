@@ -8,6 +8,10 @@ export interface Patient {
   gender: Gender;
   phone: string;
   address: string;
+  citizenId?: string;
+  citizenIssueDate?: string;
+  soCCCD?: string;
+  ngayCap?: string;
   insurance: InsuranceCard;
 }
 

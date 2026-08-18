@@ -8,7 +8,9 @@ public sealed record PatientDto(
     string Gender,
     string Phone,
     string Address,
-    InsuranceCardDto Insurance);
+    InsuranceCardDto Insurance,
+    string CitizenId = "",
+    DateOnly? CitizenIssueDate = null);
 
 public sealed record InsuranceCardDto(
     string Id,

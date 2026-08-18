@@ -155,6 +155,8 @@ public sealed class OracleHisPatientRepository(IConfiguration configuration) : I
               b.PHAI as Gender,
               coalesce(dt.DIDONG, dt.NHA, dt.COQUAN) as Phone,
               b.DIACHI_HIENTAI as Address,
+              coalesce(b.CMND, b.CMND_BN, dt.CMND) as CitizenId,
+              cast(null as date) as CitizenIssueDate,
               coalesce(kcb_bh.MA_THE_BHYT, to_nchar(bh.SOTHE)) as CardNumber,
               case when kcb_bh.GT_THE_TU is not null then kcb_bh.GT_THE_TU else to_nchar(bh.TUNGAY, 'YYYYMMDD') end as ValidFrom,
               case when kcb_bh.GT_THE_DEN is not null then kcb_bh.GT_THE_DEN else to_nchar(bh.DENNGAY, 'YYYYMMDD') end as ValidTo
@@ -213,7 +215,9 @@ public sealed class OracleHisPatientRepository(IConfiguration configuration) : I
             Gender: MapGender(row.GENDER),
             Phone: row.PHONE ?? string.Empty,
             Address: row.ADDRESS ?? string.Empty,
-            Insurance: insurance);
+            Insurance: insurance,
+            CitizenId: row.CITIZENID ?? string.Empty,
+            CitizenIssueDate: null);
     }
 
     public async Task<PatientSummaryDto> GetSummaryAsync(string hisPatientCode, CancellationToken cancellationToken)

@@ -128,6 +128,8 @@ export type BookingPatientProfile = {
   birthDate?: string;
   gender?: string;
   address?: string;
+  soCCCD?: string;
+  ngayCap?: string;
   hasInsurance?: boolean;
 };
 
@@ -169,6 +171,7 @@ type Html5QrcodeModule = {
   Html5QrcodeScanner: Html5QrcodeScannerConstructor;
   Html5QrcodeScanType?: {
     SCAN_TYPE_CAMERA: unknown;
+    SCAN_TYPE_FILE?: unknown;
   };
 };
 
@@ -242,6 +245,8 @@ export function BookingForm({ linkedProfiles = [] }: { linkedProfiles?: BookingP
   const [form, setForm] = useState<BookingFormState>(initialForm);
   const [patientMode, setPatientMode] = useState<"new" | "old">(linkedProfiles.length ? "old" : "new");
   const [manualPatientCode, setManualPatientCode] = useState("");
+  const [manualVerifyBirthDate, setManualVerifyBirthDate] = useState("");
+  const [manualVerifyPhone, setManualVerifyPhone] = useState("");
   const [lookupMessage, setLookupMessage] = useState("");
   const [qrScannerOpen, setQrScannerOpen] = useState(false);
   const [qrMessage, setQrMessage] = useState("");
@@ -270,6 +275,8 @@ export function BookingForm({ linkedProfiles = [] }: { linkedProfiles?: BookingP
       birthDate: profile.birthDate ?? current.birthDate,
       gender: profile.gender ?? current.gender,
       address: profile.address ?? current.address,
+      soCCCD: profile.soCCCD ?? current.soCCCD,
+      ngayCap: profile.ngayCap ?? current.ngayCap,
       hasInsurance: Boolean(profile.hasInsurance),
       ghichu: current.ghichu || "Tái khám",
     }));
@@ -278,6 +285,8 @@ export function BookingForm({ linkedProfiles = [] }: { linkedProfiles?: BookingP
   function startNewPatient() {
     setPatientMode("new");
     setManualPatientCode("");
+    setManualVerifyBirthDate("");
+    setManualVerifyPhone("");
     setLookupMessage("");
     setForm(initialForm);
   }
@@ -312,7 +321,11 @@ export function BookingForm({ linkedProfiles = [] }: { linkedProfiles?: BookingP
       const response = await fetch("/api/booking/patient-profile", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mabn }),
+        body: JSON.stringify({
+          mabn,
+          birthDate: manualVerifyBirthDate,
+          phone: manualVerifyPhone,
+        }),
       });
       const body = (await response.json().catch(() => null)) as { error?: string; data?: BookingPatientProfile } | null;
 
@@ -322,7 +335,7 @@ export function BookingForm({ linkedProfiles = [] }: { linkedProfiles?: BookingP
       }
 
       applyOldProfile(body.data);
-      setLookupMessage(`Đã lấy thông tin hồ sơ ${body.data.fullName}.`);
+      setLookupMessage(`Đã xác minh và lấy thông tin hồ sơ ${body.data.fullName}.`);
     } finally {
       setLookingUp(false);
     }
@@ -444,16 +457,49 @@ export function BookingForm({ linkedProfiles = [] }: { linkedProfiles?: BookingP
                 placeholder="Nhập mã BN cũ"
                 autoComplete="off"
               />
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <label>
+                <span className={labelClass()}>Ngày sinh để xác minh</span>
+                <input
+                  value={manualVerifyBirthDate}
+                  onChange={(event) => {
+                    setManualVerifyBirthDate(formatVnDateInput(event.target.value));
+                    setLookupMessage("");
+                  }}
+                  className={inputClass()}
+                  placeholder="dd/mm/yyyy"
+                  inputMode="numeric"
+                />
+              </label>
+              <label>
+                <span className={labelClass()}>SĐT đã đăng ký</span>
+                <input
+                  value={manualVerifyPhone}
+                  onChange={(event) => {
+                    setManualVerifyPhone(event.target.value);
+                    setLookupMessage("");
+                  }}
+                  className={inputClass()}
+                  placeholder="Có thể nhập nếu nhớ"
+                  inputMode="tel"
+                />
+              </label>
+            </div>
+            <div className="grid gap-2">
               <button
                 type="button"
                 onClick={lookupOldPatient}
-                disabled={!manualPatientCode.trim() || lookingUp}
-                className="inline-flex min-h-10 shrink-0 items-center gap-2 rounded-md bg-primary-700 px-3 text-sm font-bold text-white disabled:opacity-60"
+                disabled={!manualPatientCode.trim() || (!manualVerifyBirthDate.trim() && !manualVerifyPhone.trim()) || lookingUp}
+                className="inline-flex min-h-11 w-full shrink-0 items-center justify-center gap-2 rounded-md bg-primary-800 px-3 text-sm font-black text-white shadow-sm transition hover:bg-primary-900 disabled:cursor-not-allowed disabled:bg-slate-500 disabled:opacity-100"
               >
                 {lookingUp ? <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" /> : <Search aria-hidden="true" className="h-4 w-4" />}
-                Tìm
+                Xác minh hồ sơ
               </button>
             </div>
+            <p className="rounded-md border border-primary-100 bg-primary-50 px-3 py-2 text-xs font-semibold leading-5 text-primary-900">
+              Để bảo mật, app chỉ tự điền hồ sơ cũ và CCCD/CMND sau khi mã BN khớp thêm ngày sinh hoặc số điện thoại.
+            </p>
             {lookupMessage ? <p className="rounded-md bg-cream-100 px-3 py-2 text-sm font-semibold text-slate-700">{lookupMessage}</p> : null}
           </div>
         ) : null}
@@ -466,7 +512,7 @@ export function BookingForm({ linkedProfiles = [] }: { linkedProfiles?: BookingP
               </div>
               <div className="min-w-0 flex-1">
                 <p className="font-serif text-base font-black text-ink">Quét QR CCCD</p>
-                <p className="mt-1 text-sm leading-6 text-slate-700">Dùng camera điện thoại để tự điền CCCD, họ tên, ngày sinh, giới tính và địa chỉ.</p>
+                <p className="mt-1 text-sm leading-6 text-slate-700">Dùng camera điện thoại hoặc ảnh QR CCCD để tự điền CCCD, họ tên, ngày sinh, giới tính và địa chỉ.</p>
               </div>
             </div>
             <button
@@ -750,7 +796,7 @@ export function BookingForm({ linkedProfiles = [] }: { linkedProfiles?: BookingP
         <button
           type="submit"
           disabled={isSubmitting}
-          className="flex min-h-12 w-full items-center justify-center gap-2 rounded-md bg-primary-800 px-4 text-base font-black text-white shadow-[0_12px_28px_rgba(0,109,101,0.22)] transition hover:bg-primary-900 disabled:cursor-not-allowed disabled:opacity-70"
+          className="flex min-h-12 w-full items-center justify-center gap-2 rounded-md border border-primary-950 bg-[#005f56] px-4 text-base font-black text-white shadow-[0_14px_32px_rgba(0,95,86,0.32)] ring-2 ring-primary-100 transition hover:bg-[#004c45] disabled:cursor-not-allowed disabled:border-slate-500 disabled:bg-slate-600 disabled:opacity-100"
         >
           {isSubmitting ? <Loader2 aria-hidden="true" className="h-5 w-5 animate-spin" /> : <Send aria-hidden="true" className="h-5 w-5" />}
           Gửi đăng ký khám
@@ -798,7 +844,10 @@ function CitizenQrScanner({
         if (cancelled) return;
 
         const supportedScanTypes = qrModule.Html5QrcodeScanType?.SCAN_TYPE_CAMERA
-          ? [qrModule.Html5QrcodeScanType.SCAN_TYPE_CAMERA]
+          ? [
+              qrModule.Html5QrcodeScanType.SCAN_TYPE_CAMERA,
+              ...(qrModule.Html5QrcodeScanType.SCAN_TYPE_FILE ? [qrModule.Html5QrcodeScanType.SCAN_TYPE_FILE] : []),
+            ]
           : undefined;
         const scanner = new qrModule.Html5QrcodeScanner(
           scannerId,
@@ -828,8 +877,8 @@ function CitizenQrScanner({
           () => undefined,
         );
       } catch {
-        setStatus("Không mở được camera. Vui lòng kiểm tra quyền camera hoặc dùng trình duyệt khác trên điện thoại.");
-        onMessage("Không mở được camera để quét QR CCCD.");
+        setStatus("Không mở được camera. Vui lòng kiểm tra quyền camera, dùng HTTPS, hoặc chọn quét từ ảnh QR nếu trình duyệt hỗ trợ.");
+        onMessage("Không mở được camera để quét QR CCCD. Bạn vẫn có thể nhập CCCD thủ công.");
       }
     }
 
@@ -850,7 +899,7 @@ function CitizenQrScanner({
         <div className="flex items-center justify-between border-b border-cream-200 px-4 py-3">
           <div>
             <p className="font-serif text-lg font-black text-ink">Quét QR CCCD</p>
-            <p className="text-xs font-semibold text-slate-500">Đưa mã QR trên CCCD vào giữa khung camera</p>
+            <p className="text-xs font-semibold text-slate-500">Cho phép camera hoặc chọn ảnh QR CCCD từ máy</p>
           </div>
           <button
             type="button"
