@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Script from "next/script";
 import { CheckCircle2, IdCard, KeyRound, Loader2, LockKeyhole, LogIn, Phone, RotateCcw, UserRound } from "lucide-react";
@@ -17,6 +17,25 @@ type ApiBody = {
   error?: string;
 };
 
+type TurnstileApi = {
+  render: (
+    container: HTMLElement,
+    options: {
+      sitekey: string;
+      callback: (token: string) => void;
+      "expired-callback": () => void;
+      "error-callback": () => void;
+    }
+  ) => string;
+  remove: (widgetId: string) => void;
+};
+
+declare global {
+  interface Window {
+    turnstile?: TurnstileApi;
+  }
+}
+
 export function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -30,6 +49,9 @@ export function LoginForm() {
   const [remember, setRemember] = useState(true);
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [turnstileReady, setTurnstileReady] = useState(false);
+  const [registerTurnstileToken, setRegisterTurnstileToken] = useState("");
+  const [forgotTurnstileToken, setForgotTurnstileToken] = useState("");
 
   const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
 
@@ -37,8 +59,13 @@ export function LoginForm() {
     return hasLinkedProfile ? searchParams.get("next") ?? "/dashboard" : "/profile";
   }
 
-  function turnstileToken(form: HTMLFormElement) {
-    return form.querySelector<HTMLInputElement>('input[name="cf-turnstile-response"]')?.value ?? "";
+  function requireTurnstile(token: string) {
+    if (siteKey && !token) {
+      setMessage("Vui lòng xác thực chống bot trước khi gửi.");
+      return false;
+    }
+
+    return true;
   }
 
   async function postJson(url: string, payload: Record<string, unknown>) {
@@ -76,12 +103,17 @@ export function LoginForm() {
     setSubmitting(true);
 
     try {
+      if (!requireTurnstile(registerTurnstileToken)) {
+        return;
+      }
+
       const body = await postJson("/api/auth/start-register", {
         phone,
         fullName,
-        cf_turnstile_response: turnstileToken(event.currentTarget),
+        cf_turnstile_response: registerTurnstileToken,
       });
       setRegisterStep("otp");
+      setRegisterTurnstileToken("");
       setMessage(body?.data?.testOtp ? `Mã OTP test: ${body.data.testOtp}` : "Mã OTP đã được gửi qua Zalo.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Không gửi được OTP.");
@@ -130,11 +162,16 @@ export function LoginForm() {
     setSubmitting(true);
 
     try {
+      if (!requireTurnstile(forgotTurnstileToken)) {
+        return;
+      }
+
       const body = await postJson("/api/auth/forgot-password", {
         phone,
-        cf_turnstile_response: turnstileToken(event.currentTarget),
+        cf_turnstile_response: forgotTurnstileToken,
       });
       setForgotStep("reset");
+      setForgotTurnstileToken("");
       setMessage(body?.data?.testOtp ? `Mã OTP test: ${body.data.testOtp}` : "Mã OTP khôi phục đã được gửi qua Zalo.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Không gửi được OTP khôi phục.");
@@ -164,7 +201,7 @@ export function LoginForm() {
 
   return (
     <div className="space-y-4">
-      {siteKey && <Script src="https://challenges.cloudflare.com/turnstile/v0/api.js" strategy="lazyOnload" />}
+      {siteKey && <Script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" strategy="lazyOnload" onLoad={() => setTurnstileReady(true)} />}
 
       <div className="grid grid-cols-2 gap-2 rounded-md bg-cream-100 p-1">
         <ModeButton active={mode === "login"} onClick={() => setMode("login")}>
@@ -205,9 +242,9 @@ export function LoginForm() {
         <form onSubmit={startRegister} className="space-y-4">
           <TextField icon={UserRound} label="Họ tên" value={fullName} setValue={setFullName} placeholder="Nhập họ tên" autoComplete="name" />
           <PhoneField phone={phone} setPhone={setPhone} />
-          <TurnstileBox siteKey={siteKey} />
+          <TurnstileBox siteKey={siteKey} ready={turnstileReady} onToken={setRegisterTurnstileToken} />
           <StatusMessage message={message} />
-          <PrimaryButton disabled={submitting || !phone || fullName.trim().length < 2} loading={submitting} icon={Phone}>
+          <PrimaryButton disabled={submitting || !phone || fullName.trim().length < 2 || Boolean(siteKey && !registerTurnstileToken)} loading={submitting} icon={Phone}>
             Gửi OTP Zalo
           </PrimaryButton>
         </form>
@@ -255,9 +292,9 @@ export function LoginForm() {
         <form onSubmit={startForgotPassword} className="space-y-4">
           <Notice>Nhập số điện thoại tài khoản để nhận OTP khôi phục mật khẩu.</Notice>
           <PhoneField phone={phone} setPhone={setPhone} />
-          <TurnstileBox siteKey={siteKey} />
+          <TurnstileBox siteKey={siteKey} ready={turnstileReady} onToken={setForgotTurnstileToken} />
           <StatusMessage message={message} />
-          <PrimaryButton disabled={submitting || !phone} loading={submitting} icon={Phone}>
+          <PrimaryButton disabled={submitting || !phone || Boolean(siteKey && !forgotTurnstileToken)} loading={submitting} icon={Phone}>
             Gửi OTP khôi phục
           </PrimaryButton>
           <BackButton onClick={() => setMode("login")} />
@@ -383,11 +420,31 @@ function OtpField({ otp, setOtp }: { otp: string; setOtp: (value: string) => voi
   );
 }
 
-function TurnstileBox({ siteKey }: { siteKey?: string }) {
+function TurnstileBox({ siteKey, ready, onToken }: { siteKey?: string; ready: boolean; onToken: (token: string) => void }) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!siteKey || !ready || !containerRef.current || !window.turnstile) {
+      return;
+    }
+
+    const widgetId = window.turnstile.render(containerRef.current, {
+      sitekey: siteKey,
+      callback: onToken,
+      "expired-callback": () => onToken(""),
+      "error-callback": () => onToken(""),
+    });
+
+    return () => {
+      onToken("");
+      window.turnstile?.remove(widgetId);
+    };
+  }, [onToken, ready, siteKey]);
+
   if (!siteKey) return null;
   return (
-    <div className="flex justify-center">
-      <div className="cf-turnstile" data-sitekey={siteKey} />
+    <div className="flex min-h-[70px] justify-center">
+      <div ref={containerRef} />
     </div>
   );
 }
