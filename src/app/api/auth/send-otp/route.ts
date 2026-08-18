@@ -39,7 +39,7 @@ export async function POST(request: Request) {
       phone_masked: maskedOtpPhone(phone),
       otp_hash: hashOtp(phone, otp),
       provider,
-      status: sendResult.sent ? "sent" : "pending",
+      status: sendResult.sent ? "sent" : "failed",
       send_result: sendResult,
       expires_at: expiresAt,
       max_attempts: maxOtpAttempts(),
@@ -48,6 +48,10 @@ export async function POST(request: Request) {
     if (error) {
       console.error("OTP attempt insert failed", error);
       return NextResponse.json({ error: "Không ghi được phiên OTP. Vui lòng thử lại sau." }, { status: 502 });
+    }
+
+    if (!sendResult.sent) {
+      return NextResponse.json({ error: sendResult.message ?? "Zalo chưa chấp nhận gửi OTP." }, { status: 502 });
     }
 
     return NextResponse.json({

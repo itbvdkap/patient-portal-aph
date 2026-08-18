@@ -14,7 +14,7 @@ export async function createOtpAttempt(phone: string, purpose: "register" | "res
     otp_hash: hashOtp(phone, otp),
     provider,
     purpose,
-    status: sendResult.sent ? "sent" : "pending",
+    status: sendResult.sent ? "sent" : "failed",
     send_result: sendResult,
     expires_at: expiresAt,
     max_attempts: maxOtpAttempts(),
@@ -22,6 +22,10 @@ export async function createOtpAttempt(phone: string, purpose: "register" | "res
 
   if (error) {
     throw new Error(`Cannot create OTP attempt: ${error.message}`);
+  }
+
+  if (!sendResult.sent) {
+    throw new Error(sendResult.message ?? "Zalo OTP send failed.");
   }
 
   return {

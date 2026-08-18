@@ -96,7 +96,12 @@ async function sendZaloOtp(phone: string, otp: string): Promise<OtpSendResult> {
 
   const zaloResult = raw as ZaloTemplateResponse | null;
   if (zaloResult && typeof zaloResult.error === "number" && zaloResult.error !== 0) {
-    throw new Error(`Zalo OTP send failed: ${zaloResult.message ?? `error ${zaloResult.error}`}`);
+    return {
+      provider: "zalo",
+      sent: false,
+      message: zaloResult.message ?? `Zalo error ${zaloResult.error}`,
+      raw,
+    };
   }
 
   return {
