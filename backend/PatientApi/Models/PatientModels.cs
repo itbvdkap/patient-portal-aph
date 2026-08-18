@@ -108,3 +108,10 @@ public sealed record PatientLinkedProfileDto(
     string HisPatientCode,
     string FullName,
     string Relationship);
+
+public sealed record PatientProfileLookupDto(
+    string HisPatientCode,
+    string PatientCodeMasked,
+    string FullName,
+    string PhoneMasked,
+    string BirthDateMasked);

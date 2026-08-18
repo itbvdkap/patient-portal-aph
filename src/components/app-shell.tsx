@@ -12,7 +12,6 @@ import {
   HeartPulse,
   Home,
   LogOut,
-  Menu,
   MessageCircle,
   PhoneCall,
   Pill,
@@ -85,8 +84,7 @@ export function AppShell({
   });
   const decoratedMoreItems = moreItems.map((item) => (item.href === "/appointments" ? { ...item, badgeCount: upcomingAppointmentsCount } : item));
   const allItems = [...decoratedPrimaryItems, ...decoratedMoreItems];
-  const moreBadgeCount = upcomingAppointmentsCount + pendingRegistrationsCount;
-  const isMoreActive = [...decoratedMoreItems, decoratedPrimaryItems[2]].some((item) => pathname.startsWith(item.href));
+  const accountItem = decoratedMoreItems.find((item) => item.href === "/profile") ?? moreItems[moreItems.length - 1];
   const showBackButton = pathname !== "/dashboard";
 
   async function logout() {
@@ -167,17 +165,7 @@ export function AppShell({
           <BottomLink item={decoratedPrimaryItems[3]} label="Lịch sử" active={pathname.startsWith("/visits")} />
           <BottomLink item={decoratedPrimaryItems[4]} label="Xét nghiệm" active={pathname.startsWith("/lab-results")} />
           <BottomLink item={decoratedPrimaryItems[5]} label="CĐHA" active={pathname.startsWith("/imaging")} />
-          <Link
-            href="/insurance"
-            className={`flex min-h-16 flex-col items-center justify-center gap-1 text-xs font-semibold ${isMoreActive ? "bg-primary-50 text-primary-700" : "text-slate-600"}`}
-            aria-label="Thêm"
-          >
-            <span className="relative">
-              <Menu aria-hidden="true" className="h-5 w-5" />
-              {moreBadgeCount > 0 && <CountBadge count={moreBadgeCount} className="absolute -right-3 -top-3" />}
-            </span>
-            <span className="max-w-full px-0.5 leading-tight">Thêm</span>
-          </Link>
+          <BottomLink item={accountItem} label="Tài khoản" active={pathname.startsWith("/profile")} />
         </div>
       </nav>
     </div>

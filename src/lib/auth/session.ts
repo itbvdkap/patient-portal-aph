@@ -13,28 +13,34 @@ export interface AuthenticatedPatientSession {
   userId: string;
   mabn: string;
   sessionId?: string;
+  accountId?: string;
   accountKey?: string;
+  phone?: string;
   profiles: PatientSessionProfile[];
 }
 
 interface PatientSessionPayload {
-  mabn: string;
+  mabn?: string;
   exp: number;
   sid?: string;
+  accountId?: string;
   accountKey?: string;
+  phone?: string;
   profiles?: Array<{ mabn: string; fullName?: string }>;
 }
 
 export function createPatientSessionCookie(
   hisPatientCode: string,
   maxAgeSeconds: number,
-  options: { sessionId?: string; accountKey?: string; profiles?: Array<{ mabn: string; fullName?: string }> } = {},
+  options: { sessionId?: string; accountId?: string; accountKey?: string; phone?: string; profiles?: Array<{ mabn: string; fullName?: string }> } = {},
 ) {
   const payload: PatientSessionPayload = {
-    mabn: hisPatientCode,
+    mabn: hisPatientCode || undefined,
     exp: Math.floor(Date.now() / 1000) + maxAgeSeconds,
     sid: options.sessionId ?? randomUUID(),
+    accountId: options.accountId,
     accountKey: options.accountKey,
+    phone: options.phone,
     profiles: normalizeProfiles(options.profiles ?? [{ mabn: hisPatientCode }]),
   };
   const encodedPayload = Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
@@ -51,21 +57,25 @@ export function getDemoPatientSession(cookies: ReadonlyRequestCookies): Authenti
   const payload = readSignedPayload(cookieValue);
   const hisPatientCode = payload?.mabn ?? readDevelopmentMabn(cookieValue);
 
-  if (!hisPatientCode) {
+  const accountId = payload?.accountId;
+
+  if (!hisPatientCode && !accountId) {
     return null;
   }
 
-  const profiles = normalizeProfiles(payload?.profiles ?? [{ mabn: hisPatientCode }]).map((profile) => ({
+  const profiles = normalizeProfiles(payload?.profiles ?? (hisPatientCode ? [{ mabn: hisPatientCode }] : [])).map((profile) => ({
     ...profile,
     patientId: `his-${profile.mabn}`,
   }));
 
   return {
-    patientId: `his-${hisPatientCode}`,
-    userId: payload?.accountKey ? `account-${payload.accountKey}` : `patient-${hisPatientCode}`,
-    mabn: hisPatientCode,
+    patientId: hisPatientCode ? `his-${hisPatientCode}` : "",
+    userId: accountId ? `account-${accountId}` : payload?.accountKey ? `account-${payload.accountKey}` : `patient-${hisPatientCode}`,
+    mabn: hisPatientCode ?? "",
     sessionId: payload?.sid,
+    accountId,
     accountKey: payload?.accountKey,
+    phone: payload?.phone,
     profiles,
   };
 }
@@ -84,7 +94,7 @@ function readSignedPayload(cookieValue: string) {
     return null;
   }
 
-  if (!payload.mabn || payload.exp <= Math.floor(Date.now() / 1000)) {
+  if ((!payload.mabn && !payload.accountId) || payload.exp <= Math.floor(Date.now() / 1000)) {
     return null;
   }
 

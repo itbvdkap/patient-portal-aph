@@ -18,6 +18,9 @@ export const metadata: Metadata = {
     statusBarStyle: "default",
     title: "An Phú",
   },
+  other: {
+    "zalo-platform-site-verification": "JeUz19-sEpD8m8qaaS0a36VMeLkBe7i3DJCq",
+  },
 };
 
 export const viewport: Viewport = {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ChevronDown, Loader2 } from "lucide-react";
+import { ChevronDown, Loader2, RefreshCw } from "lucide-react";
 import { Badge, EmptyState, Panel } from "@/components/ui";
 import type { LabResult, Visit } from "@/types/patient";
 import { formatDate, formatDateTime } from "@/utils/format";
@@ -27,10 +27,10 @@ export function LabResultsList({ visits }: { visits: Visit[] }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openVisitId]);
 
-  async function loadVisit(visitId: string) {
+  async function loadVisit(visitId: string, force = false) {
     const current = cache[visitId];
 
-    if (current?.status === "loading" || current?.status === "ready") {
+    if (current?.status === "loading" || (!force && current?.status === "ready")) {
       return;
     }
 
@@ -92,14 +92,40 @@ export function LabResultsList({ visits }: { visits: Visit[] }) {
             {isOpen && (
               <div className="border-t border-slate-100 p-4 sm:p-5">
                 {state.status === "loading" && <LoadingRows />}
-                {state.status === "error" && <EmptyState text={`Không tải được kết quả xét nghiệm: ${state.message}`} />}
-                {state.status === "ready" && state.items.length === 0 && <EmptyState text="Chưa có kết quả xét nghiệm trong lần khám này." />}
+                {state.status === "error" && (
+                  <ReloadableEmptyState
+                    text={`Không tải được kết quả xét nghiệm: ${state.message}`}
+                    onReload={() => loadVisit(visit.id, true)}
+                  />
+                )}
+                {state.status === "ready" && state.items.length === 0 && (
+                  <ReloadableEmptyState
+                    text="Chưa có kết quả xét nghiệm trong lần khám này."
+                    onReload={() => loadVisit(visit.id, true)}
+                  />
+                )}
                 {state.status === "ready" && state.items.length > 0 && <LabForms forms={forms} />}
               </div>
             )}
           </Panel>
         );
       })}
+    </div>
+  );
+}
+
+function ReloadableEmptyState({ text, onReload }: { text: string; onReload: () => void }) {
+  return (
+    <div className="space-y-3">
+      <EmptyState text={text} />
+      <button
+        type="button"
+        onClick={onReload}
+        className="inline-flex items-center gap-2 rounded-md border border-primary-200 bg-white px-3 py-2 text-sm font-bold text-primary-800 shadow-sm transition hover:bg-primary-50"
+      >
+        <RefreshCw aria-hidden="true" className="h-4 w-4" />
+        Tải lại kết quả
+      </button>
     </div>
   );
 }

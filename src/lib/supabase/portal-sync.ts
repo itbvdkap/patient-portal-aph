@@ -14,6 +14,14 @@ export interface LoginVerificationProfile {
   relationship?: string;
 }
 
+export interface ProfileLookupResult {
+  hisPatientCode: string;
+  patientCodeMasked: string;
+  fullName: string;
+  phoneMasked: string;
+  birthDateMasked: string;
+}
+
 const authPollIntervalMs = Number(process.env.SUPABASE_AUTH_POLL_INTERVAL_MS ?? 1000);
 const authWaitMs = Number(process.env.SUPABASE_AUTH_WAIT_MS ?? 25000);
 
@@ -29,6 +37,10 @@ export function profileLinkLookupHash(mabn: string, phone: string, citizenId: st
   return createHash("sha256")
     .update(`link|${mabn.trim()}|${normalizeDigits(phone)}|${normalizeDigits(citizenId)}|${birthDate.trim()}`)
     .digest("hex");
+}
+
+export function profileLookupHash(mabn: string) {
+  return createHash("sha256").update(`lookup|${mabn.trim()}`).digest("hex");
 }
 
 export async function requestOnDemandLoginSync(phone: string, citizenId: string): Promise<LoginVerificationResult | null> {
@@ -100,16 +112,17 @@ export async function requestOnDemandProfileLinkSync({
 }: {
   mabn: string;
   phone: string;
-  citizenId: string;
+  citizenId?: string;
   birthDate: string;
 }): Promise<LoginVerificationResult | null> {
   const supabase = createSupabaseServiceClient();
-  const lookupHash = profileLinkLookupHash(mabn, phone, citizenId, birthDate);
+  const normalizedCitizenId = citizenId ?? "";
+  const lookupHash = profileLinkLookupHash(mabn, phone, normalizedCitizenId, birthDate);
   const attemptId = randomUUID();
   const encryptedPayload = await encryptAuthPayload({
     mabn: mabn.trim(),
     phone: normalizeDigits(phone),
-    citizenId: normalizeDigits(citizenId),
+    citizenId: normalizeDigits(normalizedCitizenId),
     birthDate: birthDate.trim(),
     attemptId,
   });
@@ -148,6 +161,52 @@ export async function requestOnDemandProfileLinkSync({
   }
 
   return null;
+}
+
+export async function requestOnDemandProfileLookupSync(mabn: string): Promise<ProfileLookupResult | null> {
+  const supabase = createSupabaseServiceClient();
+  const lookupHash = profileLookupHash(mabn);
+  const attemptId = randomUUID();
+  const encryptedPayload = await encryptAuthPayload({
+    mabn: mabn.trim(),
+    lookupOnly: true,
+    attemptId,
+  });
+  const created = await supabase.from("portal_auth_attempts").insert({
+    attempt_id: attemptId,
+    lookup_hash: lookupHash,
+    encrypted_payload: encryptedPayload,
+    status: "queued",
+  });
+
+  if (created.error) {
+    throw new Error(`Supabase profile lookup enqueue failed: ${created.error.message}`);
+  }
+
+  const started = Date.now();
+  while (Date.now() - started < authWaitMs) {
+    await sleep(authPollIntervalMs);
+
+    const attempt = await supabase
+      .from("portal_auth_attempts")
+      .select("status,result_json,error_message")
+      .eq("attempt_id", attemptId)
+      .maybeSingle();
+
+    if (attempt.error) {
+      throw new Error(`Supabase profile lookup polling failed: ${attempt.error.message}`);
+    }
+
+    if (attempt.data?.status === "success" && attempt.data.result_json) {
+      return attempt.data.result_json as ProfileLookupResult;
+    }
+
+    if (attempt.data?.status === "failed") {
+      return null;
+    }
+  }
+
+  throw new Error("PROFILE_LOOKUP_TIMEOUT");
 }
 
 export async function enqueuePatientSync(mabn: string, resourceName = "all", resourceId?: string) {

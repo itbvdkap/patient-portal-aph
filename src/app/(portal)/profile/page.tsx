@@ -8,9 +8,9 @@ import { formatDate } from "@/utils/format";
 
 export default async function ProfilePage() {
   const session = getDemoPatientSession(await cookies());
-  const patient = await createPatientRepository().getCurrentPatient();
+  const patient = session?.mabn ? await createPatientRepository().getCurrentPatient() : null;
   const account = session
-    ? await getAccountOverview(session, patient)
+    ? await getAccountOverview(session, patient ?? undefined)
     : {
         profiles: [],
         sessions: [],
@@ -26,20 +26,29 @@ export default async function ProfilePage() {
       />
 
       <div className="grid gap-4 xl:grid-cols-[1fr_0.95fr]">
-        <Panel>
-          <SectionHeader title="Hồ sơ đang xem" />
-          <dl className="grid gap-3 sm:grid-cols-2">
-            <Field label="Mã bệnh nhân" value={patient.hisPatientCode} />
-            <Field label="Họ tên" value={patient.fullName} />
-            <Field label="Ngày sinh" value={formatDate(patient.birthDate)} />
-            <Field label="Giới tính" value={patient.gender} />
-            <Field label="Điện thoại" value={patient.phone || "Chưa ghi nhận"} />
-            <Field label="Địa chỉ" value={patient.address || "Chưa ghi nhận"} />
-            <Field label="Số thẻ BHYT" value={patient.insurance.cardNumber || "Chưa ghi nhận"} />
-            <Field label="Từ ngày" value={formatDate(patient.insurance.validFrom)} />
-            <Field label="Đến ngày" value={formatDate(patient.insurance.validTo)} />
-          </dl>
-        </Panel>
+        {patient ? (
+          <Panel>
+            <SectionHeader title="Hồ sơ đang xem" />
+            <dl className="grid gap-3 sm:grid-cols-2">
+              <Field label="Mã bệnh nhân" value={patient.hisPatientCode} />
+              <Field label="Họ tên" value={patient.fullName} />
+              <Field label="Ngày sinh" value={formatDate(patient.birthDate)} />
+              <Field label="Giới tính" value={patient.gender} />
+              <Field label="Điện thoại" value={patient.phone || "Chưa ghi nhận"} />
+              <Field label="Địa chỉ" value={patient.address || "Chưa ghi nhận"} />
+              <Field label="Số thẻ BHYT" value={patient.insurance.cardNumber || "Chưa ghi nhận"} />
+              <Field label="Từ ngày" value={formatDate(patient.insurance.validFrom)} />
+              <Field label="Đến ngày" value={formatDate(patient.insurance.validTo)} />
+            </dl>
+          </Panel>
+        ) : (
+          <Panel>
+            <SectionHeader title="Chưa liên kết hồ sơ y tế" />
+            <p className="text-sm leading-6 text-slate-600">
+              Tài khoản đã đăng nhập bằng số điện thoại. Vui lòng thêm hồ sơ bằng mã bệnh nhân để xem kết quả khám, BHYT, đơn thuốc và lịch hẹn.
+            </p>
+          </Panel>
+        )}
 
         <Panel>
           <SectionHeader title="Chọn hồ sơ đang xem" meta={`${account.profiles.length} hồ sơ`} />

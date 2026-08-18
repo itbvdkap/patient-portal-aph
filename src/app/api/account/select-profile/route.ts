@@ -31,7 +31,9 @@ export async function POST(request: Request) {
     demoSessionCookie,
     createPatientSessionCookie(parsed.data.mabn, maxAge, {
       sessionId: session.sessionId,
+      accountId: session.accountId,
       accountKey: session.accountKey,
+      phone: session.phone,
       profiles,
     }),
     {

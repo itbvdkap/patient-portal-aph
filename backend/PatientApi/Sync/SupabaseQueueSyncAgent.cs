@@ -1,4 +1,5 @@
 using PatientApi.Repositories;
+using PatientApi.Models;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -51,9 +52,31 @@ public sealed class SupabaseQueueSyncAgent(
             logger.LogInformation("Processing auth attempt {AttemptId}", job.AttemptId);
             using var scope = scopeFactory.CreateScope();
             var oracle = scope.ServiceProvider.GetRequiredService<OracleHisPatientRepository>();
+
+            if (payload.LookupOnly && !string.IsNullOrWhiteSpace(payload.Mabn))
+            {
+                var patient = await oracle.GetPatientAsync(payload.Mabn, cancellationToken);
+                if (patient is null)
+                {
+                    await store.CompleteAuthAttemptAsync(job.AttemptId, "failed", null, null, "Không tìm thấy hồ sơ.", cancellationToken);
+                    return true;
+                }
+
+                var lookup = new PatientProfileLookupDto(
+                    HisPatientCode: patient.HisPatientCode,
+                    PatientCodeMasked: MaskCode(patient.HisPatientCode),
+                    FullName: patient.FullName,
+                    PhoneMasked: MaskPhone(patient.Phone),
+                    BirthDateMasked: MaskBirthDate(patient.BirthDate));
+
+                await store.CompleteAuthAttemptAsync(job.AttemptId, "success", patient.HisPatientCode, lookup, null, cancellationToken);
+                logger.LogInformation("Auth attempt {AttemptId} looked up patient {Mabn}", job.AttemptId, patient.HisPatientCode);
+                return true;
+            }
+
             var verified = payload.Mabn is not null && payload.BirthDate is not null
-                ? await oracle.VerifyLinkedProfileAsync(payload.Mabn, payload.Phone, payload.CitizenId, payload.BirthDate.Value, cancellationToken)
-                : await oracle.VerifyLoginAsync(payload.Phone, payload.CitizenId, cancellationToken);
+                ? await oracle.VerifyLinkedProfileAsync(payload.Mabn, payload.Phone ?? string.Empty, payload.CitizenId ?? string.Empty, payload.BirthDate.Value, cancellationToken)
+                : await oracle.VerifyLoginAsync(payload.Phone ?? string.Empty, payload.CitizenId ?? string.Empty, cancellationToken);
 
             if (verified is null)
             {
@@ -63,8 +86,8 @@ public sealed class SupabaseQueueSyncAgent(
 
             if (payload.Mabn is null || payload.BirthDate is null)
             {
-                await store.PutLoginAsync(payload.Phone, payload.CitizenId, verified.HisPatientCode, verified, cancellationToken);
-                await store.PutAccountProfilesAsync(job.LookupHash, payload.Phone, verified.HisPatientCode, verified.Profiles, cancellationToken);
+                await store.PutLoginAsync(payload.Phone ?? string.Empty, payload.CitizenId ?? string.Empty, verified.HisPatientCode, verified, cancellationToken);
+                await store.PutAccountProfilesAsync(job.LookupHash, payload.Phone ?? string.Empty, verified.HisPatientCode, verified.Profiles, cancellationToken);
             }
             await store.CompleteAuthAttemptAsync(job.AttemptId, "success", verified.HisPatientCode, verified, null, cancellationToken);
             logger.LogInformation("Auth attempt {AttemptId} verified patient {Mabn}", job.AttemptId, verified.HisPatientCode);
@@ -155,5 +178,21 @@ public sealed class SupabaseQueueSyncAgent(
         return Convert.FromBase64String(padded);
     }
 
-    private sealed record AuthPayload(string Phone, string CitizenId, string AttemptId, string? Mabn, DateOnly? BirthDate);
+    private static string MaskCode(string value)
+    {
+        var normalized = value.Trim();
+        if (normalized.Length <= 4) return normalized;
+        return $"{normalized[..Math.Min(3, normalized.Length)]}****{normalized[^Math.Min(3, normalized.Length)..]}";
+    }
+
+    private static string MaskPhone(string value)
+    {
+        var digits = new string((value ?? string.Empty).Where(char.IsDigit).ToArray());
+        if (digits.Length <= 4) return digits.Length == 0 ? "Chưa ghi nhận" : digits;
+        return $"{digits[..2]}*****{digits[^2..]}";
+    }
+
+    private static string MaskBirthDate(DateOnly value) => $"**/**/{value.Year:0000}";
+
+    private sealed record AuthPayload(string? Phone, string? CitizenId, string AttemptId, string? Mabn, DateOnly? BirthDate, bool LookupOnly);
 }

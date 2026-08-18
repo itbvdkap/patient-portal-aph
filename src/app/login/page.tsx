@@ -19,7 +19,7 @@ export default function LoginPage() {
         <section className="rounded-md border border-cream-200 bg-cream-50 p-5 shadow-soft">
           <h2 className="font-serif text-2xl font-bold text-ink">Đăng nhập</h2>
           <p className="mt-2 text-sm leading-6 text-slate-600">
-            Xác minh hồ sơ bằng số điện thoại và CCCD/CMND đã đăng ký tại bệnh viện.
+            Đăng nhập bằng số điện thoại và mật khẩu. OTP Zalo chỉ dùng để xác minh lần đầu hoặc khôi phục mật khẩu.
           </p>
           <div className="mt-5">
             <Suspense>

@@ -22,6 +22,11 @@ type SnapshotRow<T> = {
   expires_at: string;
 };
 
+type SnapshotValue<T> = {
+  data: T;
+  fresh: boolean;
+};
+
 export class SupabasePatientRepository implements PatientRepository {
   async getCurrentPatient() {
     const patient = await this.getSnapshot<Patient | null>(await this.getCurrentMabn(), "patient_profile", undefined, null);
@@ -54,7 +59,43 @@ export class SupabasePatientRepository implements PatientRepository {
   }
 
   async getLabResults(patientId: string, visitId?: string) {
-    return this.getSnapshot<LabResult[]>(this.patientIdToMabn(patientId), "lab_results", visitId, []);
+    const mabn = this.patientIdToMabn(patientId);
+
+    if (!visitId) {
+      return this.getSnapshot<LabResult[]>(mabn, "lab_results", undefined, []);
+    }
+
+    const visitSnapshot = await this.readSnapshot<LabResult[]>(mabn, "lab_results", visitId);
+    if (visitSnapshot) {
+      if (!visitSnapshot.fresh) {
+        void enqueuePatientSync(mabn, "lab_results", visitId).catch(() => undefined);
+      }
+
+      if (visitSnapshot.data.length > 0) {
+        return visitSnapshot.data;
+      }
+    }
+
+    const allSnapshot = await this.readSnapshot<LabResult[]>(mabn, "lab_results", undefined);
+    if (allSnapshot) {
+      if (!allSnapshot.fresh) {
+        void enqueuePatientSync(mabn, "lab_results", undefined).catch(() => undefined);
+      }
+
+      const results = allSnapshot.data.filter((result) => result.visitId === visitId);
+      if (results.length > 0) {
+        if (!visitSnapshot) {
+          void enqueuePatientSync(mabn, "lab_results", visitId).catch(() => undefined);
+        }
+        return results;
+      }
+    }
+
+    if (!visitSnapshot) {
+      await enqueuePatientSync(mabn, "lab_results", visitId);
+    }
+
+    return [];
   }
 
   async getImagingResults(patientId: string) {
@@ -88,6 +129,24 @@ export class SupabasePatientRepository implements PatientRepository {
   }
 
   private async getSnapshot<T>(mabn: string, resourceName: string, resourceId: string | undefined, fallback: T): Promise<T> {
+    const snapshot = await this.readSnapshot<T>(mabn, resourceName, resourceId);
+
+    if (snapshot) {
+      if (!snapshot.fresh) {
+        void enqueuePatientSync(mabn, resourceName, resourceId).catch(() => undefined);
+      }
+      return snapshot.data;
+    }
+
+    await enqueuePatientSync(mabn, resourceName, resourceId);
+    return fallback;
+  }
+
+  private async readSnapshot<T>(
+    mabn: string,
+    resourceName: string,
+    resourceId: string | undefined
+  ): Promise<SnapshotValue<T> | null> {
     const supabase = createSupabaseServiceClient();
     const { data, error } = await supabase
       .from("portal_resource_snapshots")
@@ -100,14 +159,13 @@ export class SupabasePatientRepository implements PatientRepository {
     }
 
     if (data?.payload_json !== undefined) {
-      if (new Date(data.expires_at).getTime() <= Date.now()) {
-        void enqueuePatientSync(mabn, resourceName, resourceId).catch(() => undefined);
-      }
-      return data.payload_json;
+      return {
+        data: data.payload_json,
+        fresh: new Date(data.expires_at).getTime() > Date.now(),
+      };
     }
 
-    await enqueuePatientSync(mabn, resourceName, resourceId);
-    return fallback;
+    return null;
   }
 
   private async getCurrentMabn() {

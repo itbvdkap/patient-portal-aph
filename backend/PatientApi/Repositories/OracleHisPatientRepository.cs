@@ -97,11 +97,11 @@ public sealed class OracleHisPatientRepository(IConfiguration configuration) : I
                 or regexp_replace(nvl(dt.NHA, ''), '[^0-9]', '') = :Phone
                 or regexp_replace(nvl(dt.COQUAN, ''), '[^0-9]', '') = :Phone
               )
-              and (
+              and (:SkipCitizenId = 1 or (
                 regexp_replace(nvl(b.CMND, ''), '[^0-9]', '') = :CitizenId
                 or regexp_replace(nvl(b.CMND_BN, ''), '[^0-9]', '') = :CitizenId
                 or regexp_replace(nvl(dt.CMND, ''), '[^0-9]', '') = :CitizenId
-              )
+              ))
             fetch first 1 rows only
             """;
 
@@ -109,7 +109,7 @@ public sealed class OracleHisPatientRepository(IConfiguration configuration) : I
         var normalizedCitizenId = NormalizeDigits(citizenId);
         var normalizedMabn = hisPatientCode.Trim();
 
-        if (normalizedMabn.Length == 0 || normalizedPhone.Length < 9 || normalizedCitizenId.Length < 9)
+        if (normalizedMabn.Length == 0 || normalizedPhone.Length < 9)
         {
             return null;
         }
@@ -122,6 +122,7 @@ public sealed class OracleHisPatientRepository(IConfiguration configuration) : I
                 HisPatientCode = normalizedMabn,
                 Phone = normalizedPhone,
                 CitizenId = normalizedCitizenId,
+                SkipCitizenId = normalizedCitizenId.Length == 0 ? 1 : 0,
                 BirthDate = birthDate.ToDateTime(TimeOnly.MinValue)
             },
             cancellationToken: cancellationToken,
@@ -398,7 +399,7 @@ public sealed class OracleHisPatientRepository(IConfiguration configuration) : I
         var results = new List<LabResultDto>();
         await using var connection = CreateConnection();
         var schemas = !string.IsNullOrWhiteSpace(visitId)
-            ? GetMonthlySchemasForVisitId(visitId)
+            ? await GetPatientVisitMonthlySchemasAsync(connection, hisPatientCode)
             : await GetPatientMonthlySchemasAsync(connection, "XN_PHIEU", "NGAY", hisPatientCode);
 
         foreach (var schema in schemas)
@@ -1168,18 +1169,6 @@ public sealed class OracleHisPatientRepository(IConfiguration configuration) : I
         return schemas;
     }
 
-    private static IReadOnlyList<string> GetMonthlySchemasForVisitId(string visitId)
-    {
-        var normalized = visitId.Trim();
-
-        if (normalized.Length >= 4 && normalized.Take(4).All(char.IsDigit))
-        {
-            return new[] { $"HGSOFT_BV{normalized.Substring(2, 2)}{normalized.Substring(0, 2)}" };
-        }
-
-        return Array.Empty<string>();
-    }
-
     private static bool IsMissingMonthlySchema(OracleException exception) =>
         exception.Number is 942 or 4043;
 
@@ -1505,8 +1494,8 @@ public sealed class OracleHisPatientRepository(IConfiguration configuration) : I
 
     private static string MapGender(object? value) => Convert.ToString(value) switch
     {
-        "0" => "Nữ",
-        "1" => "Nam",
+        "0" => "Nam",
+        "1" => "Nữ",
         _ => "Khác",
     };
 

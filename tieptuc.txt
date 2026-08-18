@@ -1,20 +1,59 @@
-File quan trọng để tiếp tục sau khi reset:
+Có, nên tạo trang quản trị, nhưng nên làm theo 2 tầng để an toàn.
+Nên quản trị được trong app
+Bật/tắt OTP test / OTP Zalo.
+Cấu hình trạng thái: test, zalo, disabled.
+Cấu hình thời gian OTP hết hạn, số lần nhập sai tối đa.
+Bật/tắt Cloudflare Turnstile.
+Bật/tắt demo mode hoặc maintenance mode.
+Xem lịch sử login, thiết bị, OTP gửi lỗi/thành công.
+Xem queue sync theo bệnh nhân: đang chờ, thành công, lỗi.
+Retry sync cho một mã BN.
+Xem log đăng ký khám gửi từ app.
+Cấu hình hotline/Zalo floating button.
+Cấu hình link đặt lịch, thông báo trang chủ.
+Không nên cho sửa trực tiếp trên web admin
+Supabase secret key.
+Service role key.
+Oracle username/password.
+Booking database URL.
+Zalo app secret / access token gốc.
+Session secret, encryption key.
+Các key nhạy cảm này vẫn nên nằm trong Vercel Environment Variables hoặc file .env của agent nội bộ. Trang admin chỉ nên hiển thị trạng thái “đã cấu hình / chưa cấu hình”, không hiện giá trị thật.
+Mô hình mình đề xuất:
+Admin config trong Supabase
+Tạo bảng portal_app_settings, lưu các cấu hình không quá nhạy cảm:
+auth_otp_provider = test | zalo
+turnstile_enabled = true/false
+otp_ttl_minutes
+otp_max_attempts
+maintenance_enabled
+booking_enabled
+zalo_otp_enabled
 
-  - docs/CONTINUE-AFTER-RESTART.md
+Secret vẫn ở Vercel
+Ví dụ:
+ZALO_ACCESS_TOKEN
+ZALO_TEMPLATE_ID
+TURNSTILE_SECRET_KEY
+SUPABASE_SERVICE_ROLE_KEY
 
-  Sau khi mở máy lại, bạn chỉ cần vào:
+Trang admin
+URL ví dụ:
+/admin
+/admin/settings
+/admin/sync-jobs
+/admin/login-events
+/admin/booking-logs
 
-  cd E:\HIS\APP_BENHAN
+Phân quyền
+Không dùng tài khoản bệnh nhân để vào admin. Nên tạo bảng:
+portal_admin_users
+login admin riêng bằng email/password hoặc tài khoản Supabase Auth có role admin.
 
-  Rồi mở file:
-
-  docs/CONTINUE-AFTER-RESTART.md
-
-  Tôi cũng đã kiểm tra:
-
-  - .env.local còn tồn tại
-  - backend/PatientApi/appsettings.Development.json còn tồn tại
-  - backend scaffold còn đủ file
-  - .gitignore đã chặn các file chứa secret local
-
-  Sau khi reset xong, nhắn tôi “tiếp tục” là tôi sẽ bắt đầu từ bước cài .NET SDK 9, build/run backend PatientApi, rồi nối portal sang Oracle thật.
+Mình khuyên làm, vì app này có nhiều cấu hình vận hành: OTP, sync agent, Turnstile, booking, Zalo, trạng thái lỗi. Nếu không có admin thì mỗi lần đổi đều phải sửa env/deploy lại, về lâu dài rất bất tiện.
+Lộ trình nên làm:
+Tạo schema/bảng admin settings.
+Tạo middleware chặn /admin.
+Tạo trang /admin/settings trước.
+Cho app đọc setting từ Supabase, fallback về .env.
+Sau đó thêm trang log OTP, login, sync queue.

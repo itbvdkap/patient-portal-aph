@@ -2,9 +2,29 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { CheckCircle2, IdCard, Loader2, LogOut, Phone, Plus, ShieldAlert, Smartphone } from "lucide-react";
+import { CheckCircle2, IdCard, Loader2, LogOut, Phone, Plus, Search, ShieldAlert, Smartphone, UserRound } from "lucide-react";
 import type { AccountDeviceSession, AccountPatientProfile } from "@/lib/account/portal-account";
 import { formatDateTime } from "@/utils/format";
+
+function vnDateToIso(value: string) {
+  const trimmed = value.trim();
+  const match = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (!match) {
+    return "";
+  }
+
+  const day = match[1].padStart(2, "0");
+  const month = match[2].padStart(2, "0");
+  const year = match[3];
+  return `${year}-${month}-${day}`;
+}
+
+function formatVnDateInput(value: string) {
+  const digits = value.replace(/\D/g, "").slice(0, 8);
+  if (digits.length <= 2) return digits;
+  if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
+  return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
+}
 
 export function ProfileSwitcher({ profiles }: { profiles: AccountPatientProfile[] }) {
   const router = useRouter();
@@ -36,7 +56,7 @@ export function ProfileSwitcher({ profiles }: { profiles: AccountPatientProfile[
 
   return (
     <div className="grid gap-3">
-      {profiles.map((profile) => (
+      {profiles.length ? profiles.map((profile) => (
         <article
           key={profile.mabn}
           className={`rounded-md border p-3 ${
@@ -67,7 +87,11 @@ export function ProfileSwitcher({ profiles }: { profiles: AccountPatientProfile[
             </button>
           </div>
         </article>
-      ))}
+      )) : (
+        <div className="rounded-md border border-dashed border-cream-200 bg-white/60 p-4 text-sm font-semibold leading-6 text-slate-600">
+          Chưa có hồ sơ y tế liên kết. Hãy thêm hồ sơ bằng mã bệnh nhân ở phần bên dưới.
+        </div>
+      )}
       {message ? <p className="rounded-md bg-amber-100 px-3 py-2 text-sm font-semibold text-amber-900">{message}</p> : null}
     </div>
   );
@@ -76,22 +100,77 @@ export function ProfileSwitcher({ profiles }: { profiles: AccountPatientProfile[
 export function LinkProfileForm() {
   const router = useRouter();
   const [mabn, setMabn] = useState("");
+  const [lookup, setLookup] = useState<{
+    hisPatientCode: string;
+    patientCodeMasked: string;
+    fullName: string;
+    phoneMasked: string;
+    birthDateMasked: string;
+  } | null>(null);
   const [phone, setPhone] = useState("");
   const [citizenId, setCitizenId] = useState("");
   const [birthDate, setBirthDate] = useState("");
   const [message, setMessage] = useState("");
+  const [lookingUp, setLookingUp] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+
+  async function lookupProfile() {
+    setMessage("");
+    setLookup(null);
+    setPhone("");
+    setCitizenId("");
+    setBirthDate("");
+    setLookingUp(true);
+
+    try {
+      const response = await fetch("/api/account/lookup-profile", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mabn }),
+      });
+      const body = (await response.json().catch(() => null)) as {
+        error?: string;
+        data?: {
+          hisPatientCode: string;
+          patientCodeMasked: string;
+          fullName: string;
+          phoneMasked: string;
+          birthDateMasked: string;
+        };
+      } | null;
+
+      if (!response.ok || !body?.data) {
+        setMessage(body?.error ?? "Không tìm thấy hồ sơ.");
+        return;
+      }
+
+      setLookup(body.data);
+    } finally {
+      setLookingUp(false);
+    }
+  }
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!lookup) {
+      await lookupProfile();
+      return;
+    }
+
     setMessage("");
     setSubmitting(true);
 
     try {
+      const normalizedBirthDate = vnDateToIso(birthDate);
+      if (!normalizedBirthDate) {
+        setMessage("Ngày sinh phải nhập theo định dạng dd/mm/yyyy.");
+        return;
+      }
+
       const response = await fetch("/api/account/link-profile", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mabn, phone, citizenId, birthDate }),
+        body: JSON.stringify({ mabn, phone, citizenId, birthDate: normalizedBirthDate }),
       });
       const body = (await response.json().catch(() => null)) as { error?: string; data?: { fullName?: string } } | null;
 
@@ -101,6 +180,7 @@ export function LinkProfileForm() {
       }
 
       setMabn("");
+      setLookup(null);
       setPhone("");
       setCitizenId("");
       setBirthDate("");
@@ -113,30 +193,75 @@ export function LinkProfileForm() {
 
   return (
     <form onSubmit={submit} className="grid gap-3">
-      <div className="grid gap-3 sm:grid-cols-2">
-        <label className="grid gap-1.5 text-sm font-bold text-ink">
-          Mã bệnh nhân
+      <label className="grid gap-1.5 text-sm font-bold text-ink">
+        Mã bệnh nhân
+        <span className="flex min-h-12 items-center gap-2 rounded-md border border-cream-200 bg-white/80 px-3 focus-within:border-primary-600 focus-within:ring-2 focus-within:ring-primary-100">
+          <IdCard aria-hidden="true" className="h-5 w-5 text-primary-700" />
           <input
             value={mabn}
-            onChange={(event) => setMabn(event.target.value)}
-            className="clinical-mono h-11 rounded-md border border-cream-200 bg-white/80 px-3 text-base outline-none focus:border-primary-600 focus:ring-2 focus:ring-primary-100"
-            placeholder="Ví dụ: 23006552"
+            onChange={(event) => {
+              setMabn(event.target.value);
+              setLookup(null);
+              setMessage("");
+            }}
+            className="clinical-mono h-full min-w-0 flex-1 bg-transparent text-base outline-none"
+            placeholder="Ví dụ: N24-001111 hoặc 23006552"
             autoComplete="off"
             required
           />
-        </label>
-        <label className="grid gap-1.5 text-sm font-bold text-ink">
-          Ngày sinh
-          <input
-            type="date"
-            value={birthDate}
-            onChange={(event) => setBirthDate(event.target.value)}
-            className="clinical-mono h-11 rounded-md border border-cream-200 bg-white/80 px-3 text-base outline-none focus:border-primary-600 focus:ring-2 focus:ring-primary-100"
-            required
-          />
-        </label>
-      </div>
+          <button
+            type="button"
+            onClick={lookupProfile}
+            disabled={!mabn.trim() || lookingUp || submitting}
+            className="inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-md bg-primary-700 px-3 text-sm font-bold text-white hover:bg-primary-800 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {lookingUp ? <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" /> : <Search aria-hidden="true" className="h-4 w-4" />}
+            Tìm
+          </button>
+        </span>
+      </label>
 
+      {lookup ? (
+        <section className="rounded-md border-2 border-primary-200 bg-primary-50/80 p-3">
+          <div className="flex items-center gap-3">
+            <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-primary-700 text-white">
+              <UserRound aria-hidden="true" className="h-6 w-6" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <h3 className="font-serif text-lg font-black uppercase leading-6 text-primary-800">{lookup.fullName}</h3>
+              <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
+                <dt className="font-semibold text-slate-500">Mã NB</dt>
+                <dd className="clinical-mono font-bold text-ink">{lookup.patientCodeMasked}</dd>
+                <dt className="font-semibold text-slate-500">Điện thoại</dt>
+                <dd className="clinical-mono font-bold text-ink">{lookup.phoneMasked}</dd>
+                <dt className="font-semibold text-slate-500">Ngày sinh</dt>
+                <dd className="clinical-mono font-bold text-ink">{lookup.birthDateMasked}</dd>
+              </dl>
+            </div>
+            <CheckCircle2 aria-hidden="true" className="h-6 w-6 shrink-0 text-primary-700" />
+          </div>
+        </section>
+      ) : null}
+
+      {lookup ? (
+        <div className="grid gap-3 sm:grid-cols-2">
+          <label className="grid gap-1.5 text-sm font-bold text-ink">
+            Ngày sinh
+            <input
+              type="text"
+              value={birthDate}
+              onChange={(event) => setBirthDate(formatVnDateInput(event.target.value))}
+              className="clinical-mono h-11 rounded-md border border-cream-200 bg-white/80 px-3 text-base outline-none focus:border-primary-600 focus:ring-2 focus:ring-primary-100"
+              placeholder="dd/mm/yyyy"
+              inputMode="numeric"
+              autoComplete="bday"
+              required
+            />
+          </label>
+        </div>
+      ) : null}
+
+      {lookup ? (
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="grid gap-1.5 text-sm font-bold text-ink">
           Số điện thoại
@@ -154,31 +279,31 @@ export function LinkProfileForm() {
           </span>
         </label>
         <label className="grid gap-1.5 text-sm font-bold text-ink">
-          CCCD/CMND
+          CCCD/CMND <span className="font-semibold text-slate-500">(có thể bỏ qua)</span>
           <span className="flex h-11 items-center gap-2 rounded-md border border-cream-200 bg-white/80 px-3 focus-within:border-primary-600 focus-within:ring-2 focus-within:ring-primary-100">
             <IdCard aria-hidden="true" className="h-4 w-4 text-primary-700" />
             <input
               value={citizenId}
               onChange={(event) => setCitizenId(event.target.value)}
               className="clinical-mono h-full min-w-0 flex-1 bg-transparent text-base outline-none"
-              placeholder="Nhập CCCD/CMND"
+              placeholder="Không bắt buộc"
               inputMode="numeric"
               autoComplete="off"
-              required
             />
           </span>
         </label>
       </div>
+      ) : null}
 
       {message ? <p className="rounded-md bg-cream-100 px-3 py-2 text-sm font-semibold text-slate-700">{message}</p> : null}
 
       <button
         type="submit"
-        disabled={submitting}
+        disabled={(lookup ? submitting : lookingUp) || !mabn.trim()}
         className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-md bg-primary-700 px-4 font-bold text-white hover:bg-primary-800 disabled:cursor-not-allowed disabled:opacity-70"
       >
-        {submitting ? <Loader2 aria-hidden="true" className="h-5 w-5 animate-spin" /> : <Plus aria-hidden="true" className="h-5 w-5" />}
-        Thêm hồ sơ người thân
+        {submitting || lookingUp ? <Loader2 aria-hidden="true" className="h-5 w-5 animate-spin" /> : lookup ? <Plus aria-hidden="true" className="h-5 w-5" /> : <Search aria-hidden="true" className="h-5 w-5" />}
+        {lookup ? "Xác nhận liên kết" : "Tìm hồ sơ"}
       </button>
     </form>
   );

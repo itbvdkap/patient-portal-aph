@@ -1,151 +1,103 @@
 import { NextResponse } from "next/server";
-import { randomUUID } from "crypto";
 import { z } from "zod";
 import { demoSessionCookie } from "@/lib/auth/demo-auth";
+import { accountIdFromPhone, verifyOtpHash } from "@/lib/auth/otp";
+import { normalizeVietnamPhone } from "@/lib/auth/phone";
 import { createPatientSessionCookie } from "@/lib/auth/session";
-import { recordPortalLoginSession } from "@/lib/account/portal-account";
-import { enqueuePatientSync, loginLookupHash, requestOnDemandLoginSync } from "@/lib/supabase/portal-sync";
+import { getLinkedProfilesForAccount, recordPortalOtpLogin } from "@/lib/account/portal-account";
+import { enqueuePatientSync } from "@/lib/supabase/portal-sync";
+import { createSupabaseServiceClient } from "@/lib/supabase/server";
 
-const verifyLoginSchema = z.object({
+const verifyOtpSchema = z.object({
   phone: z.string().trim().min(9).max(20),
-  citizenId: z.string().trim().min(9).max(20),
+  otp: z.string().trim().regex(/^\d{6,8}$/),
 });
 
-interface VerifyLoginEnvelope {
-  data: {
-    hisPatientCode: string;
-    fullName: string;
-    phone: string;
-    profiles?: Array<{
-      hisPatientCode: string;
-      fullName: string;
-      relationship?: string;
-    }>;
-  };
-}
-
 export async function POST(request: Request) {
-  const parsed = verifyLoginSchema.safeParse(await request.json().catch(() => null));
+  const parsed = verifyOtpSchema.safeParse(await request.json().catch(() => null));
 
   if (!parsed.success) {
-    return NextResponse.json({ error: "Vui lòng nhập số điện thoại và CCCD/CMND hợp lệ." }, { status: 400 });
+    return NextResponse.json({ error: "Vui lòng nhập số điện thoại và mã OTP hợp lệ." }, { status: 400 });
   }
 
-  let body: VerifyLoginEnvelope | null;
+  const phone = normalizeVietnamPhone(parsed.data.phone);
+
   try {
-    body =
-      process.env.PATIENT_DATA_MODE === "supabase"
-        ? await verifyWithSupabase(parsed.data.phone, parsed.data.citizenId)
-        : await verifyWithPatientApi(parsed.data.phone, parsed.data.citizenId);
-  } catch (error) {
-    console.error("Patient login verification failed", error);
-    return NextResponse.json(
-      {
-        error:
-          process.env.PATIENT_DATA_MODE === "supabase"
-            ? "Hệ thống đồng bộ hồ sơ chưa phản hồi. Vui lòng thử lại sau vài giây."
-            : "Không kết nối được API nội bộ bệnh viện. Vui lòng kiểm tra sync agent hoặc chuyển PATIENT_DATA_MODE=supabase.",
+    const supabase = createSupabaseServiceClient();
+    const { data: attempt, error } = await supabase
+      .from("portal_otp_attempts")
+      .select("id,otp_hash,expires_at,consumed_at,attempt_count,max_attempts")
+      .eq("phone", phone)
+      .is("consumed_at", null)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error || !attempt) {
+      return NextResponse.json({ error: "Không tìm thấy mã OTP còn hiệu lực. Vui lòng gửi lại mã." }, { status: 401 });
+    }
+
+    if (attempt.consumed_at || new Date(attempt.expires_at).getTime() <= Date.now()) {
+      return NextResponse.json({ error: "Mã OTP đã hết hạn. Vui lòng gửi lại mã." }, { status: 401 });
+    }
+
+    if (attempt.attempt_count >= attempt.max_attempts) {
+      return NextResponse.json({ error: "Bạn đã nhập sai OTP quá số lần cho phép. Vui lòng gửi lại mã." }, { status: 429 });
+    }
+
+    if (!verifyOtpHash(phone, parsed.data.otp, attempt.otp_hash)) {
+      await supabase
+        .from("portal_otp_attempts")
+        .update({ attempt_count: attempt.attempt_count + 1, status: "failed" })
+        .eq("id", attempt.id);
+      return NextResponse.json({ error: "Mã OTP không đúng." }, { status: 401 });
+    }
+
+    await supabase
+      .from("portal_otp_attempts")
+      .update({ consumed_at: new Date().toISOString(), status: "verified", attempt_count: attempt.attempt_count + 1 })
+      .eq("id", attempt.id);
+
+    const accountId = accountIdFromPhone(phone);
+    const maxAge = 60 * 60 * 8;
+    const profiles = await getLinkedProfilesForAccount(accountId);
+    const currentProfile = profiles.find((profile) => profile.isActive) ?? profiles[0];
+    const mabn = currentProfile?.mabn ?? "";
+    const { sessionId, accountKey } = await recordPortalOtpLogin({ accountId, phone, mabn, request, maxAgeSeconds: maxAge });
+    const response = NextResponse.json({
+      data: {
+        accountId,
+        phone,
+        hasLinkedProfile: Boolean(mabn),
+        currentMabn: mabn || null,
       },
-      { status: 503 },
+    });
+
+    response.cookies.set(
+      demoSessionCookie,
+      createPatientSessionCookie(mabn, maxAge, {
+        sessionId,
+        accountId,
+        accountKey,
+        phone,
+        profiles,
+      }),
+      {
+        httpOnly: true,
+        sameSite: "lax",
+        secure: process.env.NODE_ENV === "production",
+        path: "/",
+        maxAge,
+      },
     );
+
+    if (mabn && process.env.PATIENT_DATA_MODE === "supabase") {
+      void enqueuePatientSync(mabn, "all").catch(() => undefined);
+    }
+
+    return response;
+  } catch (error) {
+    console.error("Portal OTP verification failed", error);
+    return NextResponse.json({ error: "Không xác minh được OTP. Vui lòng thử lại sau." }, { status: 503 });
   }
-
-  if (!body) {
-    return NextResponse.json({ error: "Không xác minh được thông tin đăng nhập." }, { status: 401 });
-  }
-
-  const maxAge = 60 * 60 * 8;
-  const sessionId = randomUUID();
-  const accountKey = loginLookupHash(parsed.data.phone, parsed.data.citizenId);
-  const profiles = normalizeProfiles(body.data);
-  const result = NextResponse.json({ data: body.data });
-
-  result.cookies.set(demoSessionCookie, createPatientSessionCookie(body.data.hisPatientCode, maxAge, { sessionId, accountKey, profiles }), {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
-    maxAge,
-  });
-
-  void recordPortalLoginSession({
-    accountKey,
-    sessionId,
-    mabn: body.data.hisPatientCode,
-    fullName: body.data.fullName,
-    phone: body.data.phone,
-    profiles,
-    request,
-    maxAgeSeconds: maxAge,
-  }).catch(() => undefined);
-
-  if (process.env.PATIENT_DATA_MODE === "supabase") {
-    void enqueuePatientSync(body.data.hisPatientCode, "all").catch(() => undefined);
-  }
-
-  return result;
-}
-
-
-async function verifyWithPatientApi(phone: string, citizenId: string): Promise<VerifyLoginEnvelope | null> {
-  const baseUrl = process.env.PATIENT_API_BASE_URL;
-  const serverToken = process.env.PATIENT_API_SERVER_TOKEN;
-
-  if (!baseUrl || !serverToken) {
-    throw new Error("PATIENT_API_BASE_URL/PATIENT_API_SERVER_TOKEN is not configured.");
-  }
-
-  const response = await fetch(`${baseUrl.replace(/\/$/, "")}/api/auth/verify`, {
-    method: "POST",
-    cache: "no-store",
-    headers: {
-      Accept: "application/json",
-      Authorization: `Bearer ${serverToken}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ phone, citizenId }),
-  });
-
-  const body = (await response.json().catch(() => null)) as VerifyLoginEnvelope | { error?: string } | null;
-
-  if (!response.ok || !body || !("data" in body)) {
-    return null;
-  }
-
-  return body;
-}
-
-async function verifyWithSupabase(phone: string, citizenId: string): Promise<VerifyLoginEnvelope | null> {
-  const data = await requestOnDemandLoginSync(phone, citizenId);
-  if (!data) return null;
-
-  return {
-    data: {
-      hisPatientCode: data.hisPatientCode,
-      fullName: data.fullName,
-      phone: data.phone,
-      profiles: data.profiles,
-    },
-  };
-}
-
-function normalizeProfiles(data: VerifyLoginEnvelope["data"]) {
-  const source = data.profiles?.length
-    ? data.profiles
-    : [{ hisPatientCode: data.hisPatientCode, fullName: data.fullName, relationship: "Bản thân" }];
-  const seen = new Set<string>();
-  const profiles: Array<{ mabn: string; fullName?: string; relationship?: string }> = [];
-
-  for (const profile of source) {
-    const mabn = profile.hisPatientCode?.trim();
-    if (!mabn || seen.has(mabn)) continue;
-    seen.add(mabn);
-    profiles.push({ mabn, fullName: profile.fullName, relationship: profile.relationship });
-  }
-
-  if (!seen.has(data.hisPatientCode)) {
-    profiles.unshift({ mabn: data.hisPatientCode, fullName: data.fullName, relationship: "Bản thân" });
-  }
-
-  return profiles;
 }

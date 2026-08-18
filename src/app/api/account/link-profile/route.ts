@@ -9,19 +9,19 @@ import { requestOnDemandProfileLinkSync } from "@/lib/supabase/portal-sync";
 const linkProfileSchema = z.object({
   mabn: z.string().trim().min(1).max(20),
   phone: z.string().trim().min(9).max(20),
-  citizenId: z.string().trim().min(9).max(20),
+  citizenId: z.string().trim().max(20).optional().default(""),
   birthDate: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/),
 });
 
 export async function POST(request: Request) {
   const session = getDemoPatientSession(await cookies());
-  if (!session?.accountKey) {
+  if (!session?.accountId && !session?.accountKey) {
     return NextResponse.json({ error: "Phiên đăng nhập không hỗ trợ liên kết hồ sơ." }, { status: 401 });
   }
 
   const parsed = linkProfileSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {
-    return NextResponse.json({ error: "Vui lòng nhập đủ mã BN, SĐT, CCCD/CMND và ngày sinh." }, { status: 400 });
+    return NextResponse.json({ error: "Vui lòng nhập đủ mã BN, SĐT và ngày sinh." }, { status: 400 });
   }
 
   let verified;
@@ -59,11 +59,13 @@ export async function POST(request: Request) {
   const response = NextResponse.json({ data: { mabn, fullName, profiles } });
   response.cookies.set(
     demoSessionCookie,
-    createPatientSessionCookie(session.mabn, maxAge, {
-      sessionId: session.sessionId,
-      accountKey: session.accountKey,
-      profiles,
-    }),
+      createPatientSessionCookie(mabn, maxAge, {
+        sessionId: session.sessionId,
+        accountId: session.accountId,
+        accountKey: session.accountKey,
+        phone: session.phone,
+        profiles,
+      }),
     {
       httpOnly: true,
       sameSite: "lax",
