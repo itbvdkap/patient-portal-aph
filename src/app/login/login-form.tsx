@@ -11,6 +11,7 @@ type ForgotStep = "phone" | "reset";
 
 type ApiBody = {
   data?: {
+    expiresAt?: string;
     testOtp?: string;
     hasLinkedProfile?: boolean;
   };
@@ -49,11 +50,25 @@ export function LoginForm() {
   const [remember, setRemember] = useState(true);
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [otpExpiresAt, setOtpExpiresAt] = useState("");
+  const [otpNow, setOtpNow] = useState(() => Date.now());
   const [turnstileReady, setTurnstileReady] = useState(false);
   const [registerTurnstileToken, setRegisterTurnstileToken] = useState("");
   const [forgotTurnstileToken, setForgotTurnstileToken] = useState("");
 
   const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
+  const otpSecondsLeft = otpExpiresAt ? Math.max(0, Math.ceil((new Date(otpExpiresAt).getTime() - otpNow) / 1000)) : 0;
+  const otpExpired = Boolean(otpExpiresAt && otpSecondsLeft <= 0);
+
+  useEffect(() => {
+    if ((registerStep !== "otp" && forgotStep !== "reset") || !otpExpiresAt) {
+      return;
+    }
+
+    setOtpNow(Date.now());
+    const interval = window.setInterval(() => setOtpNow(Date.now()), 1000);
+    return () => window.clearInterval(interval);
+  }, [forgotStep, otpExpiresAt, registerStep]);
 
   function nextPath(hasLinkedProfile?: boolean) {
     return hasLinkedProfile ? searchParams.get("next") ?? "/dashboard" : "/profile";
@@ -103,23 +118,29 @@ export function LoginForm() {
     setSubmitting(true);
 
     try {
-      if (!requireTurnstile(registerTurnstileToken)) {
-        return;
-      }
-
-      const body = await postJson("/api/auth/start-register", {
-        phone,
-        fullName,
-        cf_turnstile_response: registerTurnstileToken,
-      });
-      setRegisterStep("otp");
-      setRegisterTurnstileToken("");
-      setMessage(body?.data?.testOtp ? `Mã OTP test: ${body.data.testOtp}` : "Mã OTP đã được gửi qua Zalo.");
+      await requestRegisterOtp(registerTurnstileToken);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Không gửi được OTP.");
     } finally {
       setSubmitting(false);
     }
+  }
+
+  async function requestRegisterOtp(turnstileToken: string) {
+    if (!requireTurnstile(turnstileToken)) {
+      return;
+    }
+
+    const body = await postJson("/api/auth/start-register", {
+      phone,
+      fullName,
+      cf_turnstile_response: turnstileToken,
+    });
+    setOtp("");
+    setRegisterStep("otp");
+    setRegisterTurnstileToken("");
+    setOtpExpiresAt(body?.data?.expiresAt ?? "");
+    setMessage(body?.data?.testOtp ? `Mã OTP test: ${body.data.testOtp}` : "Mã OTP đã được gửi qua Zalo.");
   }
 
   async function verifyRegisterOtp(event: React.FormEvent<HTMLFormElement>) {
@@ -131,8 +152,9 @@ export function LoginForm() {
       await postJson("/api/auth/verify-register-otp", { phone, fullName, otp });
       setOtp("");
       setPassword("");
-      setRegisterStep("password");
-      setMessage("Số điện thoại đã xác minh. Vui lòng tạo mật khẩu để dùng cho lần đăng nhập sau.");
+      setOtpExpiresAt("");
+      router.replace("/profile");
+      router.refresh();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Không xác minh được OTP.");
     } finally {
@@ -162,19 +184,51 @@ export function LoginForm() {
     setSubmitting(true);
 
     try {
-      if (!requireTurnstile(forgotTurnstileToken)) {
-        return;
-      }
-
-      const body = await postJson("/api/auth/forgot-password", {
-        phone,
-        cf_turnstile_response: forgotTurnstileToken,
-      });
-      setForgotStep("reset");
-      setForgotTurnstileToken("");
-      setMessage(body?.data?.testOtp ? `Mã OTP test: ${body.data.testOtp}` : "Mã OTP khôi phục đã được gửi qua Zalo.");
+      await requestForgotOtp(forgotTurnstileToken);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Không gửi được OTP khôi phục.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function requestForgotOtp(turnstileToken: string) {
+    if (!requireTurnstile(turnstileToken)) {
+      return;
+    }
+
+    const body = await postJson("/api/auth/forgot-password", {
+      phone,
+      cf_turnstile_response: turnstileToken,
+    });
+    setOtp("");
+    setForgotStep("reset");
+    setForgotTurnstileToken("");
+    setOtpExpiresAt(body?.data?.expiresAt ?? "");
+    setMessage(body?.data?.testOtp ? `Mã OTP test: ${body.data.testOtp}` : "Mã OTP khôi phục đã được gửi qua Zalo.");
+  }
+
+  async function resendRegisterOtp() {
+    setMessage("");
+    setSubmitting(true);
+
+    try {
+      await requestRegisterOtp(registerTurnstileToken);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Không gửi lại được OTP.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function resendForgotOtp() {
+    setMessage("");
+    setSubmitting(true);
+
+    try {
+      await requestForgotOtp(forgotTurnstileToken);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Không gửi lại được OTP khôi phục.");
     } finally {
       setSubmitting(false);
     }
@@ -191,6 +245,7 @@ export function LoginForm() {
       setMode("login");
       setPassword("");
       setOtp("");
+      setOtpExpiresAt("");
       setMessage("Đã đổi mật khẩu. Vui lòng đăng nhập bằng mật khẩu mới.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Không đổi được mật khẩu.");
@@ -255,11 +310,17 @@ export function LoginForm() {
           <Notice>
             Nhập mã OTP đã gửi tới số điện thoại <span className="clinical-mono">{phone}</span>.
           </Notice>
+          <OtpCountdown secondsLeft={otpSecondsLeft} />
           <OtpField otp={otp} setOtp={setOtp} />
+          {(otpSecondsLeft <= 240 || otpExpired) && <TurnstileBox siteKey={siteKey} ready={turnstileReady} onToken={setRegisterTurnstileToken} />}
           <StatusMessage message={message} />
-          <PrimaryButton disabled={submitting || otp.length < 6} loading={submitting} icon={KeyRound}>
+          <PrimaryButton disabled={submitting || otp.length < 6 || otpExpired} loading={submitting} icon={KeyRound}>
             Xác minh OTP
           </PrimaryButton>
+          <ResendOtpButton
+            disabled={submitting || otpSecondsLeft > 240 || Boolean(siteKey && !registerTurnstileToken)}
+            onClick={resendRegisterOtp}
+          />
           <BackButton onClick={() => setRegisterStep("form")} />
         </form>
       )}
@@ -303,12 +364,18 @@ export function LoginForm() {
 
       {mode === "forgot" && forgotStep === "reset" && (
         <form onSubmit={resetPassword} className="space-y-4">
+          <OtpCountdown secondsLeft={otpSecondsLeft} />
           <OtpField otp={otp} setOtp={setOtp} />
           <PasswordField password={password} setPassword={setPassword} label="Mật khẩu mới" autoComplete="new-password" />
+          {(otpSecondsLeft <= 240 || otpExpired) && <TurnstileBox siteKey={siteKey} ready={turnstileReady} onToken={setForgotTurnstileToken} />}
           <StatusMessage message={message} />
-          <PrimaryButton disabled={submitting || otp.length < 6 || password.length < 6} loading={submitting} icon={LockKeyhole}>
+          <PrimaryButton disabled={submitting || otp.length < 6 || password.length < 6 || otpExpired} loading={submitting} icon={LockKeyhole}>
             Đổi mật khẩu
           </PrimaryButton>
+          <ResendOtpButton
+            disabled={submitting || otpSecondsLeft > 240 || Boolean(siteKey && !forgotTurnstileToken)}
+            onClick={resendForgotOtp}
+          />
           <BackButton onClick={() => setForgotStep("phone")} />
         </form>
       )}
@@ -417,6 +484,31 @@ function OtpField({ otp, setOtp }: { otp: string; setOtp: (value: string) => voi
         />
       </div>
     </label>
+  );
+}
+
+function OtpCountdown({ secondsLeft }: { secondsLeft: number }) {
+  const minutes = Math.floor(secondsLeft / 60);
+  const seconds = secondsLeft % 60;
+  const text = secondsLeft > 0 ? `${minutes}:${seconds.toString().padStart(2, "0")}` : "Đã hết hạn";
+
+  return (
+    <div className="rounded-md border border-cream-200 bg-cream-50 px-3 py-2 text-center text-sm font-bold text-slate-700">
+      Mã OTP còn hiệu lực <span className="clinical-mono text-primary-800">{text}</span>
+    </div>
+  );
+}
+
+function ResendOtpButton({ disabled, onClick }: { disabled: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      className="inline-flex min-h-11 w-full items-center justify-center rounded-md border border-primary-200 bg-white/80 px-4 font-bold text-primary-800 disabled:cursor-not-allowed disabled:opacity-60"
+    >
+      Gửi lại OTP
+    </button>
   );
 }
 
