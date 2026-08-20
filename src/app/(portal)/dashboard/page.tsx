@@ -89,17 +89,17 @@ export default async function DashboardPage() {
 
   return (
     <>
-      <header className="mb-3 flex items-start justify-between gap-3 border-b border-cream-200 pb-3">
+      <header className="mb-2 flex items-start justify-between gap-3 border-b border-cream-200 pb-2">
         <div className="min-w-0">
           <p className="text-xs font-bold uppercase text-primary-700">Xin chào</p>
-          <h1 className="mt-0.5 line-clamp-2 font-serif text-xl font-black leading-6 text-ink sm:text-2xl">{patient.fullName}</h1>
-          <p className="mt-1 text-sm font-semibold text-slate-600">Mã BN: <span className="clinical-mono">{patient.hisPatientCode}</span></p>
+          <h1 className="mt-0.5 line-clamp-1 font-serif text-xl font-black leading-6 text-ink sm:text-2xl">{patient.fullName}</h1>
+          <p className="mt-0.5 text-sm font-semibold text-slate-600">Mã BN: <span className="clinical-mono">{patient.hisPatientCode}</span></p>
         </div>
         <Badge tone={patient.insurance.status === "Còn hiệu lực" ? "green" : "amber"}>{patient.insurance.status}</Badge>
       </header>
 
       <section className="grid gap-2 lg:grid-cols-[1.05fr_0.95fr]">
-        <Panel className={`p-2.5 sm:p-3 ${todayStatus?.hasActiveVisit ? "border-amber-200 bg-amber-50/80 shadow-none" : ""}`}>
+        <Panel className={`p-2.5 shadow-none sm:p-3 ${todayStatus?.hasActiveVisit ? "border-amber-200 bg-amber-50/80" : ""}`}>
           <div className="flex items-start gap-2">
             <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary-50 text-primary-700">
               <Stethoscope aria-hidden="true" className="h-4 w-4" />
@@ -123,13 +123,13 @@ export default async function DashboardPage() {
               ) : (
                 <p className="line-clamp-2 text-sm font-medium leading-5 text-slate-600">Chưa ghi nhận lượt khám đang chờ hoặc đang khám hôm nay.</p>
               )}
-              <div className="mt-2 flex flex-wrap gap-2">
+              <div className="mt-2 grid grid-cols-2 gap-2">
                 <Link href="/today-visit" className="inline-flex min-h-8 items-center rounded-md bg-primary-600 px-2.5 text-xs font-bold text-white shadow-sm hover:bg-primary-700">
                   Khám hôm nay
                 </Link>
                 <a
                   href={bookingUrl}
-                  className="inline-flex min-h-8 items-center gap-1.5 rounded-md border border-primary-200 bg-cream-50 px-2.5 text-xs font-bold text-primary-700 hover:bg-primary-50"
+                  className="inline-flex min-h-8 items-center justify-center gap-1.5 rounded-md border border-primary-200 bg-cream-50 px-2.5 text-xs font-bold text-primary-700 hover:bg-primary-50"
                 >
                   Đăng ký khám
                   <ExternalLink aria-hidden="true" className="h-3.5 w-3.5" />
@@ -148,7 +148,7 @@ export default async function DashboardPage() {
         />
       </section>
 
-      <section className="mt-3 grid grid-cols-2 gap-2.5 sm:grid-cols-3 xl:grid-cols-6">
+      <section className="mt-2 grid grid-cols-2 gap-2.5 sm:grid-cols-3 xl:grid-cols-6">
         {shortcuts.map((item) => (
           <ShortcutCard key={item.href} {...item} />
         ))}
@@ -189,16 +189,16 @@ function InsuranceDigitalCard({
   patientCode: string;
 }) {
   return (
-    <section className="overflow-hidden rounded-md bg-gradient-to-br from-primary-900 via-primary-700 to-teal-700 p-2.5 text-white shadow-[0_10px_22px_rgba(0,91,85,0.22)] sm:p-3">
+    <section className="overflow-hidden rounded-md bg-gradient-to-br from-primary-950 via-primary-800 to-teal-700 p-2.5 text-white shadow-[0_10px_22px_rgba(0,91,85,0.22)] sm:p-3">
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-[11px] font-bold uppercase leading-4 text-white/75">Thẻ BHYT điện tử</p>
-          <h2 className="line-clamp-1 text-sm font-black sm:text-base">Bảo hiểm y tế</h2>
+          <p className="text-[11px] font-bold uppercase leading-4 text-white/75">Health Wallet</p>
+          <h2 className="line-clamp-1 text-sm font-black sm:text-base">Thẻ BHYT điện tử</h2>
         </div>
         <Badge tone={status === "Còn hiệu lực" ? "green" : "amber"}>{status}</Badge>
       </div>
-      <p className="clinical-mono mt-2 break-all text-base font-black tracking-normal sm:text-lg">{cardNumber || "Chưa ghi nhận"}</p>
-      <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+      <p className="clinical-mono mt-1.5 break-all text-base font-black tracking-normal sm:text-lg">{cardNumber || "Chưa ghi nhận"}</p>
+      <div className="mt-1.5 grid grid-cols-2 gap-2 text-xs">
         <div>
           <p className="text-[10px] font-bold uppercase text-white/70">Từ ngày</p>
           <p className="clinical-mono mt-0.5 font-bold">{formatOptionalDate(validFrom)}</p>
@@ -208,7 +208,7 @@ function InsuranceDigitalCard({
           <p className="clinical-mono mt-0.5 font-bold">{formatOptionalDate(validTo)}</p>
         </div>
       </div>
-      <div className="mt-2 flex flex-wrap gap-2">
+      <div className="mt-2 grid grid-cols-2 gap-2">
         {cardNumber && <CopyButton value={cardNumber} label="Copy số thẻ" />}
         <CopyButton value={patientCode} label="Copy mã BN" />
       </div>

@@ -1,0 +1,27 @@
+{
+  "expo": {
+    "name": "An Phu Care",
+    "slug": "an-phu-care",
+    "scheme": "anphucare",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "vn.benhvienanphu.anphucare"
+    },
+    "android": {
+      "package": "vn.benhvienanphu.anphucare"
+    },
+    "extra": {
+      "portalApiBaseUrl": "https://anphucare.benhvienanphu.vn"
+    },
+    "plugins": [
+      "expo-web-browser",
+      "expo-camera"
+    ]
+  }
+}

@@ -2,6 +2,10 @@
   "name": "an-phu-patient-portal",
   "version": "0.1.0",
   "private": true,
+  "workspaces": [
+    "apps/mobile-app",
+    "packages/patient-domain"
+  ],
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -19,15 +23,15 @@
     "lucide-react": "^0.468.0",
     "next": "^15.0.0",
     "pg": "^8.23.0",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
     "react-hook-form": "^7.53.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {
     "@types/node": "^22.5.5",
-    "@types/react": "^19.0.0",
-    "@types/react-dom": "^19.0.0",
+    "@types/react": "~19.1.10",
+    "@types/react-dom": "~19.1.7",
     "autoprefixer": "^10.4.20",
     "eslint": "^8.57.1",
     "eslint-config-next": "^15.0.0",

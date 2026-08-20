@@ -11,6 +11,7 @@ const linkProfileSchema = z.object({
   phone: z.string().trim().min(9).max(20),
   citizenId: z.string().trim().max(20).optional().default(""),
   birthDate: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/),
+  relationship: z.string().trim().min(1).max(40).optional().default("Người thân"),
 });
 
 export async function POST(request: Request) {
@@ -48,7 +49,7 @@ export async function POST(request: Request) {
   const profiles = await linkAccountProfile(session, {
     mabn,
     fullName,
-    relationship: relationship ?? "Người thân",
+    relationship: parsed.data.relationship || relationship || "Người thân",
   });
 
   if (!profiles) {

@@ -23,6 +23,7 @@ import {
 import { BrandLogo } from "@/components/brand-logo";
 import { DemoBanner } from "@/components/demo-banner";
 import { InstallAppButton } from "@/components/install-app-button";
+import { AccessibilityTextToggle } from "@/components/accessibility-text-toggle";
 
 type NavItem = {
   href: string;
@@ -108,6 +109,9 @@ export function AppShell({
       <div className="mx-auto flex min-h-[calc(100vh-40px)] max-w-[1440px]">
         <aside className="hidden w-64 shrink-0 border-r border-cream-200 bg-cream-50/95 px-3 py-5 shadow-[0_8px_22px_rgba(7,60,57,0.055)] lg:block">
           <Brand />
+          <div className="mt-4">
+            <AccessibilityTextToggle />
+          </div>
           <InstallAppButton className="mt-5 w-full" />
           <nav className="mt-6 space-y-1" aria-label="Điều hướng chính">
             {allItems.map((item) => (
@@ -141,6 +145,7 @@ export function AppShell({
               <Brand compact />
             </div>
             <div className="flex shrink-0 items-center gap-1">
+              <AccessibilityTextToggle compact />
               <InstallAppButton compact className="hidden min-[360px]:inline-flex" />
               <button
                 type="button"

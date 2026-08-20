@@ -25,6 +25,16 @@ if (string.IsNullOrWhiteSpace(builder.Configuration["urls"]) &&
 builder.Logging.ClearProviders();
 builder.Logging.AddConsole();
 builder.Logging.AddDebug();
+if (OperatingSystem.IsWindows())
+{
+#pragma warning disable CA1416
+    builder.Logging.AddEventLog(settings =>
+    {
+        settings.SourceName = "AnPhuPatientPortalSyncAgent";
+        settings.LogName = "Application";
+    });
+#pragma warning restore CA1416
+}
 
 builder.Services.AddSingleton<PatientTokenValidator>();
 builder.Services.AddScoped<OracleHisPatientRepository>();

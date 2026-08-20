@@ -15,7 +15,35 @@ const protectedRoutes = [
   "/booking",
 ];
 
+const corsOrigins = new Set([
+  "http://localhost:8081",
+  "http://localhost:8082",
+  "http://127.0.0.1:8081",
+  "http://127.0.0.1:8082",
+  "https://patient-portal-aph.vercel.app",
+  "https://anphucare.benhvienanphu.vn",
+]);
+
+function withCors(response: NextResponse, request: NextRequest) {
+  const origin = request.headers.get("origin");
+  if (origin && corsOrigins.has(origin)) {
+    response.headers.set("Access-Control-Allow-Origin", origin);
+    response.headers.set("Access-Control-Allow-Credentials", "true");
+    response.headers.set("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
+    response.headers.set("Access-Control-Allow-Headers", "Content-Type, Accept");
+    response.headers.append("Vary", "Origin");
+  }
+  return response;
+}
+
 export function middleware(request: NextRequest) {
+  if (request.nextUrl.pathname.startsWith("/api/")) {
+    if (request.method === "OPTIONS") {
+      return withCors(new NextResponse(null, { status: 204 }), request);
+    }
+    return withCors(NextResponse.next(), request);
+  }
+
   const isProtected = protectedRoutes.some((route) => request.nextUrl.pathname.startsWith(route));
 
   if (!isProtected) {
@@ -42,6 +70,7 @@ export function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
+    "/api/:path*",
     "/dashboard/:path*",
     "/profile/:path*",
     "/today-visit/:path*",

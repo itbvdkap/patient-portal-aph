@@ -51,3 +51,20 @@ select {
 .safe-bottom {
   padding-bottom: env(safe-area-inset-bottom);
 }
+
+html.large-text-mode {
+  font-size: 112.5%;
+}
+
+html.large-text-mode body {
+  letter-spacing: 0;
+}
+
+html.large-text-mode .text-\[11px\],
+html.large-text-mode .text-xs {
+  font-size: 0.8125rem;
+}
+
+html.large-text-mode .text-sm {
+  font-size: 0.9375rem;
+}

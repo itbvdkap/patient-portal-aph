@@ -254,6 +254,7 @@ export function BookingForm({ linkedProfiles = [] }: { linkedProfiles?: BookingP
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState<BookingResponse | null>(null);
+  const [step, setStep] = useState<1 | 2 | 3>(1);
 
   function update<K extends keyof BookingFormState>(key: K, value: BookingFormState[K]) {
     setForm((current) => ({ ...current, [key]: value }));
@@ -284,6 +285,7 @@ export function BookingForm({ linkedProfiles = [] }: { linkedProfiles?: BookingP
 
   function startNewPatient() {
     setPatientMode("new");
+    setStep(1);
     setManualPatientCode("");
     setManualVerifyBirthDate("");
     setManualVerifyPhone("");
@@ -341,6 +343,41 @@ export function BookingForm({ linkedProfiles = [] }: { linkedProfiles?: BookingP
     }
   }
 
+  function goToPatientStep() {
+    setError("");
+    setStep(1);
+  }
+
+  function continueFromPatientStep() {
+    if (!form.fullName.trim()) {
+      setError("Vui lòng nhập họ tên bệnh nhân.");
+      return;
+    }
+
+    if (!form.phone.trim()) {
+      setError("Vui lòng nhập số điện thoại liên hệ.");
+      return;
+    }
+
+    if (patientMode === "new" && !form.soCCCD.trim()) {
+      setError("Bệnh nhân mới cần nhập CCCD/CMND hoặc quét QR CCCD.");
+      return;
+    }
+
+    setError("");
+    setStep(2);
+  }
+
+  function continueFromScheduleStep() {
+    if (!form.appointmentDate.trim()) {
+      setError("Vui lòng chọn ngày khám.");
+      return;
+    }
+
+    setError("");
+    setStep(3);
+  }
+
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const turnstileToken = event.currentTarget.querySelector<HTMLInputElement>('input[name="cf-turnstile-response"]')?.value ?? "";
@@ -363,6 +400,7 @@ export function BookingForm({ linkedProfiles = [] }: { linkedProfiles?: BookingP
 
       setSuccess(data);
       setForm(initialForm);
+      setStep(1);
     } catch {
       setError("Không kết nối được hệ thống đăng ký khám. Vui lòng thử lại sau.");
     } finally {
@@ -400,6 +438,10 @@ export function BookingForm({ linkedProfiles = [] }: { linkedProfiles?: BookingP
         </div>
       )}
 
+      <BookingStepper step={step} />
+
+      {step === 1 ? (
+        <>
       <Panel>
         <SectionHeader title="Đối tượng đăng ký" meta={patientMode === "old" ? "Bệnh nhân cũ" : "Bệnh nhân mới"} />
         <div className="grid grid-cols-2 gap-2">
@@ -675,6 +717,15 @@ export function BookingForm({ linkedProfiles = [] }: { linkedProfiles?: BookingP
         </div>
       </Panel>
 
+      <WizardActions
+        primaryLabel="Tiếp tục chọn lịch khám"
+        onPrimary={continueFromPatientStep}
+      />
+        </>
+      ) : null}
+
+      {step === 2 ? (
+        <>
       <Panel>
         <SectionHeader title="Thông tin khám" meta="Chọn lịch" />
         <div className="grid gap-3 sm:grid-cols-2">
@@ -771,6 +822,17 @@ export function BookingForm({ linkedProfiles = [] }: { linkedProfiles?: BookingP
         </div>
       </Panel>
 
+      <WizardActions
+        secondaryLabel="Quay lại thông tin bệnh nhân"
+        onSecondary={goToPatientStep}
+        primaryLabel="Tiếp tục xác nhận"
+        onPrimary={continueFromScheduleStep}
+      />
+        </>
+      ) : null}
+
+      {step === 3 ? (
+        <>
       <Panel>
         <SectionHeader title="Lý do khám" />
         <label>
@@ -810,7 +872,81 @@ export function BookingForm({ linkedProfiles = [] }: { linkedProfiles?: BookingP
       <div className="pb-2 text-center text-xs text-slate-500">
         <Badge tone="slate">Dùng chung dữ liệu với benhvienanphu.vn</Badge>
       </div>
+        </>
+      ) : null}
     </form>
+  );
+}
+
+function BookingStepper({ step }: { step: 1 | 2 | 3 }) {
+  const steps = [
+    { id: 1, title: "Người bệnh" },
+    { id: 2, title: "Lịch khám" },
+    { id: 3, title: "Xác nhận" },
+  ] as const;
+
+  return (
+    <nav className="rounded-md border border-cream-200 bg-cream-50 p-2 shadow-[0_8px_22px_rgba(7,60,57,0.055)]" aria-label="Các bước đăng ký khám">
+      <ol className="grid grid-cols-3 gap-2">
+        {steps.map((item) => {
+          const active = item.id === step;
+          const done = item.id < step;
+          return (
+            <li key={item.id}>
+              <span
+                className={`flex min-h-12 items-center justify-center gap-2 rounded-md px-2 text-center text-xs font-black ${
+                  active
+                    ? "bg-primary-700 text-white shadow-sm"
+                    : done
+                      ? "bg-primary-50 text-primary-800"
+                      : "bg-white/70 text-slate-500"
+                }`}
+              >
+                <span className="clinical-mono inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-white/80 text-[11px] text-primary-800">
+                  {item.id}
+                </span>
+                <span className="leading-tight">{item.title}</span>
+              </span>
+            </li>
+          );
+        })}
+      </ol>
+    </nav>
+  );
+}
+
+function WizardActions({
+  primaryLabel,
+  secondaryLabel,
+  onPrimary,
+  onSecondary,
+}: {
+  primaryLabel: string;
+  secondaryLabel?: string;
+  onPrimary: () => void;
+  onSecondary?: () => void;
+}) {
+  const hasSecondary = Boolean(secondaryLabel && onSecondary);
+
+  return (
+    <div className={`sticky bottom-[72px] z-10 -mx-1 grid gap-2 rounded-md border border-cream-200 bg-cream-50/95 p-2 shadow-[0_-10px_30px_rgba(7,60,57,0.12)] backdrop-blur sm:static sm:mx-0 sm:border-0 sm:bg-transparent sm:p-0 sm:shadow-none ${hasSecondary ? "sm:grid-cols-2" : ""}`}>
+      {hasSecondary ? (
+        <button
+          type="button"
+          onClick={onSecondary}
+          className="flex min-h-12 w-full items-center justify-center rounded-md border border-primary-200 bg-white px-4 text-sm font-black text-primary-800 hover:bg-primary-50"
+        >
+          {secondaryLabel}
+        </button>
+      ) : null}
+      <button
+        type="button"
+        onClick={onPrimary}
+        className="flex min-h-12 w-full items-center justify-center rounded-md bg-primary-800 px-4 text-sm font-black text-white shadow-[0_14px_32px_rgba(0,95,86,0.24)] hover:bg-primary-900"
+      >
+        {primaryLabel}
+      </button>
+    </div>
   );
 }
 

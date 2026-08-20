@@ -31,12 +31,24 @@ public sealed class SupabaseQueueSyncAgent(
     {
         while (!cancellationToken.IsCancellationRequested)
         {
-            var didWork = await ProcessOneAuthAttemptAsync(cancellationToken)
-                || await ProcessOneSyncJobAsync(cancellationToken);
-
-            if (!didWork)
+            try
             {
-                await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken);
+                var didWork = await ProcessOneAuthAttemptAsync(cancellationToken)
+                    || await ProcessOneSyncJobAsync(cancellationToken);
+
+                if (!didWork)
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken);
+                }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                break;
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Queue polling cycle failed; retrying after a short delay.");
+                await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken);
             }
         }
     }

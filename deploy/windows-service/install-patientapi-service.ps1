@@ -56,6 +56,9 @@ if ($existing) {
 $binPath = "`"$exePath`""
 sc.exe create $ServiceName binPath= $binPath start= delayed-auto DisplayName= $DisplayName | Out-Null
 sc.exe description $ServiceName "Polls Supabase sync jobs, reads Oracle HIS, and writes patient snapshots back to Supabase." | Out-Null
+# Recover from transient Oracle/network failures or an unexpected process crash.
+sc.exe failure $ServiceName reset= 86400 actions= restart/5000/restart/15000/restart/60000 | Out-Null
+sc.exe failureflag $ServiceName 1 | Out-Null
 
 $serviceKey = "HKLM:\SYSTEM\CurrentControlSet\Services\$ServiceName"
 New-ItemProperty -Path $serviceKey -Name "Environment" -Value $envItems -PropertyType MultiString -Force | Out-Null

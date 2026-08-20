@@ -6,6 +6,7 @@ export interface PatientSessionProfile {
   mabn: string;
   patientId: string;
   fullName?: string;
+  relationship?: string;
 }
 
 export interface AuthenticatedPatientSession {
@@ -26,13 +27,13 @@ interface PatientSessionPayload {
   accountId?: string;
   accountKey?: string;
   phone?: string;
-  profiles?: Array<{ mabn: string; fullName?: string }>;
+  profiles?: Array<{ mabn: string; fullName?: string; relationship?: string }>;
 }
 
 export function createPatientSessionCookie(
   hisPatientCode: string,
   maxAgeSeconds: number,
-  options: { sessionId?: string; accountId?: string; accountKey?: string; phone?: string; profiles?: Array<{ mabn: string; fullName?: string }> } = {},
+  options: { sessionId?: string; accountId?: string; accountKey?: string; phone?: string; profiles?: Array<{ mabn: string; fullName?: string; relationship?: string }> } = {},
 ) {
   const payload: PatientSessionPayload = {
     mabn: hisPatientCode || undefined,
@@ -123,15 +124,19 @@ function verifySignature(value: string, signature: string) {
   return expected.length === actual.length && timingSafeEqual(expected, actual);
 }
 
-function normalizeProfiles(profiles: Array<{ mabn: string; fullName?: string }>) {
+function normalizeProfiles(profiles: Array<{ mabn: string; fullName?: string; relationship?: string }>) {
   const seen = new Set<string>();
-  const result: Array<{ mabn: string; fullName?: string }> = [];
+  const result: Array<{ mabn: string; fullName?: string; relationship?: string }> = [];
 
   for (const profile of profiles) {
     const mabn = profile.mabn?.trim();
     if (!mabn || seen.has(mabn)) continue;
     seen.add(mabn);
-    result.push({ mabn, fullName: profile.fullName });
+    result.push({
+      mabn,
+      ...(profile.fullName ? { fullName: profile.fullName } : {}),
+      ...(profile.relationship ? { relationship: profile.relationship } : {}),
+    });
   }
 
   return result;

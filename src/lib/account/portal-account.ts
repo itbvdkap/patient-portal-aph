@@ -30,7 +30,19 @@ export interface AccountDeviceSession {
   isCurrent: boolean;
 }
 
+export interface AccountIdentity {
+  fullName?: string;
+  displayName?: string;
+  phone?: string;
+  phoneMasked?: string;
+  status?: string;
+  phoneVerifiedAt?: string;
+  passwordSetAt?: string;
+  lastLoginAt?: string;
+}
+
 export interface AccountOverview {
+  identity?: AccountIdentity;
   profiles: AccountPatientProfile[];
   sessions: AccountDeviceSession[];
   accountReady: boolean;
@@ -39,6 +51,7 @@ export interface AccountOverview {
 export interface LinkedAccountProfile {
   mabn: string;
   fullName?: string;
+  relationship?: string;
   isActive?: boolean;
   lastSelectedAt?: string;
 }
@@ -326,7 +339,7 @@ export async function getLinkedProfilesForAccount(accountId: string): Promise<Li
   const supabase = createSupabaseServiceClient();
   const { data, error } = await supabase
     .from("portal_account_profiles")
-    .select("mabn,display_name,patient_name,is_active,last_selected_at")
+    .select("mabn,display_name,patient_name,relationship,is_active,last_selected_at")
     .eq("account_id", accountId)
     .order("is_active", { ascending: false })
     .order("last_selected_at", { ascending: false, nullsFirst: false })
@@ -337,6 +350,7 @@ export async function getLinkedProfilesForAccount(accountId: string): Promise<Li
   return data.map((row) => ({
     mabn: row.mabn,
     fullName: row.display_name ?? row.patient_name ?? undefined,
+    relationship: row.relationship ?? undefined,
     isActive: Boolean(row.is_active),
     lastSelectedAt: row.last_selected_at ?? undefined,
   }));
@@ -355,14 +369,25 @@ export async function getAccountOverview(session: AuthenticatedPatientSession, c
   }));
 
   const accountFilter = accountQuery(session);
+  const fallbackIdentity: AccountIdentity | undefined = session.phone
+    ? {
+        phone: session.phone,
+        phoneMasked: maskPhone(session.phone),
+      }
+    : undefined;
 
   if (!accountFilter) {
-    return { profiles: fallbackProfiles, sessions: [], accountReady: false };
+    return { identity: fallbackIdentity, profiles: fallbackProfiles, sessions: [], accountReady: false };
   }
 
   try {
     const supabase = createSupabaseServiceClient();
-    const [profileRows, sessionRows] = await Promise.all([
+    const [accountRow, profileRows, sessionRows] = await Promise.all([
+      supabase
+        .from("portal_accounts")
+        .select("full_name,display_name,phone,phone_masked,status,phone_verified_at,password_set_at,last_login_at")
+        .match(accountFilter)
+        .maybeSingle(),
       supabase
         .from("portal_account_profiles")
         .select("mabn,display_name,relationship,is_default,last_selected_at")
@@ -378,8 +403,21 @@ export async function getAccountOverview(session: AuthenticatedPatientSession, c
     ]);
 
     if (profileRows.error || sessionRows.error) {
-      return { profiles: fallbackProfiles, sessions: [], accountReady: false };
+      return { identity: fallbackIdentity, profiles: fallbackProfiles, sessions: [], accountReady: false };
     }
+
+    const identity = accountRow.data
+      ? {
+          fullName: accountRow.data.full_name ?? undefined,
+          displayName: accountRow.data.display_name ?? undefined,
+          phone: accountRow.data.phone ?? fallbackIdentity?.phone,
+          phoneMasked: accountRow.data.phone_masked ?? (accountRow.data.phone ? maskPhone(accountRow.data.phone) : fallbackIdentity?.phoneMasked),
+          status: accountRow.data.status ?? undefined,
+          phoneVerifiedAt: accountRow.data.phone_verified_at ?? undefined,
+          passwordSetAt: accountRow.data.password_set_at ?? undefined,
+          lastLoginAt: accountRow.data.last_login_at ?? undefined,
+        }
+      : fallbackIdentity;
 
     const profiles =
       profileRows.data?.map((row) => ({
@@ -407,9 +445,9 @@ export async function getAccountOverview(session: AuthenticatedPatientSession, c
         isCurrent: row.session_id === session.sessionId,
       })) ?? [];
 
-    return { profiles, sessions, accountReady: true };
+    return { identity, profiles, sessions, accountReady: true };
   } catch {
-    return { profiles: fallbackProfiles, sessions: [], accountReady: false };
+    return { identity: fallbackIdentity, profiles: fallbackProfiles, sessions: [], accountReady: false };
   }
 }
 
@@ -421,7 +459,7 @@ export async function selectAccountProfile(session: AuthenticatedPatientSession,
   }
 
   const supabase = createSupabaseServiceClient();
-  const { data, error } = await supabase.from("portal_account_profiles").select("mabn,display_name").match(accountFilter);
+    const { data, error } = await supabase.from("portal_account_profiles").select("mabn,display_name,relationship").match(accountFilter);
 
   if (error || !data?.some((profile) => profile.mabn === mabn)) {
     return null;
@@ -446,7 +484,76 @@ export async function selectAccountProfile(session: AuthenticatedPatientSession,
   }
 
   void enqueuePatientSync(mabn, "all").catch(() => undefined);
-  return data.map((profile) => ({ mabn: profile.mabn, fullName: profile.display_name ?? undefined }));
+  return data.map((profile) => ({ mabn: profile.mabn, fullName: profile.display_name ?? undefined, relationship: profile.relationship ?? undefined }));
+}
+
+export async function unlinkAccountProfile(session: AuthenticatedPatientSession, mabn: string) {
+  const accountFilter = accountQuery(session);
+
+  if (!accountFilter) {
+    return null;
+  }
+
+  const supabase = createSupabaseServiceClient();
+  const { data, error } = await supabase
+    .from("portal_account_profiles")
+    .select("mabn,display_name,is_active,is_default,linked_at,last_selected_at")
+    .match(accountFilter)
+    .order("is_default", { ascending: false })
+    .order("last_selected_at", { ascending: false, nullsFirst: false })
+    .order("linked_at", { ascending: true });
+
+  if (error || !data?.length || !data.some((profile) => profile.mabn === mabn)) {
+    return null;
+  }
+
+  if (data.length <= 1) {
+    throw new Error("cannot_remove_last_profile");
+  }
+
+  const deletingCurrent = data.some((profile) => profile.mabn === mabn && profile.is_active);
+  const nextProfile = data.find((profile) => profile.mabn !== mabn);
+  if (!nextProfile) {
+    throw new Error("cannot_remove_last_profile");
+  }
+
+  await throwOnError(
+    supabase.from("portal_account_profiles").delete().match(accountFilter).eq("mabn", mabn),
+    "unlink account profile",
+  );
+
+  if (deletingCurrent) {
+    await supabase.from("portal_account_profiles").update({ is_active: false }).match(accountFilter);
+    await supabase
+      .from("portal_account_profiles")
+      .update({ is_active: true, last_selected_at: new Date().toISOString() })
+      .match(accountFilter)
+      .eq("mabn", nextProfile.mabn);
+
+    if (session.sessionId) {
+      await supabase
+        .from("portal_account_sessions")
+        .update({ current_mabn: nextProfile.mabn, last_seen_at: new Date().toISOString() })
+        .eq("session_id", session.sessionId);
+    }
+  }
+
+  const { data: remaining, error: remainingError } = await supabase
+    .from("portal_account_profiles")
+    .select("mabn,display_name,relationship,is_active")
+    .match(accountFilter)
+    .order("is_default", { ascending: false })
+    .order("linked_at", { ascending: true });
+
+  if (remainingError || !remaining?.length) {
+    return null;
+  }
+
+  const currentMabn = deletingCurrent ? nextProfile.mabn : session.mabn;
+  return {
+    currentMabn,
+    profiles: remaining.map((row) => ({ mabn: row.mabn, fullName: row.display_name ?? undefined, relationship: row.relationship ?? undefined })),
+  };
 }
 
 export async function linkAccountProfile(
@@ -481,7 +588,7 @@ export async function linkAccountProfile(
 
   const { data, error } = await supabase
     .from("portal_account_profiles")
-    .select("mabn,display_name")
+    .select("mabn,display_name,relationship")
     .match(accountFilter)
     .order("is_default", { ascending: false })
     .order("linked_at", { ascending: true });
@@ -491,7 +598,7 @@ export async function linkAccountProfile(
   }
 
   void enqueuePatientSync(profile.mabn, "all").catch(() => undefined);
-  return data.map((row) => ({ mabn: row.mabn, fullName: row.display_name ?? undefined }));
+  return data.map((row) => ({ mabn: row.mabn, fullName: row.display_name ?? undefined, relationship: row.relationship ?? undefined }));
 }
 
 export async function revokeAllAccountSessions(session: AuthenticatedPatientSession) {

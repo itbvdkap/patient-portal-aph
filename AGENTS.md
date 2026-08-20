@@ -14,6 +14,8 @@
 - `src/lib/supabase`: Supabase clients and patient sync enqueue helpers.
 - `src/lib/booking`: Appointment booking logic.
 - `src/types`: Shared TypeScript patient domain types.
+- `apps/mobile-app`: React Native + Expo mobile app shell. Keep it as a separate workspace and do not let root Next.js build typecheck React Native files.
+- `packages/patient-domain`: Shared patient domain types, session schemas, and lightweight format helpers for web/mobile.
 - `tests`: Vitest unit tests for auth, session, formatting, and repositories.
 - `backend/PatientApi`: Internal .NET API/sync agent for HIS/Oracle and reporting data.
 - `supabase`: SQL schema, seed data, and migrations.
@@ -34,6 +36,18 @@ Run checks before handing off changes:
 ```bash
 npm run test
 npm run build
+```
+
+Shared package checks:
+
+```bash
+npm --workspace @anphu/patient-domain run typecheck
+```
+
+Mobile app local start:
+
+```bash
+npm --workspace @anphu/mobile-app run start
 ```
 
 If npm cache writes are blocked in a sandbox, use a writable cache:
@@ -123,6 +137,8 @@ Service role keys, database credentials, Oracle credentials, and HIS tokens must
 ## Coding Guidelines
 
 - Keep patient data access behind `PatientRepository`; pages and API routes should not talk directly to Oracle/HIS.
+- Mobile app must call Next.js API routes (`/api/mobile/*`, `/api/me/*`, `/api/auth/*`) and must not call Oracle/HIS, PatientApi internal URLs, or Supabase service-role APIs directly.
+- Shared patient contracts should live in `packages/patient-domain`; keep `src/types/patient.ts` as a compatibility re-export for existing web imports.
 - Use Supabase reporting tables for public deployment. Oracle/HIS access belongs in the internal PatientApi/sync agent.
 - Keep auth/session changes covered by tests in `tests/auth.test.ts` and `tests/session.test.ts`.
 - Keep booking changes covered around `src/lib/booking/appointments.ts` and related API routes.

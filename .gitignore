@@ -1,6 +1,8 @@
 .next/
+.next-stale-*/
 .playwright-cli/
 node_modules/
+.expo/
 out/
 coverage/
 .env*.local

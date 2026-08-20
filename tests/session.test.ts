@@ -19,9 +19,11 @@ describe("patient session", () => {
     process.env.PORTAL_SESSION_SECRET = "test-session-secret";
     const cookieValue = createPatientSessionCookie("23006552", 60);
 
-    expect(getDemoPatientSession(makeCookies(cookieValue))).toEqual({
+    expect(getDemoPatientSession(makeCookies(cookieValue))).toMatchObject({
       patientId: "his-23006552",
       userId: "patient-23006552",
+      mabn: "23006552",
+      profiles: [{ mabn: "23006552", patientId: "his-23006552" }],
     });
   });
 

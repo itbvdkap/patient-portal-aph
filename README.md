@@ -14,6 +14,12 @@ Supabase reporting/auth layer cho dữ liệu public, tài khoản bệnh nhân,
 
 Internal PatientApi bằng .NET để đọc HIS/Oracle và đồng bộ dữ liệu vào reporting DB.
 
+Đã chuẩn bị thêm nền tảng mobile:
+
+React Native + Expo app trong `apps/mobile-app`, dùng lại Next.js API/session hiện tại.
+
+Shared TypeScript domain package trong `packages/patient-domain`, dùng chung types/schema cho web và mobile.
+
 Luồng triển khai public ưu tiên:
 
 Browser -> Next.js Portal -> Supabase Reporting DB
@@ -42,6 +48,8 @@ src/lib/data            PatientRepository implementations
 src/lib/supabase        Supabase client and sync enqueue helpers
 src/lib/booking         Appointment booking logic
 src/types               Patient domain TypeScript types
+apps/mobile-app         React Native + Expo patient mobile app
+packages/patient-domain Shared patient domain types/session schemas
 tests                   Vitest tests
 backend/PatientApi      Internal .NET API/sync agent
 supabase                SQL schema, seed, migrations
@@ -69,6 +77,20 @@ Chạy Development
 npm run dev
 
 Mở http://localhost:3000.
+
+Chạy Mobile App Skeleton
+
+Sau khi cài workspace dependencies:
+
+npm --workspace @anphu/mobile-app run start
+
+Mobile app không đọc Oracle/HIS trực tiếp. App gọi Next.js API, dùng session chuẩn qua:
+
+GET /api/mobile/session
+
+Xem thêm:
+
+docs/MOBILE-APP-ARCHITECTURE.md
 
 Demo/Local Login
 
@@ -261,5 +283,7 @@ Sau khi ổn định mới cân nhắc tách tiếp:
 packages/patient-domain
 packages/portal-auth
 packages/portal-data
+
+Hiện tại `packages/patient-domain` đã được tạo trước để web/mobile dùng chung types và session schema. Root Next app vẫn giữ nguyên vị trí để tránh ảnh hưởng Vercel production hiện tại.
 
 Mục tiêu là chia ranh giới rõ hơn, chạy test/build theo từng phần, và giảm lượng code phải đọc khi sửa một tính năng cụ thể.

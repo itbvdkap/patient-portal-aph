@@ -67,6 +67,19 @@ Invoke-RestMethod http://127.0.0.1:5080/health
 Get-EventLog -LogName Application -Newest 50 | Where-Object { $_.Source -like "*Patient*" -or $_.Message -like "*Supabase*" }
 ```
 
+The installer configures recovery actions: Windows retries after 5 seconds, 15 seconds, then 60 seconds if the process exits unexpectedly. Inspect the recovery policy and the most recent stop reason with:
+
+```powershell
+sc.exe qfailure AnPhuPatientPortalSyncAgent
+Get-Service AnPhuPatientPortalSyncAgent | Format-List Name,Status,StartType,ServiceType
+sc.exe queryex AnPhuPatientPortalSyncAgent
+Get-WinEvent -FilterHashtable @{LogName='System'; ProviderName='Service Control Manager'; StartTime=(Get-Date).AddHours(-6)} |
+  Where-Object { $_.Message -match 'AnPhuPatientPortalSyncAgent' } |
+  Select-Object TimeCreated,Id,LevelDisplayName,Message | Format-List
+Get-Content C:\PatientPortalAgent\logs\patientapi.err.log -Tail 100 -ErrorAction SilentlyContinue
+Get-Content C:\PatientPortalAgent\logs\patientapi.out.log -Tail 100 -ErrorAction SilentlyContinue
+```
+
 ## Uninstall
 
 ```powershell

@@ -2,9 +2,11 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { CheckCircle2, IdCard, Loader2, LogOut, Phone, Plus, Search, ShieldAlert, Smartphone, UserRound } from "lucide-react";
+import { CheckCircle2, ChevronUp, IdCard, Loader2, LogOut, Phone, Plus, Search, ShieldAlert, Smartphone, Trash2, UserRound, X } from "lucide-react";
 import type { AccountDeviceSession, AccountPatientProfile } from "@/lib/account/portal-account";
 import { formatDateTime } from "@/utils/format";
+
+const relationshipOptions = ["Bản thân", "Con", "Cha/Mẹ", "Vợ/Chồng", "Anh/Chị/Em", "Ông/Bà", "Người giám hộ", "Người thân", "Khác"];
 
 function vnDateToIso(value: string) {
   const trimmed = value.trim();
@@ -29,7 +31,11 @@ function formatVnDateInput(value: string) {
 export function ProfileSwitcher({ profiles }: { profiles: AccountPatientProfile[] }) {
   const router = useRouter();
   const [loadingMabn, setLoadingMabn] = useState<string | null>(null);
+  const [removingMabn, setRemovingMabn] = useState<string | null>(null);
+  const [confirmRemoveMabn, setConfirmRemoveMabn] = useState<string | null>(null);
+  const [sheetOpen, setSheetOpen] = useState(false);
   const [message, setMessage] = useState("");
+  const currentProfile = profiles.find((profile) => profile.isCurrent) ?? profiles[0];
 
   async function selectProfile(mabn: string) {
     setMessage("");
@@ -47,6 +53,7 @@ export function ProfileSwitcher({ profiles }: { profiles: AccountPatientProfile[
         return;
       }
 
+      setSheetOpen(false);
       router.refresh();
       router.push("/dashboard");
     } finally {
@@ -54,45 +61,140 @@ export function ProfileSwitcher({ profiles }: { profiles: AccountPatientProfile[
     }
   }
 
+  async function removeProfile(mabn: string) {
+    if (confirmRemoveMabn !== mabn) {
+      setConfirmRemoveMabn(mabn);
+      setMessage("Bấm Gỡ liên kết một lần nữa để xác nhận.");
+      return;
+    }
+
+    setMessage("");
+    setRemovingMabn(mabn);
+    try {
+      const response = await fetch("/api/account/unlink-profile", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mabn }),
+      });
+
+      const body = (await response.json().catch(() => null)) as { error?: string } | null;
+      if (!response.ok) {
+        setMessage(body?.error ?? "Không gỡ được hồ sơ.");
+        return;
+      }
+
+      router.refresh();
+    } finally {
+      setRemovingMabn(null);
+      setConfirmRemoveMabn(null);
+    }
+  }
+
   return (
     <div className="grid gap-3">
-      {profiles.length ? profiles.map((profile) => (
-        <article
-          key={profile.mabn}
-          className={`rounded-md border p-3 ${
-            profile.isCurrent ? "border-primary-200 bg-primary-50/80" : "border-cream-200 bg-white/70"
-          }`}
+      {currentProfile ? (
+        <button
+          type="button"
+          onClick={() => setSheetOpen(true)}
+          className="flex min-h-20 items-center justify-between gap-3 rounded-md border border-primary-200 bg-primary-50/80 p-3 text-left shadow-sm"
+          aria-expanded={sheetOpen}
         >
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <h3 className="font-serif text-lg font-black leading-6 text-ink">{profile.fullName}</h3>
-                {profile.isCurrent ? (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-primary-700 px-2 py-1 text-xs font-bold text-white">
-                    <CheckCircle2 aria-hidden="true" className="h-3.5 w-3.5" />
-                    Đang xem
-                  </span>
-                ) : null}
-              </div>
-              <p className="clinical-mono mt-1 text-sm font-bold text-slate-600">Mã BN: {profile.mabn}</p>
-              {profile.relationship ? <p className="mt-1 text-sm font-semibold text-slate-500">{profile.relationship}</p> : null}
-            </div>
-            <button
-              type="button"
-              onClick={() => selectProfile(profile.mabn)}
-              disabled={profile.isCurrent || loadingMabn !== null}
-              className="inline-flex min-h-10 shrink-0 items-center justify-center rounded-md bg-ink px-3 text-sm font-bold text-white hover:bg-primary-900 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
-            >
-              {loadingMabn === profile.mabn ? <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" /> : profile.isCurrent ? "Đã chọn" : "Chọn"}
-            </button>
-          </div>
-        </article>
-      )) : (
+          <span className="flex min-w-0 items-center gap-3">
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary-700 text-white">
+              <UserRound aria-hidden="true" className="h-5 w-5" />
+            </span>
+            <span className="min-w-0">
+              <span className="block truncate font-serif text-lg font-black leading-6 text-ink">{currentProfile.fullName}</span>
+              <span className="clinical-mono mt-0.5 block text-sm font-bold text-slate-600">Mã BN: {currentProfile.mabn}</span>
+              <span className="mt-0.5 block text-sm font-semibold text-slate-500">{currentProfile.relationship || "Hồ sơ liên kết"}</span>
+            </span>
+          </span>
+          <span className="inline-flex shrink-0 items-center gap-1 rounded-md bg-white px-2.5 py-2 text-xs font-black text-primary-700 ring-1 ring-primary-100">
+            Đổi
+            <ChevronUp aria-hidden="true" className="h-4 w-4" />
+          </span>
+        </button>
+      ) : (
         <div className="rounded-md border border-dashed border-cream-200 bg-white/60 p-4 text-sm font-semibold leading-6 text-slate-600">
           Chưa có hồ sơ y tế liên kết. Hãy thêm hồ sơ bằng mã bệnh nhân ở phần bên dưới.
         </div>
       )}
+
       {message ? <p className="rounded-md bg-amber-100 px-3 py-2 text-sm font-semibold text-amber-900">{message}</p> : null}
+
+      {sheetOpen ? (
+        <div className="fixed inset-0 z-50 flex items-end bg-black/35 px-3 pb-[calc(env(safe-area-inset-bottom)+1rem)] pt-8 backdrop-blur-[2px]" onClick={() => setSheetOpen(false)}>
+          <section
+            className="mx-auto max-h-[82vh] w-full max-w-lg overflow-hidden rounded-t-2xl border border-cream-200 bg-cream-50 shadow-[0_24px_60px_rgba(7,60,57,0.24)]"
+            aria-label="Chọn hồ sơ đang xem"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-cream-200 px-4 py-3">
+              <div>
+                <h2 className="font-serif text-lg font-black text-ink">Hồ sơ người thân</h2>
+                <p className="clinical-mono mt-0.5 text-xs font-semibold text-slate-500">{profiles.length} hồ sơ đã liên kết</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSheetOpen(false)}
+                className="inline-flex h-10 w-10 items-center justify-center rounded-full text-slate-500 hover:bg-cream-100 hover:text-ink"
+                aria-label="Đóng chọn hồ sơ"
+              >
+                <X aria-hidden="true" className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="grid max-h-[65vh] gap-3 overflow-auto p-4">
+              {profiles.map((profile) => (
+                <article
+                  key={profile.mabn}
+                  className={`rounded-md border p-3 ${
+                    profile.isCurrent ? "border-primary-200 bg-primary-50/80" : "border-cream-200 bg-white/70"
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="font-serif text-lg font-black leading-6 text-ink">{profile.fullName}</h3>
+                        {profile.isCurrent ? (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-primary-700 px-2 py-1 text-xs font-bold text-white">
+                            <CheckCircle2 aria-hidden="true" className="h-3.5 w-3.5" />
+                            Đang xem
+                          </span>
+                        ) : null}
+                      </div>
+                      <p className="clinical-mono mt-1 text-sm font-bold text-slate-600">Mã BN: {profile.mabn}</p>
+                      {profile.relationship ? <p className="mt-1 text-sm font-semibold text-slate-500">{profile.relationship}</p> : null}
+                    </div>
+                    <div className="grid shrink-0 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => selectProfile(profile.mabn)}
+                        disabled={profile.isCurrent || loadingMabn !== null || removingMabn !== null}
+                        className="inline-flex min-h-10 items-center justify-center rounded-md bg-ink px-3 text-sm font-bold text-white hover:bg-primary-900 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
+                      >
+                        {loadingMabn === profile.mabn ? <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" /> : profile.isCurrent ? "Đã chọn" : "Chọn"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => removeProfile(profile.mabn)}
+                        disabled={profiles.length <= 1 || loadingMabn !== null || removingMabn !== null}
+                        className={`inline-flex min-h-10 items-center justify-center gap-1 rounded-md border px-3 text-sm font-bold transition disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400 ${
+                          confirmRemoveMabn === profile.mabn
+                            ? "border-rose-700 bg-rose-700 text-white"
+                            : "border-rose-200 bg-white text-rose-700 hover:bg-rose-50"
+                        }`}
+                      >
+                        {removingMabn === profile.mabn ? <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" /> : <Trash2 aria-hidden="true" className="h-4 w-4" />}
+                        {confirmRemoveMabn === profile.mabn ? "Xác nhận gỡ" : "Gỡ"}
+                      </button>
+                    </div>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </section>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -110,6 +212,7 @@ export function LinkProfileForm() {
   const [phone, setPhone] = useState("");
   const [citizenId, setCitizenId] = useState("");
   const [birthDate, setBirthDate] = useState("");
+  const [relationship, setRelationship] = useState("Người thân");
   const [message, setMessage] = useState("");
   const [lookingUp, setLookingUp] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -120,6 +223,7 @@ export function LinkProfileForm() {
     setPhone("");
     setCitizenId("");
     setBirthDate("");
+    setRelationship("Người thân");
     setLookingUp(true);
 
     try {
@@ -170,7 +274,7 @@ export function LinkProfileForm() {
       const response = await fetch("/api/account/link-profile", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mabn, phone, citizenId, birthDate: normalizedBirthDate }),
+        body: JSON.stringify({ mabn, phone, citizenId, birthDate: normalizedBirthDate, relationship }),
       });
       const body = (await response.json().catch(() => null)) as { error?: string; data?: { fullName?: string } } | null;
 
@@ -184,6 +288,7 @@ export function LinkProfileForm() {
       setPhone("");
       setCitizenId("");
       setBirthDate("");
+      setRelationship("Người thân");
       setMessage(`Đã thêm hồ sơ ${body?.data?.fullName ?? ""}`.trim());
       router.refresh();
     } finally {
@@ -257,6 +362,20 @@ export function LinkProfileForm() {
               autoComplete="bday"
               required
             />
+          </label>
+          <label className="grid gap-1.5 text-sm font-bold text-ink">
+            Quan hệ
+            <select
+              value={relationship}
+              onChange={(event) => setRelationship(event.target.value)}
+              className="h-11 rounded-md border border-cream-200 bg-white/80 px-3 text-base font-semibold outline-none focus:border-primary-600 focus:ring-2 focus:ring-primary-100"
+            >
+              {relationshipOptions.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
           </label>
         </div>
       ) : null}
