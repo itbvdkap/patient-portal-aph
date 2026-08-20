@@ -9,7 +9,7 @@ export function Screen({ children, nav = false }: { children: ReactNode; nav?: b
 
 function MobileNav() {
   const pathname = usePathname();
-  const tabs = [["Trang chủ", "/dashboard"], ["Hôm nay", "/today"], ["Lịch sử", "/medical/visits"], ["Xét nghiệm", "/medical/labs"], ["Tài khoản", "/account"]] as const;
+  const tabs = [["Trang chủ", "/dashboard"], ["Hôm nay", "/today"], ["Lịch sử", "/medical/visits"], ["Xét nghiệm", "/medical/labs"], ["CĐHA", "/medical/imaging"]] as const;
   return <View style={styles.nav}>{tabs.map(([label, target]) => { const active = pathname === target || pathname.startsWith(target + "/"); return <Pressable key={target} onPress={() => router.push(target)} style={styles.navItem}><Text style={[styles.navDot, active && styles.navDotActive]}>●</Text><Text style={[styles.navLabel, active && styles.navLabelActive]}>{label}</Text></Pressable>; })}</View>;
 }
 

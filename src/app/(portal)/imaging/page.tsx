@@ -3,6 +3,7 @@ import { Badge, EmptyState, PageHeader, Panel } from "@/components/ui";
 import { createPatientRepository } from "@/lib/data";
 import type { ImagingResult } from "@/types/patient";
 import { formatDate, formatDateTime } from "@/utils/format";
+import { normalizeDisplayText } from "@anphu/patient-domain";
 
 export default async function ImagingPage() {
   const repository = createPatientRepository();
@@ -52,9 +53,9 @@ export default async function ImagingPage() {
               <Panel key={result.id}>
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div>
-                    <h3 className="font-serif text-lg font-bold text-ink">{result.techniqueName}</h3>
+                    <h3 className="font-serif text-lg font-bold text-ink">{normalizeDisplayText(result.techniqueName)}</h3>
                     <p className="clinical-mono mt-1 text-sm text-slate-600">
-                      {formatDateTime(result.date)} · {result.doctorName || "Chưa ghi nhận bác sĩ"}
+                      {formatDateTime(result.date)} · {normalizeDisplayText(result.doctorName) || "Chưa ghi nhận bác sĩ"}
                     </p>
                   </div>
                   <span className="inline-flex min-h-9 w-fit items-center gap-2 rounded-md bg-primary-50 px-3 text-sm font-bold text-primary-700">
@@ -66,7 +67,7 @@ export default async function ImagingPage() {
                 {result.conclusion && (
                   <div className="mt-3 rounded-md border border-primary-100 bg-primary-50 p-3 text-sm font-bold leading-6 text-primary-900">
                     <Badge tone="green">Kết luận</Badge>
-                    <p className="mt-2 whitespace-pre-line">{result.conclusion}</p>
+                    <p className="mt-2 whitespace-pre-line">{normalizeDisplayText(result.conclusion)}</p>
                   </div>
                 )}
 

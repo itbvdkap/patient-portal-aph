@@ -1,5 +1,6 @@
 import { useCallback, useState } from "react";
 import {
+  Alert,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -131,14 +132,27 @@ export default function ProfilesScreen() {
   }
 
   async function remove(profile: PatientSessionProfile) {
-    try {
-      await unlinkProfile(profile.mabn);
-      await load();
-    } catch (error) {
-      setMessage(
-        error instanceof Error ? error.message : "Không gỡ được hồ sơ.",
-      );
-    }
+    Alert.alert(
+      "Gỡ hồ sơ liên kết?",
+      `Bạn sẽ không còn xem dữ liệu của ${profile.fullName || profile.mabn} trong tài khoản này.`,
+      [
+        { text: "Hủy", style: "cancel" },
+        {
+          text: "Gỡ hồ sơ",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await unlinkProfile(profile.mabn);
+              await load();
+            } catch (error) {
+              setMessage(
+                error instanceof Error ? error.message : "Không gỡ được hồ sơ.",
+              );
+            }
+          },
+        },
+      ],
+    );
   }
 
   async function signOut(all = false) {

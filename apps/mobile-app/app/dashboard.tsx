@@ -128,7 +128,7 @@ function Shortcut({ label, target, count }: { label: string; target: string; cou
 }
 
 function TabBar() {
-  return <View style={styles.tabBar}><Tab label="Trang chủ" target="/dashboard" active /><Tab label="Hôm nay" target="/today" /><Tab label="Lịch sử" target="/medical/visits" /><Tab label="Xét nghiệm" target="/medical/labs" /><Tab label="Tài khoản" target="/account" /></View>;
+  return <View style={styles.tabBar}><Tab label="Trang chủ" target="/dashboard" active /><Tab label="Hôm nay" target="/today" /><Tab label="Lịch sử" target="/medical/visits" /><Tab label="Xét nghiệm" target="/medical/labs" /><Tab label="CĐHA" target="/medical/imaging" /></View>;
 }
 
 function Tab({ label, target, active = false }: { label: string; target: string; active?: boolean }) {

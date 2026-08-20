@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { Pressable, RefreshControl, ScrollView, Text, View } from "react-native";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
-import { formatDate, formatDateTime } from "@anphu/patient-domain";
+import { formatDate, formatDateTime, normalizeDisplayText } from "@anphu/patient-domain";
 import type {
   Appointment,
   ImagingResult,
@@ -57,6 +57,7 @@ export default function MedicalListScreen() {
     const session = await getCurrentSession();
     if (!session) {
       router.replace("/login");
+      setLoading(false);
       return;
     }
 
@@ -129,8 +130,8 @@ function MedicalCard({ item, type }: { item: MedicalItem; type: MedicalType }) {
     const visit = item as Visit;
     return <Pressable onPress={() => router.push(`/medical/visit/${visit.id}`)}><Card>
         <H2>{formatDate(visit.visitDate)}</H2>
-        <Mono>{visit.departmentName || "Chưa ghi nhận phòng"}</Mono>
-        <Body>{visit.primaryDiagnosis || "Chưa ghi nhận chẩn đoán"}</Body>
+        <Mono>{normalizeDisplayText(visit.departmentName) || "Chưa ghi nhận phòng"}</Mono>
+        <Body>{normalizeDisplayText(visit.primaryDiagnosis) || "Chưa ghi nhận chẩn đoán"}</Body>
         <Text style={styles.openLink}>Xem chi tiết →</Text>
       </Card></Pressable>;
   }
@@ -139,9 +140,9 @@ function MedicalCard({ item, type }: { item: MedicalItem; type: MedicalType }) {
     const imaging = item as ImagingResult;
     return (
       <Card>
-        <H2>{imaging.techniqueName}</H2>
+        <H2>{normalizeDisplayText(imaging.techniqueName)}</H2>
         <Mono>{formatDate(imaging.date)}</Mono>
-        <Body>{imaging.conclusion || "Chưa ghi nhận kết luận"}</Body>
+        <Body>{normalizeDisplayText(imaging.conclusion) || "Chưa ghi nhận kết luận"}</Body>
       </Card>
     );
   }
@@ -151,7 +152,7 @@ function MedicalCard({ item, type }: { item: MedicalItem; type: MedicalType }) {
     return (
       <Card>
         <H2>{formatDate(prescription.prescribedAt)}</H2>
-        <Mono>{prescription.doctorName || "Chưa ghi nhận bác sĩ"}</Mono>
+        <Mono>{normalizeDisplayText(prescription.doctorName) || "Chưa ghi nhận bác sĩ"}</Mono>
         <Body>{prescription.items.length} thuốc</Body>
       </Card>
     );
@@ -161,9 +162,9 @@ function MedicalCard({ item, type }: { item: MedicalItem; type: MedicalType }) {
   return (
     <Card>
       <H2>{formatDateTime(appointment.appointmentDate)}</H2>
-      <Mono>{appointment.departmentName || "Chưa ghi nhận khoa"}</Mono>
+      <Mono>{normalizeDisplayText(appointment.departmentName) || "Chưa ghi nhận khoa"}</Mono>
       <Body>
-        {appointment.content || appointment.doctorName || "Lịch hẹn khám"}
+        {normalizeDisplayText(appointment.content || appointment.doctorName) || "Lịch hẹn khám"}
       </Body>
     </Card>
   );
@@ -205,10 +206,10 @@ function LabSections({ groups }: { groups: LabGroup[] }) {
   const [open, setOpen] = useState<string | null>(null);
   return <View style={{ gap: 12 }}>{groups.map((group) => <Card key={group.key}>
     <Pressable onPress={() => setOpen(open === group.key ? null : group.key)} style={styles.labSummary}>
-      <View style={{ flex: 1 }}><H2>{group.title}</H2><Mono>{formatDateTime(group.performedAt)} · {group.items.length} chỉ số</Mono></View>
+      <View style={{ flex: 1 }}><H2>{normalizeDisplayText(group.title)}</H2><Mono>{formatDateTime(group.performedAt)} · {group.items.length} chỉ số</Mono></View>
       <Text style={styles.openLink}>{open === group.key ? "Thu gọn" : "Xem"}</Text>
     </Pressable>
-    {open === group.key ? <View><View style={styles.labHeader}><Text style={styles.labHeaderText}>Tên chỉ số</Text><Text style={styles.labHeaderText}>Kết quả</Text><Text style={styles.labHeaderText}>Tham chiếu</Text><Text style={styles.labHeaderText}>Đánh giá</Text></View>{group.items.map((lab) => <View key={lab.id} style={styles.labRow}><Text style={styles.labName}>{lab.testName}</Text><Text style={styles.labValue}>{String(lab.result)} {lab.unit}</Text><Text style={styles.labValue}>{lab.referenceRange || "-"}</Text><Text style={[styles.labFlag, lab.flag === "Bình thường" && styles.normal]}>{lab.flag}</Text></View>)}</View> : null}
+    {open === group.key ? <View><View style={styles.labHeader}><Text style={styles.labHeaderText}>Tên chỉ số</Text><Text style={styles.labHeaderText}>Kết quả</Text><Text style={styles.labHeaderText}>Tham chiếu</Text><Text style={styles.labHeaderText}>Đánh giá</Text></View>{group.items.map((lab) => <View key={lab.id} style={styles.labRow}><Text style={styles.labName}>{normalizeDisplayText(lab.testName)}</Text><Text style={styles.labValue}>{String(lab.result)} {normalizeDisplayText(lab.unit)}</Text><Text style={styles.labValue}>{normalizeDisplayText(lab.referenceRange) || "-"}</Text><Text style={[styles.labFlag, normalizeDisplayText(lab.flag) === "Bình thường" && styles.normal]}>{normalizeDisplayText(lab.flag)}</Text></View>)}</View> : null}
   </Card>)}</View>;
 }
 
@@ -221,12 +222,12 @@ function PrescriptionSection({
 }) {
   return (
     <Card>
-      <H2>{title}</H2>
+          <H2>{normalizeDisplayText(title)}</H2>
       {items.map((item) => (
         <View key={item.id} style={styles.prescription}>
           <Mono>
             {formatDate(item.prescribedAt)} ·{" "}
-            {item.doctorName || "Chưa ghi nhận bác sĩ"}
+            {normalizeDisplayText(item.doctorName) || "Chưa ghi nhận bác sĩ"}
           </Mono>
           <Body>{item.items.length} thuốc</Body>
         </View>

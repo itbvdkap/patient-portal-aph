@@ -4,6 +4,7 @@ import { Badge, EmptyState, Field, PageHeader, Panel, SectionHeader } from "@/co
 import { createPatientRepository } from "@/lib/data";
 import type { ImagingResult, LabResult, PrescriptionItem, Service } from "@/types/patient";
 import { formatDate, formatDateTime } from "@/utils/format";
+import { normalizeDisplayText } from "@anphu/patient-domain";
 
 export default async function VisitDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -45,7 +46,7 @@ export default async function VisitDetailPage({ params }: { params: Promise<{ id
           <dl className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
             <Field label="Ngày khám" value={formatDateTime(visit.visitDate)} />
             <Field label="Phòng" value={emptyText(visit.departmentName)} />
-            <Field label="Bác sĩ" value={emptyText(visit.doctorName)} />
+            <Field label="Bác sĩ" value={emptyText(normalizeDisplayText(visit.doctorName))} />
             <Field label="Mã lượt" value={visit.hisVisitId} />
             <Field label="Hẹn tái khám" value={visit.followUpDate ? formatDate(visit.followUpDate) : "Chưa ghi nhận"} />
           </dl>
@@ -270,7 +271,7 @@ function ImagingDetails({ item }: { item: ImagingResult }) {
         {item.conclusion && (
           <div>
             <p className="font-bold text-slate-600">Kết luận</p>
-            <p className="mt-1 whitespace-pre-line font-semibold text-ink">{item.conclusion}</p>
+                <p className="mt-1 whitespace-pre-line font-semibold text-ink">{normalizeDisplayText(item.conclusion)}</p>
           </div>
         )}
       </div>

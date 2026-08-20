@@ -19,10 +19,12 @@ export default function TodayScreen() {
     const session = await getCurrentSession();
     if (!session) {
       router.replace("/login");
+      setLoading(false);
       return;
     }
     if (!session.currentMabn) {
       router.replace("/profiles");
+      setLoading(false);
       return;
     }
     try {

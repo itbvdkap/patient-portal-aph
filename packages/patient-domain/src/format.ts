@@ -26,3 +26,17 @@ export function maskPatientCode(value: string) {
   if (trimmed.length <= 4) return trimmed;
   return `${trimmed.slice(0, 2)}${"*".repeat(Math.max(2, trimmed.length - 4))}${trimmed.slice(-2)}`;
 }
+
+export function normalizeDisplayText(value: string | null | undefined) {
+  if (!value) return "";
+
+  // Some legacy HIS text stores the tone mark on `b` and omits the `i`
+  // in the common phrase "bình thường". Repair that known display artifact
+  // after NFC normalization without changing other clinical text.
+  return value
+    .normalize("NFC")
+    .replace(/([bB])([\u0300-\u036f])nh\b/gi, (_, initial: string) =>
+      `${initial}${initial === "b" ? "i\u0300" : "I\u0300"}${initial === "b" ? "nh" : "NH"}`,
+    )
+    .normalize("NFC");
+}
