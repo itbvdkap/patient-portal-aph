@@ -153,8 +153,8 @@ export function LoginForm() {
       setOtp("");
       setPassword("");
       setOtpExpiresAt("");
-      router.replace("/profile");
-      router.refresh();
+      setRegisterStep("password");
+      setMessage("Số điện thoại đã xác minh. Hãy tạo mật khẩu để dùng cho những lần đăng nhập sau.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Không xác minh được OTP.");
     } finally {

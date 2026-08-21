@@ -1,5 +1,5 @@
-import { AlertTriangle, Eye } from "lucide-react";
-import { Badge, EmptyState, PageHeader, Panel } from "@/components/ui";
+import { AlertTriangle, ChevronDown, Eye } from "lucide-react";
+import { Badge, EmptyState, PageHeader, Panel, SecureDataNotice } from "@/components/ui";
 import { createPatientRepository } from "@/lib/data";
 import type { ImagingResult } from "@/types/patient";
 import { formatDate, formatDateTime } from "@/utils/format";
@@ -22,6 +22,7 @@ export default async function ImagingPage() {
   return (
     <>
       <PageHeader title="Chẩn đoán hình ảnh" description="Kết quả CĐHA lấy từ HIS, nhóm theo ngày thực hiện." />
+      <SecureDataNotice label="Kết quả chẩn đoán hình ảnh được bảo vệ trong phiên đăng nhập" />
 
       {loadError && (
         <Panel className="mb-4 border-amber-200 bg-amber-50/80 shadow-none">
@@ -65,16 +66,26 @@ export default async function ImagingPage() {
                 </div>
 
                 {result.conclusion && (
-                  <div className="mt-3 rounded-md border border-primary-100 bg-primary-50 p-3 text-sm font-bold leading-6 text-primary-900">
+                  <div className={`mt-3 rounded-md border p-3 text-sm font-bold leading-6 ${isNotableConclusion(result.conclusion) ? "border-amber-200 bg-amber-50 text-amber-950" : "border-primary-100 bg-primary-50 text-primary-900"}`}>
                     <Badge tone="green">Kết luận</Badge>
                     <p className="mt-2 whitespace-pre-line">{normalizeDisplayText(result.conclusion)}</p>
+                    {isNotableConclusion(result.conclusion) && (
+                      <p className="mt-2 text-sm font-semibold leading-6 text-amber-900">
+                        Có phát hiện cần lưu ý. Vui lòng trao đổi thêm với bác sĩ khi tái khám hoặc khi có triệu chứng bất thường.
+                      </p>
+                    )}
                   </div>
                 )}
 
                 {result.description && (
                   <details className="group mt-3">
-                    <summary className="cursor-pointer text-sm font-bold text-primary-700">Xem mô tả chi tiết</summary>
-                    <p className="mt-3 whitespace-pre-line text-sm leading-6 text-slate-700">{result.description}</p>
+                    <summary className="flex cursor-pointer list-none items-center gap-1.5 text-sm font-bold text-primary-700">
+                      <span>Xem mô tả chi tiết</span>
+                      <ChevronDown aria-hidden="true" className="h-4 w-4 transition group-open:rotate-180" />
+                    </summary>
+                    <div className="details-reveal">
+                      <p className="mt-3 whitespace-pre-line text-sm leading-6 text-slate-700">{result.description}</p>
+                    </div>
                   </details>
                 )}
               </Panel>
@@ -101,4 +112,14 @@ function groupImagingResults(results: ImagingResult[]) {
     dateKey,
     items,
   }));
+}
+
+function isNotableConclusion(value?: string) {
+  const normalized = normalizeDisplayText(value ?? "").toLowerCase();
+
+  if (!normalized.trim()) {
+    return false;
+  }
+
+  return !/(bình thường|binh thuong|không phát hiện|khong phat hien|chưa phát hiện|chua phat hien)/i.test(normalized);
 }

@@ -465,7 +465,7 @@ export function DeviceSessions({ sessions }: { sessions: AccountDeviceSession[] 
           ))
         ) : (
           <div className="rounded-md border border-dashed border-cream-200 bg-white/60 p-4 text-sm font-semibold leading-6 text-slate-600">
-            Chưa có dữ liệu thiết bị. Apply migration tài khoản mới để bắt đầu ghi nhận lịch sử đăng nhập.
+            Chưa có dữ liệu thiết bị. Lịch sử đăng nhập sẽ xuất hiện sau các lần đăng nhập tiếp theo.
           </div>
         )}
       </div>

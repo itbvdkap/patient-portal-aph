@@ -1,8 +1,9 @@
 import Link from "next/link";
-import { CalendarDays, ClipboardList, ExternalLink, FileClock, FileText, HeartPulse, Pill, Stethoscope } from "lucide-react";
+import { ArrowRight, CalendarDays, ClipboardList, FileClock, FileText, HeartPulse, Pill, Stethoscope } from "lucide-react";
 import { Badge, Panel, SectionHeader, StatBadge } from "@/components/ui";
 import { CopyButton } from "@/components/copy-button";
 import { createPatientRepository } from "@/lib/data";
+import { featuredHealthGuidePosts } from "@/lib/content/health-guide";
 import { formatDate, formatDateTime } from "@/utils/format";
 import type { Visit } from "@/types/patient";
 
@@ -40,7 +41,7 @@ export default async function DashboardPage() {
     {
       href: bookingUrl,
       label: "Đăng ký khám",
-      value: "Mở trong app",
+      value: "Đặt lịch nhanh",
       count: 0,
       icon: Stethoscope,
       color: "bg-amber-50 text-amber-700 ring-amber-100",
@@ -121,19 +122,12 @@ export default async function DashboardPage() {
                   <p className="clinical-mono text-xs text-slate-700">{formatDateTime(nextPendingRegistration.registeredAt)}</p>
                 </div>
               ) : (
-                <p className="line-clamp-2 text-sm font-medium leading-5 text-slate-600">Chưa ghi nhận lượt khám đang chờ hoặc đang khám hôm nay.</p>
+                <p className="line-clamp-2 text-sm font-medium leading-5 text-slate-600">Chưa có lịch khám nào hôm nay. Anh/chị có thể đăng ký nhanh từ ô Đăng ký khám bên dưới.</p>
               )}
-              <div className="mt-2 grid grid-cols-2 gap-2">
-                <Link href="/today-visit" className="inline-flex min-h-8 items-center rounded-md bg-primary-600 px-2.5 text-xs font-bold text-white shadow-sm hover:bg-primary-700">
+              <div className="mt-2">
+                <Link href="/today-visit" className="inline-flex min-h-8 w-full items-center justify-center rounded-md bg-primary-600 px-2.5 text-xs font-bold text-white shadow-sm hover:bg-primary-700">
                   Khám hôm nay
                 </Link>
-                <a
-                  href={bookingUrl}
-                  className="inline-flex min-h-8 items-center justify-center gap-1.5 rounded-md border border-primary-200 bg-cream-50 px-2.5 text-xs font-bold text-primary-700 hover:bg-primary-50"
-                >
-                  Đăng ký khám
-                  <ExternalLink aria-hidden="true" className="h-3.5 w-3.5" />
-                </a>
               </div>
             </div>
           </div>
@@ -153,6 +147,8 @@ export default async function DashboardPage() {
           <ShortcutCard key={item.href} {...item} />
         ))}
       </section>
+
+      <HealthGuidePreview />
 
       {nextAppointment && (
         <Panel className="mt-4 border-primary-100 bg-primary-50/80 shadow-none">
@@ -175,6 +171,40 @@ export default async function DashboardPage() {
   );
 }
 
+function HealthGuidePreview() {
+  return (
+    <Panel className="mt-4">
+      <SectionHeader title="Cẩm nang sức khỏe" meta="3 bài nổi bật" />
+      <div className="grid gap-2 sm:grid-cols-3">
+        {featuredHealthGuidePosts.map((post) => {
+          const Icon = post.icon;
+
+          return (
+            <Link
+              key={post.slug}
+              href={`/health-guide#${post.slug}`}
+              className="rounded-md border border-cream-200 bg-cream-100/70 p-3 transition hover:border-primary-200 hover:bg-primary-50"
+            >
+              <div className="flex items-center gap-2">
+                <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md ring-1 ${post.tone}`}>
+                  <Icon aria-hidden="true" className="h-4 w-4" />
+                </span>
+                <Badge tone="slate">{post.category}</Badge>
+              </div>
+              <h3 className="mt-2 line-clamp-2 text-sm font-black leading-5 text-ink">{post.title}</h3>
+              <p className="mt-1 line-clamp-2 text-xs font-medium leading-5 text-slate-600">{post.summary}</p>
+            </Link>
+          );
+        })}
+      </div>
+      <Link href="/health-guide" className="mt-3 inline-flex items-center gap-1.5 text-sm font-black text-primary-700 hover:text-primary-800">
+        Xem tất cả cẩm nang
+        <ArrowRight aria-hidden="true" className="h-4 w-4" />
+      </Link>
+    </Panel>
+  );
+}
+
 function InsuranceDigitalCard({
   cardNumber,
   status,
@@ -189,23 +219,23 @@ function InsuranceDigitalCard({
   patientCode: string;
 }) {
   return (
-    <section className="overflow-hidden rounded-md bg-gradient-to-br from-primary-950 via-primary-800 to-teal-700 p-2.5 text-white shadow-[0_10px_22px_rgba(0,91,85,0.22)] sm:p-3">
+      <section className="overflow-hidden rounded-md bg-gradient-to-br from-primary-950 via-primary-800 to-primary-700 p-2.5 text-white shadow-[0_10px_22px_rgba(0,91,85,0.22)] ring-1 ring-primary-900/10 sm:p-3">
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-[11px] font-bold uppercase leading-4 text-white/75">Health Wallet</p>
+          <p className="text-[11px] font-bold uppercase leading-4 text-white/85">Ví sức khỏe</p>
           <h2 className="line-clamp-1 text-sm font-black sm:text-base">Thẻ BHYT điện tử</h2>
         </div>
         <Badge tone={status === "Còn hiệu lực" ? "green" : "amber"}>{status}</Badge>
       </div>
-      <p className="clinical-mono mt-1.5 break-all text-base font-black tracking-normal sm:text-lg">{cardNumber || "Chưa ghi nhận"}</p>
+      <p className="clinical-mono mt-1.5 break-all text-base font-black tracking-normal text-white sm:text-lg">{cardNumber || "Chưa ghi nhận"}</p>
       <div className="mt-1.5 grid grid-cols-2 gap-2 text-xs">
         <div>
-          <p className="text-[10px] font-bold uppercase text-white/70">Từ ngày</p>
-          <p className="clinical-mono mt-0.5 font-bold">{formatOptionalDate(validFrom)}</p>
+          <p className="text-[10px] font-bold uppercase text-white/80">Từ ngày</p>
+          <p className="clinical-mono mt-0.5 font-bold text-white">{formatOptionalDate(validFrom)}</p>
         </div>
         <div>
-          <p className="text-[10px] font-bold uppercase text-white/70">Đến ngày</p>
-          <p className="clinical-mono mt-0.5 font-bold">{formatOptionalDate(validTo)}</p>
+          <p className="text-[10px] font-bold uppercase text-white/80">Đến ngày</p>
+          <p className="clinical-mono mt-0.5 font-bold text-white">{formatOptionalDate(validTo)}</p>
         </div>
       </div>
       <div className="mt-2 grid grid-cols-2 gap-2">

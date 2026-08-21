@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   ArrowLeft,
+  BookOpenText,
   CalendarDays,
   ClipboardList,
   Clock3,
@@ -33,7 +34,6 @@ type NavItem = {
   badgeCount?: number;
 };
 
-const hotlineLabel = "0911.071.001";
 const zaloUrl = "https://zalo.me/1548432229030950164";
 const hotlines = [
   { label: "Hotline chính", number: "0911071001", display: "0911 071 001" },
@@ -53,6 +53,7 @@ const primaryItems: NavItem[] = [
 ];
 
 const moreItems: NavItem[] = [
+  { href: "/health-guide", label: "Cẩm nang sức khỏe", shortLabel: "Cẩm nang", icon: BookOpenText },
   { href: "/prescriptions", label: "Đơn thuốc", shortLabel: "Thuốc", icon: Pill },
   { href: "/insurance", label: "BHYT", icon: ShieldCheck },
   { href: "/appointments", label: "Lịch hẹn", icon: CalendarDays },
@@ -87,6 +88,7 @@ export function AppShell({
   const allItems = [...decoratedPrimaryItems, ...decoratedMoreItems];
   const accountItem = decoratedMoreItems.find((item) => item.href === "/profile") ?? moreItems[moreItems.length - 1];
   const showBackButton = pathname !== "/dashboard";
+  const showHeaderUtilities = pathname === "/dashboard";
 
   async function logout() {
     await fetch("/api/auth/logout", { method: "POST" }).catch(() => undefined);
@@ -145,8 +147,8 @@ export function AppShell({
               <Brand compact />
             </div>
             <div className="flex shrink-0 items-center gap-1">
-              <AccessibilityTextToggle compact />
-              <InstallAppButton compact className="hidden min-[360px]:inline-flex" />
+              {showHeaderUtilities && <AccessibilityTextToggle compact />}
+              {showHeaderUtilities && <InstallAppButton compact className="hidden min-[360px]:inline-flex" />}
               <button
                 type="button"
                 onClick={logout}
@@ -191,40 +193,37 @@ function Brand({ compact = false }: { compact?: boolean }) {
 
 function FloatingSupportActions() {
   const [hotlineOpen, setHotlineOpen] = useState(false);
+  const [compactFab, setCompactFab] = useState(false);
+
+  useEffect(() => {
+    let previousY = window.scrollY;
+
+    function onScroll() {
+      const currentY = window.scrollY;
+      setCompactFab(currentY > 140 && currentY > previousY);
+      previousY = currentY;
+    }
+
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
 
   return (
     <>
-      <div className="fixed bottom-[calc(env(safe-area-inset-bottom)+5rem)] right-3 z-30 flex flex-col gap-2 lg:bottom-5 lg:right-5">
-        <a
-          href={zaloUrl}
-          target="_blank"
-          rel="noreferrer"
-          className="clinical-mono flex h-12 w-12 items-center justify-center rounded-full bg-sky-500 text-sm font-black text-white shadow-[0_12px_24px_rgba(14,165,233,0.35)] ring-1 ring-white/60 transition hover:scale-105"
-          aria-label="Chat Zalo"
-          title="Chat Zalo"
-        >
-          Za
-        </a>
+      <div className="fixed bottom-[calc(env(safe-area-inset-bottom)+5rem)] right-3 z-30 lg:bottom-5 lg:right-5">
         <button
           type="button"
           onClick={() => setHotlineOpen(true)}
-          className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-500 text-white shadow-[0_12px_24px_rgba(16,185,129,0.35)] ring-1 ring-white/60 transition hover:scale-105"
-          aria-label={`Chọn hotline để gọi, mặc định ${hotlineLabel}`}
-          title="Chọn hotline để gọi"
+          className={`flex min-h-12 items-center justify-center gap-2 rounded-full bg-primary-700 text-white shadow-[0_12px_28px_rgba(0,91,85,0.35)] ring-1 ring-white/70 transition hover:scale-105 hover:bg-primary-800 ${
+            compactFab ? "w-12 px-0" : "px-4"
+          }`}
+          aria-label="Mở hỗ trợ"
+          title="Mở hỗ trợ"
           aria-expanded={hotlineOpen}
         >
-          <PhoneCall aria-hidden="true" className="h-5 w-5" />
-        </button>
-        <a
-          href={zaloUrl}
-          target="_blank"
-          rel="noreferrer"
-          className="flex h-12 w-12 items-center justify-center rounded-full bg-primary-700 text-white shadow-[0_12px_24px_rgba(0,91,85,0.35)] ring-1 ring-white/60 transition hover:scale-105"
-          aria-label="Hỗ trợ trực tuyến"
-          title="Hỗ trợ trực tuyến"
-        >
           <MessageCircle aria-hidden="true" className="h-5 w-5" />
-        </a>
+          <span className={`text-sm font-black ${compactFab ? "sr-only" : ""}`}>Hỗ trợ</span>
+        </button>
       </div>
 
       {hotlineOpen ? (
@@ -253,6 +252,24 @@ function FloatingSupportActions() {
             </div>
 
             <div className="mt-4 grid grid-cols-2 gap-3">
+              <a
+                href={zaloUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="flex min-h-16 flex-col justify-center rounded-md border border-sky-100 bg-sky-50 px-3 text-center text-sky-700 transition hover:bg-sky-100"
+              >
+                <span className="clinical-mono text-base font-black">Za</span>
+                <span className="mt-1 text-xs font-bold">Chat Zalo</span>
+              </a>
+              <a
+                href={zaloUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="flex min-h-16 flex-col justify-center rounded-md border border-primary-100 bg-primary-50 px-3 text-center text-primary-700 transition hover:bg-primary-100"
+              >
+                <MessageCircle aria-hidden="true" className="mx-auto h-5 w-5" />
+                <span className="mt-1 text-xs font-bold">Hỗ trợ trực tuyến</span>
+              </a>
               {hotlines.map((item) => (
                 <a
                   key={`${item.label}-${item.number}`}
@@ -263,7 +280,10 @@ function FloatingSupportActions() {
                       : "border-cream-200 bg-white/70 text-ink hover:border-primary-200 hover:bg-primary-50"
                   }`}
                 >
-                  <span className={`text-xs font-bold ${item.urgent ? "uppercase text-rose-600" : "text-slate-500"}`}>{item.label}</span>
+                  <span className={`inline-flex items-center justify-center gap-1 text-xs font-bold ${item.urgent ? "uppercase text-rose-600" : "text-slate-500"}`}>
+                    <PhoneCall aria-hidden="true" className="h-3.5 w-3.5" />
+                    {item.label}
+                  </span>
                   <span className="clinical-mono mt-1 text-base font-black">{item.display}</span>
                 </a>
               ))}

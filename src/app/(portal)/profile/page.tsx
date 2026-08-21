@@ -7,6 +7,7 @@ import { Bell, ChevronDown, FileText, KeyRound, LockKeyhole, LogOut, Smartphone,
 import { BrandLogo } from "@/components/brand-logo";
 import { Field, SectionHeader } from "@/components/ui";
 import { DeviceSessions, LinkProfileForm, ProfileSwitcher } from "@/app/(portal)/profile/account-actions";
+import { NotificationPreferences } from "@/app/(portal)/profile/notification-preferences";
 import { getAccountOverview } from "@/lib/account/portal-account";
 import { maskPhone } from "@/lib/auth/phone";
 import { getDemoPatientSession } from "@/lib/auth/session";
@@ -87,16 +88,14 @@ export default async function ProfilePage() {
 
           <AccountMenuDetails icon={LockKeyhole} title="Passcode">
             <p className="text-sm font-semibold leading-6 text-slate-600">
-              Passcode mở nhanh app sẽ triển khai sau khi hoàn thiện cơ chế bảo mật thiết bị. Hiện tại app vẫn bảo vệ bằng phiên đăng nhập và mật khẩu tài khoản.
+              Passcode mở nhanh app đang được chuẩn bị cho bản mobile. Hiện tại tài khoản vẫn được bảo vệ bằng phiên đăng nhập và mật khẩu.
             </p>
           </AccountMenuDetails>
         </AccountMenuSection>
 
         <AccountMenuSection title="Cài đặt">
-          <AccountMenuDetails icon={Bell} title="Nhận thông báo" meta="Sắp triển khai">
-            <p className="text-sm font-semibold leading-6 text-slate-600">
-              Mục này sẽ dùng cho nhắc lịch hẹn, kết quả mới và cảnh báo bảo mật. Trước khi bật production cần cấu hình push notification và xin quyền người dùng.
-            </p>
+          <AccountMenuDetails icon={Bell} title="Nhận thông báo" meta="Thiết bị này">
+            <NotificationPreferences />
           </AccountMenuDetails>
 
           <AccountMenuDetails icon={Smartphone} title="Lịch sử đăng nhập / thiết bị" meta={`${account.sessions.length} phiên`}>
@@ -135,7 +134,7 @@ function AccountHero({ phone, accountReady }: { phone: string; accountReady: boo
           <p className="clinical-mono mt-1 text-sm font-semibold text-white/90">{phone ? maskPhone(phone) : "Chưa có SĐT"}</p>
         </div>
         <span className="inline-flex shrink-0 rounded-full bg-white/15 px-2.5 py-1 text-[11px] font-bold text-white ring-1 ring-white/25">
-          {accountReady ? "Đã bật quản lý phiên" : "Chờ migration tài khoản"}
+          {accountReady ? "Đã bảo vệ phiên" : "Đang cập nhật tài khoản"}
         </span>
       </div>
     </section>
@@ -180,7 +179,9 @@ function AccountMenuDetails({
           <ChevronDown aria-hidden="true" className="h-6 w-6" />
         </span>
       </summary>
-      <div className="border-t border-slate-100 bg-cream-50/75 px-4 py-4">{children}</div>
+      <div className="details-reveal border-t border-slate-100 bg-cream-50/75">
+        <div className="px-4 py-4">{children}</div>
+      </div>
     </details>
   );
 }

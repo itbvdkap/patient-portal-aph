@@ -68,3 +68,17 @@ html.large-text-mode .text-xs {
 html.large-text-mode .text-sm {
   font-size: 0.9375rem;
 }
+
+.details-reveal {
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  transition:
+    max-height 200ms ease,
+    opacity 200ms ease;
+}
+
+details[open] > .details-reveal {
+  max-height: 3200px;
+  opacity: 1;
+}

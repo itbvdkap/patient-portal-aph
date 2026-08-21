@@ -5,16 +5,55 @@ import { BookingForm } from "./booking-form";
 import { getDemoPatientSession } from "@/lib/auth/session";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import type { Patient } from "@/types/patient";
+import { normalizeDisplayText } from "@anphu/patient-domain";
 
 type SnapshotRow = {
   payload_json: Patient | null;
 };
 
-function toVnDate(value?: string) {
-  if (!value) return "";
-  const date = new Date(value);
+function firstText(...values: Array<unknown>) {
+  for (const value of values) {
+    const text = String(value ?? "").trim();
+    if (text) return text;
+  }
+
+  return "";
+}
+
+function toVnDate(value?: unknown) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(raw)) return raw;
+
+  const compact = raw.match(/^(\d{8})$/);
+  if (compact) {
+    const digits = compact[1];
+    if (digits.startsWith("19") || digits.startsWith("20")) {
+      return `${digits.slice(6, 8)}/${digits.slice(4, 6)}/${digits.slice(0, 4)}`;
+    }
+
+    return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4, 8)}`;
+  }
+
+  const date = new Date(raw);
   if (Number.isNaN(date.getTime())) return "";
   return `${String(date.getDate()).padStart(2, "0")}/${String(date.getMonth() + 1).padStart(2, "0")}/${date.getFullYear()}`;
+}
+
+function mapLinkedBookingProfile(mabn: string, fallbackName: string | undefined, patient: Patient | null) {
+  const raw = (patient ?? {}) as Patient & Record<string, unknown>;
+
+  return {
+    oldPatientCode: mabn,
+    fullName: normalizeDisplayText(patient?.fullName ?? fallbackName ?? `Mã BN ${mabn}`),
+    phone: patient?.phone ?? "",
+    birthDate: toVnDate(patient?.birthDate),
+    gender: patient?.gender ?? "",
+    address: normalizeDisplayText(patient?.address ?? ""),
+    soCCCD: firstText(patient?.citizenId, patient?.soCCCD, raw.cccd, raw.cmnd, raw.citizen_id, raw.so_cmnd, raw.socmnd),
+    ngayCap: toVnDate(firstText(patient?.citizenIssueDate, patient?.ngayCap, raw.ngay_cap, raw.issueDate, raw.issue_date, raw.ngaycap)),
+    hasInsurance: patient?.insurance?.status === "Còn hiệu lực",
+  };
 }
 
 async function getLinkedBookingProfiles() {
@@ -52,16 +91,7 @@ async function getLinkedBookingProfiles() {
         .eq("cache_key", `${mabn}:patient_profile:_`)
         .maybeSingle<SnapshotRow>();
 
-      const patient = data?.payload_json;
-      return {
-        oldPatientCode: mabn,
-        fullName: patient?.fullName ?? fallbackName ?? `Mã BN ${mabn}`,
-        phone: patient?.phone ?? "",
-        birthDate: toVnDate(patient?.birthDate),
-        gender: patient?.gender ?? "",
-        address: patient?.address ?? "",
-        hasInsurance: patient?.insurance?.status === "Còn hiệu lực",
-      };
+      return mapLinkedBookingProfile(mabn, fallbackName, data?.payload_json ?? null);
     }),
   );
 

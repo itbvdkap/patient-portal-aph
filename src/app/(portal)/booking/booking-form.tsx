@@ -22,6 +22,7 @@ import {
   X,
 } from "lucide-react";
 import { Badge, Panel, SectionHeader } from "@/components/ui";
+import { normalizeDisplayText } from "@anphu/patient-domain";
 
 const provinces = ["TP. Hồ Chí Minh", "TP. Đồng Nai", "Tây Ninh", "Lâm Đồng", "Đồng Tháp", "An Giang", "Khác"];
 
@@ -224,6 +225,10 @@ function normalizeCitizenGender(value: string | undefined) {
   return text ? "Khác" : "";
 }
 
+function cleanDisplay(value: string | undefined) {
+  return normalizeDisplayText(value ?? "");
+}
+
 function parseCitizenQr(raw: string): CitizenQrData | null {
   const parts = raw.split("|").map((part) => part.trim());
 
@@ -271,13 +276,13 @@ export function BookingForm({ linkedProfiles = [] }: { linkedProfiles?: BookingP
     setForm((current) => ({
       ...current,
       oldPatientCode: profile.oldPatientCode,
-      fullName: profile.fullName,
+      fullName: cleanDisplay(profile.fullName),
       phone: profile.phone ?? current.phone,
       birthDate: profile.birthDate ?? current.birthDate,
-      gender: profile.gender ?? current.gender,
-      address: profile.address ?? current.address,
-      soCCCD: profile.soCCCD ?? current.soCCCD,
-      ngayCap: profile.ngayCap ?? current.ngayCap,
+      gender: cleanDisplay(profile.gender) || current.gender,
+      address: cleanDisplay(profile.address) || current.address,
+      soCCCD: profile.soCCCD ?? "",
+      ngayCap: profile.ngayCap ?? "",
       hasInsurance: Boolean(profile.hasInsurance),
       ghichu: current.ghichu || "Tái khám",
     }));
@@ -303,10 +308,10 @@ export function BookingForm({ linkedProfiles = [] }: { linkedProfiles?: BookingP
       ...current,
       oldPatientCode: "",
       soCCCD: data.idNumber || current.soCCCD,
-      fullName: data.fullName || current.fullName,
+      fullName: cleanDisplay(data.fullName) || current.fullName,
       birthDate: data.birthDate || current.birthDate,
-      gender: data.gender || current.gender,
-      address: data.address || current.address,
+      gender: cleanDisplay(data.gender) || current.gender,
+      address: cleanDisplay(data.address) || current.address,
       ngayCap: data.issueDate || current.ngayCap,
     }));
   }
@@ -337,7 +342,7 @@ export function BookingForm({ linkedProfiles = [] }: { linkedProfiles?: BookingP
       }
 
       applyOldProfile(body.data);
-      setLookupMessage(`Đã xác minh và lấy thông tin hồ sơ ${body.data.fullName}.`);
+      setLookupMessage(`Đã xác minh và lấy thông tin hồ sơ ${cleanDisplay(body.data.fullName)}.`);
     } finally {
       setLookingUp(false);
     }
@@ -480,7 +485,7 @@ export function BookingForm({ linkedProfiles = [] }: { linkedProfiles?: BookingP
                         : "border-cream-200 bg-white hover:border-primary-200"
                     }`}
                   >
-                    <span className="block font-serif text-base font-black text-ink">{profile.fullName}</span>
+                    <span className="block font-serif text-base font-black text-ink">{cleanDisplay(profile.fullName)}</span>
                     <span className="clinical-mono mt-1 block text-sm font-bold text-slate-600">Mã BN: {profile.oldPatientCode}</span>
                   </button>
                 ))}
@@ -666,7 +671,7 @@ export function BookingForm({ linkedProfiles = [] }: { linkedProfiles?: BookingP
                 <option value="">Chọn tỉnh/TP</option>
                 {provinces.map((province) => (
                   <option key={province} value={province}>
-                    {province}
+                    {cleanDisplay(province)}
                   </option>
                 ))}
               </select>
@@ -735,7 +740,7 @@ export function BookingForm({ linkedProfiles = [] }: { linkedProfiles?: BookingP
               <select className={inputClass(true)} value={form.branch} onChange={(event) => update("branch", event.target.value)}>
                 {branches.map((branch) => (
                   <option key={branch} value={branch}>
-                    {branch}
+                    {cleanDisplay(branch)}
                   </option>
                 ))}
               </select>
@@ -779,7 +784,7 @@ export function BookingForm({ linkedProfiles = [] }: { linkedProfiles?: BookingP
                 <option value="">Chọn khoa</option>
                 {departments.map((department) => (
                   <option key={department} value={department}>
-                    {department}
+                    {cleanDisplay(department)}
                   </option>
                 ))}
               </select>
@@ -791,8 +796,8 @@ export function BookingForm({ linkedProfiles = [] }: { linkedProfiles?: BookingP
             <select className={inputClass()} value={form.bacsikham} onChange={(event) => update("bacsikham", event.target.value)}>
               <option value="">Chọn nếu có nhu cầu</option>
               {doctors.map((doctor) => (
-                <option key={doctor} value={doctor}>
-                  {doctor}
+                  <option key={doctor} value={doctor}>
+                    {cleanDisplay(doctor)}
                 </option>
               ))}
             </select>
@@ -929,7 +934,7 @@ function WizardActions({
   const hasSecondary = Boolean(secondaryLabel && onSecondary);
 
   return (
-    <div className={`sticky bottom-[72px] z-10 -mx-1 grid gap-2 rounded-md border border-cream-200 bg-cream-50/95 p-2 shadow-[0_-10px_30px_rgba(7,60,57,0.12)] backdrop-blur sm:static sm:mx-0 sm:border-0 sm:bg-transparent sm:p-0 sm:shadow-none ${hasSecondary ? "sm:grid-cols-2" : ""}`}>
+    <div className={`sticky bottom-[72px] z-10 -mx-1 grid gap-2 rounded-md border border-primary-100 bg-cream-50/98 p-2 shadow-[0_-12px_34px_rgba(7,60,57,0.18)] backdrop-blur sm:static sm:mx-0 sm:border-0 sm:bg-transparent sm:p-0 sm:shadow-none ${hasSecondary ? "sm:grid-cols-2" : ""}`}>
       {hasSecondary ? (
         <button
           type="button"
@@ -942,7 +947,8 @@ function WizardActions({
       <button
         type="button"
         onClick={onPrimary}
-        className="flex min-h-12 w-full items-center justify-center rounded-md bg-primary-800 px-4 text-sm font-black text-white shadow-[0_14px_32px_rgba(0,95,86,0.24)] hover:bg-primary-900"
+        className="flex min-h-12 w-full items-center justify-center rounded-md border border-primary-950 bg-[#005f56] px-4 text-sm font-black text-white shadow-[0_14px_32px_rgba(0,95,86,0.32)] ring-2 ring-primary-100 transition hover:bg-[#004c45] active:translate-y-px"
+        style={{ backgroundColor: "#005f56", color: "#ffffff" }}
       >
         {primaryLabel}
       </button>

@@ -57,3 +57,23 @@ Tạo middleware chặn /admin.
 Tạo trang /admin/settings trước.
 Cho app đọc setting từ Supabase, fallback về .env.
 Sau đó thêm trang log OTP, login, sync queue.
+
+Nội dung/cẩm nang sức khỏe:
+Đã làm giai đoạn 1: thêm dữ liệu mẫu Cẩm nang sức khỏe, trang danh sách /health-guide, shortcut dashboard, dashboard chỉ hiện 3 bài nổi bật.
+Giai đoạn 2 cần làm:
+Tạo CMS Supabase cho bài viết, chuyên mục, trạng thái nổi bật.
+Làm trang chi tiết bài viết.
+Thêm search và filter theo chuyên mục.
+Thêm Dịch vụ nổi bật và CTA đăng ký khám có thể cấu hình.
+Giai đoạn 3 cần làm:
+Admin quản trị nội dung.
+Cá nhân hóa bài viết theo tuổi, giới, khoa khám hoặc lịch hẹn sắp tới.
+Push notification: bài hướng dẫn trước ngày khám, BHYT sắp hết hạn.
+
+UI/UX dữ liệu y tế tiếp theo:
+Đã làm: gộp FAB hỗ trợ, skeleton dashboard/BHYT, đánh dấu xét nghiệm bất thường, filter chỉ xem bất thường, nhóm xét nghiệm theo nhóm chỉ số, secure notice, accordion animation, CĐHA có ngữ cảnh an toàn.
+Cần làm sau bằng dữ liệu/API bổ sung:
+API xu hướng chỉ số xét nghiệm theo mabn + test code/name trong nhiều lần khám.
+Mini sparkline cho đường huyết, HbA1c, men gan, mỡ máu, huyết áp khi có >= 2 mốc thời gian.
+Push notification thật qua web push/mobile push, đồng bộ preference vào Supabase thay vì localStorage.
+Chuẩn hóa mapping nhóm xét nghiệm bằng danh mục HIS thay vì heuristic tên chỉ số.

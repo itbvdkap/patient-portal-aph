@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { LockKeyhole } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 export function PageHeader({
@@ -104,4 +105,13 @@ export function EmptyState({ text }: { text: string }) {
 
 export function LoadingSkeleton() {
   return <div className="h-24 animate-pulse rounded-md bg-slate-100" aria-label="Đang tải dữ liệu" />;
+}
+
+export function SecureDataNotice({ label = "Dữ liệu y tế được bảo vệ" }: { label?: string }) {
+  return (
+    <div className="mb-3 inline-flex items-center gap-2 rounded-md border border-primary-100 bg-primary-50 px-3 py-2 text-xs font-bold text-primary-800">
+      <LockKeyhole aria-hidden="true" className="h-4 w-4" />
+      {label}
+    </div>
+  );
 }

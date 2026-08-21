@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Badge, EmptyState, Field, PageHeader, Panel, SectionHeader } from "@/components/ui";
+import { ArrowDown, ArrowUp, ChevronDown } from "lucide-react";
+import { Badge, EmptyState, Field, PageHeader, Panel, SectionHeader, SecureDataNotice } from "@/components/ui";
 import { createPatientRepository } from "@/lib/data";
 import type { ImagingResult, LabResult, PrescriptionItem, Service } from "@/types/patient";
 import { formatDate, formatDateTime } from "@/utils/format";
@@ -39,6 +40,7 @@ export default async function VisitDetailPage({ params }: { params: Promise<{ id
         description={`${formatDateTime(visit.visitDate)} - ${visit.departmentName || "Tiếp đón/KCB"}`}
         actions={<Badge tone="blue">{visit.status || "Đã ghi nhận"}</Badge>}
       />
+      <SecureDataNotice label="Hồ sơ khám bệnh được bảo vệ trong phiên đăng nhập" />
 
       <div className="space-y-4">
         <Panel>
@@ -114,7 +116,9 @@ export default async function VisitDetailPage({ params }: { params: Promise<{ id
                       <span className="hidden text-xs font-bold text-primary-700 group-open:inline">Thu gọn</span>
                     </span>
                   </summary>
-                  <LabResultTable items={group.items} />
+                  <div className="details-reveal">
+                    <LabResultTable items={group.items} />
+                  </div>
                 </details>
               ))}
             </div>
@@ -204,14 +208,19 @@ function LabResultTable({ items }: { items: LabResult[] }) {
         </thead>
         <tbody className="divide-y divide-slate-100">
           {items.map((item) => (
-            <tr key={item.id} className="align-top">
-              <td className="px-3 py-2 font-semibold leading-5 text-ink">{item.testName}</td>
-              <td className="clinical-mono px-3 py-2 font-semibold text-slate-700">
+            <tr key={item.id} className={`align-top ${isNormalLabFlag(item.flag) ? "" : "bg-amber-50/55"}`}>
+              <td className="px-3 py-2 font-semibold leading-5 text-ink">
+                <span className="flex items-start gap-2">
+                  {!isNormalLabFlag(item.flag) && <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-amber-500" aria-hidden="true" />}
+                  <span>{item.testName}</span>
+                </span>
+              </td>
+              <td className={`clinical-mono px-3 py-2 font-semibold ${isNormalLabFlag(item.flag) ? "text-slate-700" : "text-amber-900"}`}>
                 {item.result} {item.unit || ""}
               </td>
               <td className="clinical-mono px-3 py-2 text-slate-600">{item.referenceRange || "-"}</td>
               <td className="px-3 py-2">
-                <Badge tone={isNormalLabFlag(item.flag) ? "green" : "amber"}>{item.flag}</Badge>
+                <LabFlagBadge flag={item.flag} />
               </td>
             </tr>
           ))}
@@ -248,6 +257,8 @@ function PrescriptionGroup({ group }: { group: PrescriptionGroupData }) {
 }
 
 function ImagingDetails({ item }: { item: ImagingResult }) {
+  const hasNotableConclusion = isNotableImagingConclusion(item.conclusion);
+
   return (
     <details className="group rounded-md border border-slate-200 bg-white">
       <summary className="flex cursor-pointer list-none items-start justify-between gap-3 p-3">
@@ -258,22 +269,32 @@ function ImagingDetails({ item }: { item: ImagingResult }) {
             {item.doctorName ? ` · ${item.doctorName}` : ""}
           </span>
         </span>
-        <span className="shrink-0 text-xs font-bold text-primary-700 group-open:hidden">Xem</span>
-        <span className="hidden shrink-0 text-xs font-bold text-primary-700 group-open:inline">Thu gọn</span>
+        <span className="inline-flex shrink-0 items-center gap-1 text-xs font-bold text-primary-700">
+          <span className="group-open:hidden">Xem</span>
+          <span className="hidden group-open:inline">Thu gọn</span>
+          <ChevronDown aria-hidden="true" className="h-4 w-4 transition group-open:rotate-180" />
+        </span>
       </summary>
-      <div className="space-y-3 border-t border-slate-100 p-3 text-sm leading-6">
-        {item.description && (
-          <div>
-            <p className="font-bold text-slate-600">Mô tả</p>
-            <p className="mt-1 whitespace-pre-line text-slate-700">{item.description}</p>
-          </div>
-        )}
-        {item.conclusion && (
-          <div>
-            <p className="font-bold text-slate-600">Kết luận</p>
-                <p className="mt-1 whitespace-pre-line font-semibold text-ink">{normalizeDisplayText(item.conclusion)}</p>
-          </div>
-        )}
+      <div className="details-reveal border-t border-slate-100">
+        <div className="space-y-3 p-3 text-sm leading-6">
+          {item.description && (
+            <div>
+              <p className="font-bold text-slate-600">Mô tả</p>
+              <p className="mt-1 whitespace-pre-line text-slate-700">{item.description}</p>
+            </div>
+          )}
+          {item.conclusion && (
+            <div>
+              <p className="font-bold text-slate-600">Kết luận</p>
+              <p className="mt-1 whitespace-pre-line font-semibold text-ink">{normalizeDisplayText(item.conclusion)}</p>
+              {hasNotableConclusion && (
+                <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 p-2 text-sm font-semibold leading-6 text-amber-900">
+                  Có phát hiện cần lưu ý. Vui lòng trao đổi thêm với bác sĩ khi tái khám hoặc khi có triệu chứng bất thường.
+                </p>
+              )}
+            </div>
+            )}
+        </div>
       </div>
     </details>
   );
@@ -338,6 +359,32 @@ function isBhytPayer(value?: string) {
 
 function isNormalLabFlag(value: LabResult["flag"] | string) {
   return value === "Bình thường";
+}
+
+function LabFlagBadge({ flag }: { flag: LabResult["flag"] | string }) {
+  if (isNormalLabFlag(flag)) {
+    return <Badge tone="green">Bình thường</Badge>;
+  }
+
+  const isLow = String(flag).toLowerCase().includes("thấp");
+  const Icon = isLow ? ArrowDown : ArrowUp;
+
+  return (
+    <span className="inline-flex w-fit items-center gap-1 rounded-md bg-amber-100 px-2 py-1 text-xs font-black text-amber-900">
+      <Icon aria-hidden="true" className="h-3.5 w-3.5" />
+      {flag}
+    </span>
+  );
+}
+
+function isNotableImagingConclusion(value?: string) {
+  const normalized = normalizeDisplayText(value ?? "").toLowerCase();
+
+  if (!normalized.trim()) {
+    return false;
+  }
+
+  return !/(bình thường|binh thuong|không phát hiện|khong phat hien|chưa phát hiện|chua phat hien)/i.test(normalized);
 }
 
 function emptyText(value?: string) {
