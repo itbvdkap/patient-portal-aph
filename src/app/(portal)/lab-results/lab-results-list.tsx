@@ -212,15 +212,18 @@ function LabFormSection({ form, onlyAbnormal }: { form: ReturnType<typeof groupL
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {visibleItems.map((result) => (
-                  <tr key={result.id} className={`align-top ${isNormalLabFlag(result.flag) ? "" : "bg-amber-50/55"}`}>
+                {visibleItems.map((result) => {
+                  const flagTone = getLabFlagTone(result.flag);
+
+                  return (
+                  <tr key={result.id} className={`align-top ${flagTone === "normal" ? "" : flagTone === "low" ? "bg-sky-50/70" : "bg-rose-50/70"}`}>
                     <td className="px-3 py-2 font-semibold text-ink">
                       <span className="flex items-start gap-2">
-                        {!isNormalLabFlag(result.flag) && <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-amber-500" aria-hidden="true" />}
+                        {flagTone !== "normal" && <span className={`mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full ${flagTone === "low" ? "bg-sky-500" : "bg-rose-500"}`} aria-hidden="true" />}
                         <span>{result.testName}</span>
                       </span>
                     </td>
-                    <td className={`clinical-mono px-3 py-2 font-semibold ${isNormalLabFlag(result.flag) ? "text-slate-700" : "text-amber-900"}`}>
+                    <td className={`clinical-mono px-3 py-2 font-semibold ${flagTone === "normal" ? "text-slate-700" : flagTone === "low" ? "text-sky-900" : "text-rose-900"}`}>
                       {result.result} {result.unit}
                     </td>
                     <td className="clinical-mono px-3 py-2 text-slate-600">{result.referenceRange || "-"}</td>
@@ -228,7 +231,8 @@ function LabFormSection({ form, onlyAbnormal }: { form: ReturnType<typeof groupL
                       <LabFlagBadge flag={result.flag} />
                     </td>
                   </tr>
-                ))}
+                );
+                })}
               </tbody>
             </table>
           </div>
@@ -241,15 +245,26 @@ function LabFlagBadge({ flag }: { flag: LabResult["flag"] | string }) {
     return <Badge tone="green">Bình thường</Badge>;
   }
 
-  const isLow = String(flag).toLowerCase().includes("thấp");
+  const tone = getLabFlagTone(flag);
+  const isLow = tone === "low";
   const Icon = isLow ? ArrowDown : ArrowUp;
 
   return (
-    <span className="inline-flex w-fit items-center gap-1 rounded-md bg-amber-100 px-2 py-1 text-xs font-black text-amber-900">
+    <span className={`inline-flex w-fit items-center gap-1 rounded-md px-2 py-1 text-xs font-black ${
+      isLow ? "bg-sky-100 text-sky-900" : "bg-rose-100 text-rose-900"
+    }`}>
       <Icon aria-hidden="true" className="h-3.5 w-3.5" />
       {flag}
     </span>
   );
+}
+
+function getLabFlagTone(flag: LabResult["flag"] | string) {
+  if (isNormalLabFlag(flag)) return "normal";
+
+  const text = String(flag ?? "").toLowerCase();
+  if (/(thấp|low|giảm|down|↓|\bl\b)/i.test(text)) return "low";
+  return "high";
 }
 
 function LoadingRows() {
@@ -282,7 +297,8 @@ function groupLabResults(results: LabResult[]) {
 }
 
 function isNormalLabFlag(value: LabResult["flag"] | string) {
-  return value === "Bình thường";
+  const text = String(value ?? "").trim().toLowerCase();
+  return !text || text === "." || text === "-" || /^(bình thường|binh thuong|normal|bt|n)$/i.test(text);
 }
 
 function groupFormsByCategory(forms: ReturnType<typeof groupLabResults>) {

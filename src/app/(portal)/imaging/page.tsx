@@ -67,7 +67,9 @@ export default async function ImagingPage() {
 
                 {result.conclusion && (
                   <div className={`mt-3 rounded-md border p-3 text-sm font-bold leading-6 ${isNotableConclusion(result.conclusion) ? "border-amber-200 bg-amber-50 text-amber-950" : "border-primary-100 bg-primary-50 text-primary-900"}`}>
-                    <Badge tone="green">Kết luận</Badge>
+                    <Badge tone={isNotableConclusion(result.conclusion) ? "amber" : "green"}>
+                      {isNotableConclusion(result.conclusion) ? "Có phát hiện" : "Kết luận"}
+                    </Badge>
                     <p className="mt-2 whitespace-pre-line">{normalizeDisplayText(result.conclusion)}</p>
                     {isNotableConclusion(result.conclusion) && (
                       <p className="mt-2 text-sm font-semibold leading-6 text-amber-900">
@@ -84,7 +86,7 @@ export default async function ImagingPage() {
                       <ChevronDown aria-hidden="true" className="h-4 w-4 transition group-open:rotate-180" />
                     </summary>
                     <div className="details-reveal">
-                      <p className="mt-3 whitespace-pre-line text-sm leading-6 text-slate-700">{result.description}</p>
+                      <p className="mt-3 whitespace-pre-line text-sm leading-6 text-slate-700">{normalizeDisplayText(result.description)}</p>
                     </div>
                   </details>
                 )}

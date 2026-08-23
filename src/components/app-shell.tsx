@@ -11,6 +11,7 @@ import {
   Clock3,
   FileClock,
   HeartPulse,
+  Hospital,
   Home,
   LogOut,
   MessageCircle,
@@ -25,6 +26,7 @@ import { BrandLogo } from "@/components/brand-logo";
 import { DemoBanner } from "@/components/demo-banner";
 import { InstallAppButton } from "@/components/install-app-button";
 import { AccessibilityTextToggle } from "@/components/accessibility-text-toggle";
+import { hospitalHotlines, hospitalZaloUrl } from "@/lib/content/hospital-info";
 
 type NavItem = {
   href: string;
@@ -33,15 +35,6 @@ type NavItem = {
   icon: typeof Home;
   badgeCount?: number;
 };
-
-const zaloUrl = "https://zalo.me/1548432229030950164";
-const hotlines = [
-  { label: "Hotline chính", number: "0911071001", display: "0911 071 001" },
-  { label: "CSKH - Mr. Tiến", number: "0917665115", display: "0917 665 115" },
-  { label: "CSKH - Ms. Trinh", number: "0949850115", display: "0949 850 115" },
-  { label: "CSKH - Ms. Bé", number: "0972641115", display: "0972 641 115" },
-  { label: "Cấp cứu 24/7", number: "0917665115", display: "0917 665 115", urgent: true },
-];
 
 const primaryItems: NavItem[] = [
   { href: "/dashboard", label: "Trang chủ", icon: Home },
@@ -53,6 +46,7 @@ const primaryItems: NavItem[] = [
 ];
 
 const moreItems: NavItem[] = [
+  { href: "/hospital-info", label: "Thông tin bệnh viện", shortLabel: "Bệnh viện", icon: Hospital },
   { href: "/health-guide", label: "Cẩm nang sức khỏe", shortLabel: "Cẩm nang", icon: BookOpenText },
   { href: "/prescriptions", label: "Đơn thuốc", shortLabel: "Thuốc", icon: Pill },
   { href: "/insurance", label: "BHYT", icon: ShieldCheck },
@@ -210,19 +204,19 @@ function FloatingSupportActions() {
 
   return (
     <>
-      <div className="fixed bottom-[calc(env(safe-area-inset-bottom)+5rem)] right-3 z-30 lg:bottom-5 lg:right-5">
+      <div className={`fixed bottom-[calc(env(safe-area-inset-bottom)+5.25rem)] right-3 z-30 transition duration-200 lg:bottom-5 lg:right-5 ${compactFab ? "translate-x-2 opacity-55" : "opacity-100"}`}>
         <button
           type="button"
           onClick={() => setHotlineOpen(true)}
-          className={`flex min-h-12 items-center justify-center gap-2 rounded-full bg-primary-700 text-white shadow-[0_12px_28px_rgba(0,91,85,0.35)] ring-1 ring-white/70 transition hover:scale-105 hover:bg-primary-800 ${
-            compactFab ? "w-12 px-0" : "px-4"
+          className={`flex items-center justify-center gap-2 rounded-full bg-primary-700 text-white shadow-[0_12px_28px_rgba(0,91,85,0.35)] ring-1 ring-white/70 transition hover:scale-105 hover:bg-primary-800 lg:px-4 ${
+            compactFab ? "h-10 min-h-10 w-10 px-0 lg:h-11 lg:w-11" : "h-11 min-h-11 w-11 px-0 lg:h-12 lg:w-auto"
           }`}
           aria-label="Mở hỗ trợ"
           title="Mở hỗ trợ"
           aria-expanded={hotlineOpen}
         >
           <MessageCircle aria-hidden="true" className="h-5 w-5" />
-          <span className={`text-sm font-black ${compactFab ? "sr-only" : ""}`}>Hỗ trợ</span>
+          <span className="sr-only text-sm font-black lg:not-sr-only">Hỗ trợ</span>
         </button>
       </div>
 
@@ -253,7 +247,7 @@ function FloatingSupportActions() {
 
             <div className="mt-4 grid grid-cols-2 gap-3">
               <a
-                href={zaloUrl}
+                href={hospitalZaloUrl}
                 target="_blank"
                 rel="noreferrer"
                 className="flex min-h-16 flex-col justify-center rounded-md border border-sky-100 bg-sky-50 px-3 text-center text-sky-700 transition hover:bg-sky-100"
@@ -262,7 +256,7 @@ function FloatingSupportActions() {
                 <span className="mt-1 text-xs font-bold">Chat Zalo</span>
               </a>
               <a
-                href={zaloUrl}
+                href={hospitalZaloUrl}
                 target="_blank"
                 rel="noreferrer"
                 className="flex min-h-16 flex-col justify-center rounded-md border border-primary-100 bg-primary-50 px-3 text-center text-primary-700 transition hover:bg-primary-100"
@@ -270,7 +264,7 @@ function FloatingSupportActions() {
                 <MessageCircle aria-hidden="true" className="mx-auto h-5 w-5" />
                 <span className="mt-1 text-xs font-bold">Hỗ trợ trực tuyến</span>
               </a>
-              {hotlines.map((item) => (
+              {hospitalHotlines.map((item) => (
                 <a
                   key={`${item.label}-${item.number}`}
                   href={`tel:${item.number}`}

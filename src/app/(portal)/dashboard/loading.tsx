@@ -24,20 +24,20 @@ export default function DashboardLoading() {
           </div>
         </Panel>
 
-        <section className="rounded-md bg-primary-900 p-3">
-          <div className="h-3 w-24 animate-pulse rounded bg-white/20" />
-          <div className="mt-3 h-5 w-36 animate-pulse rounded bg-white/25" />
-          <div className="mt-3 h-5 w-52 animate-pulse rounded bg-white/25" />
-          <div className="mt-4 grid grid-cols-2 gap-2">
-            <div className="h-4 animate-pulse rounded bg-white/20" />
-            <div className="h-4 animate-pulse rounded bg-white/20" />
+        <section className="rounded-md border border-primary-100 bg-primary-50/90 p-3">
+          <div className="h-3 w-24 animate-pulse rounded bg-primary-100" />
+          <div className="mt-2 h-5 w-36 animate-pulse rounded bg-primary-100" />
+          <div className="mt-2 h-5 w-52 animate-pulse rounded bg-primary-100" />
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <div className="h-4 animate-pulse rounded bg-primary-100" />
+            <div className="h-4 animate-pulse rounded bg-primary-100" />
           </div>
         </section>
       </section>
 
-      <section className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 xl:grid-cols-6">
+      <section className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6">
         {Array.from({ length: 6 }).map((_, index) => (
-          <div key={index} className="min-h-[104px] animate-pulse rounded-md border border-cream-200 bg-cream-50" />
+          <div key={index} className="min-h-[88px] animate-pulse rounded-md border border-cream-200 bg-cream-50" />
         ))}
       </section>
     </div>

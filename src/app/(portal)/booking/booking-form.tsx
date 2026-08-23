@@ -692,6 +692,11 @@ export function BookingForm({ linkedProfiles = [] }: { linkedProfiles?: BookingP
 
       <Panel>
         <SectionHeader title="Xác thực đăng ký" meta={form.oldPatientCode ? "Có hồ sơ cũ" : "Bắt buộc"} />
+        {form.oldPatientCode ? (
+          <p className="mb-3 rounded-md border border-primary-100 bg-primary-50 px-3 py-2 text-xs font-semibold leading-5 text-primary-900">
+            Hồ sơ cũ đã được xác minh. CCCD/CMND và ngày cấp sẽ tự hiện nếu snapshot hồ sơ y tế có dữ liệu; nếu trống, anh/chị vẫn có thể tiếp tục đăng ký.
+          </p>
+        ) : null}
         <div className="grid gap-3 sm:grid-cols-2">
           <label>
             <span className={labelClass()}>
@@ -703,7 +708,7 @@ export function BookingForm({ linkedProfiles = [] }: { linkedProfiles?: BookingP
                 value={form.soCCCD}
                 onChange={(event) => update("soCCCD", event.target.value)}
                 inputMode="numeric"
-                placeholder={form.oldPatientCode ? "Không bắt buộc" : "Nhập CCCD/CMND"}
+                placeholder={form.oldPatientCode ? "Không có trong snapshot" : "Nhập CCCD/CMND"}
                 required={!form.oldPatientCode}
               />
             </IconInput>

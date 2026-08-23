@@ -20,10 +20,30 @@ function firstText(...values: Array<unknown>) {
   return "";
 }
 
+function deepText(source: Record<string, unknown>, ...paths: string[]) {
+  for (const path of paths) {
+    let current: unknown = source;
+    for (const part of path.split(".")) {
+      if (!current || typeof current !== "object") {
+        current = undefined;
+        break;
+      }
+      current = (current as Record<string, unknown>)[part];
+    }
+    const text = String(current ?? "").trim();
+    if (text) return text;
+  }
+  return "";
+}
+
 function toVnDate(value?: unknown) {
   const raw = String(value ?? "").trim();
   if (!raw) return "";
   if (/^\d{2}\/\d{2}\/\d{4}$/.test(raw)) return raw;
+  if (/^\d{4}-\d{2}-\d{2}/.test(raw)) {
+    const [year, month, day] = raw.slice(0, 10).split("-");
+    return `${day}/${month}/${year}`;
+  }
 
   const compact = raw.match(/^(\d{8})$/);
   if (compact) {
@@ -50,8 +70,43 @@ function mapLinkedBookingProfile(mabn: string, fallbackName: string | undefined,
     birthDate: toVnDate(patient?.birthDate),
     gender: patient?.gender ?? "",
     address: normalizeDisplayText(patient?.address ?? ""),
-    soCCCD: firstText(patient?.citizenId, patient?.soCCCD, raw.cccd, raw.cmnd, raw.citizen_id, raw.so_cmnd, raw.socmnd),
-    ngayCap: toVnDate(firstText(patient?.citizenIssueDate, patient?.ngayCap, raw.ngay_cap, raw.issueDate, raw.issue_date, raw.ngaycap)),
+    soCCCD: firstText(
+      patient?.citizenId,
+      patient?.soCCCD,
+      raw.cccd,
+      raw.cmnd,
+      raw.citizen_id,
+      raw.citizenId,
+      raw.so_cccd,
+      raw.socccd,
+      raw.so_cmnd,
+      raw.socmnd,
+      raw.sothe,
+      raw.so_the,
+      raw.socmnd_cccd,
+      raw.so_giayto,
+      raw.so_giay_to,
+      deepText(raw, "identity.number", "identity.idNumber", "identity.cardNumber", "personal.idNumber", "patient.identityNumber"),
+    ),
+    ngayCap: toVnDate(
+      firstText(
+        patient?.citizenIssueDate,
+        patient?.ngayCap,
+        raw.ngay_cap,
+        raw.ngaycap,
+        raw.ngay_cap_cccd,
+        raw.ngaycapcccd,
+        raw.ngay_cap_cmnd,
+        raw.ngaycapcmnd,
+        raw.ngay_cap_giayto,
+        raw.ngay_cap_giay_to,
+        raw.issueDate,
+        raw.issue_date,
+        raw.idIssueDate,
+        raw.id_issue_date,
+        deepText(raw, "identity.issueDate", "identity.issuedAt", "personal.issueDate", "patient.identityIssueDate"),
+      ),
+    ),
     hasInsurance: patient?.insurance?.status === "Còn hiệu lực",
   };
 }

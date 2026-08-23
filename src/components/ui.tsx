@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { LockKeyhole } from "lucide-react";
+import type { ComponentPropsWithoutRef } from "react";
 import type { LucideIcon } from "lucide-react";
 
 export function PageHeader({
@@ -22,8 +23,8 @@ export function PageHeader({
   );
 }
 
-export function Panel({ children, className = "" }: { children: React.ReactNode; className?: string }) {
-  return <section className={`rounded-md border border-cream-200 bg-cream-50 p-3 shadow-[0_8px_22px_rgba(7,60,57,0.055)] sm:p-5 ${className}`}>{children}</section>;
+export function Panel({ children, className = "", ...props }: ComponentPropsWithoutRef<"section">) {
+  return <section {...props} className={`rounded-md border border-cream-200 bg-cream-50 p-3 shadow-[0_8px_22px_rgba(7,60,57,0.055)] sm:p-5 ${className}`}>{children}</section>;
 }
 
 export function SectionHeader({ title, meta }: { title: string; meta?: string }) {

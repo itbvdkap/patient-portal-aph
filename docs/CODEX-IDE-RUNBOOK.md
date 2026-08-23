@@ -49,7 +49,7 @@ curl.exe -H "Authorization: Bearer change-this-local-token" http://127.0.0.1:508
 
 ```powershell
 cd E:\HIS\APP_BENHAN
-npm run dev -- --port 3001
+npm run dev:3001
 ```
 
 Frontend URL:
@@ -73,13 +73,17 @@ http://localhost:3001/visits
 http://localhost:3001/visits/260716130829833187
 http://localhost:3001/lab-results
 http://localhost:3001/imaging
+http://localhost:3001/admin
 ```
+
+Trang quan tri can cau hinh `ADMIN_PASSWORD` hoac `PORTAL_ADMIN_PASSWORD` va `PORTAL_SESSION_SECRET`.
 
 ## Neu co loi thuong gap
 
 - Next bao cross origin tu IP LAN: local test van dung `http://localhost:3001`; sau nay co the them `allowedDevOrigins` trong `next.config.ts` neu can truy cap bang IP.
 - `PatientApi.exe` bi lock khi build: dung process backend dang chay roi build lai.
-- Sau `npm run build`: restart lai `npm run dev -- --port 3001`.
+- Dev server dung cache rieng `.next-dev`, con `npm run build` dung `.next`. Cach nay tranh loi mat CSS/hien thi HTML tho khi build trong luc dang mo `http://localhost:3001`.
+- Neu da tung bi loi giao dien sau build: dung process `node.exe` dang nghe port 3001, xoa `.next-dev`, roi chay lai `npm run dev:3001`.
 - Neu API 401: kiem tra `PATIENT_API_SERVER_TOKEN` trong `.env.local` co trung token backend khong.
 
 ## Tai lieu can doc tiep

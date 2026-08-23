@@ -17,6 +17,21 @@ type SnapshotRow = {
 function toVnDate(value?: string) {
   if (!value) return "";
   if (/^\d{2}\/\d{2}\/\d{4}$/.test(value)) return value;
+  if (/^\d{4}-\d{2}-\d{2}/.test(value)) {
+    const [year, month, day] = value.slice(0, 10).split("-");
+    return `${day}/${month}/${year}`;
+  }
+
+  const compact = value.match(/^(\d{8})$/);
+  if (compact) {
+    const digits = compact[1];
+    if (digits.startsWith("19") || digits.startsWith("20")) {
+      return `${digits.slice(6, 8)}/${digits.slice(4, 6)}/${digits.slice(0, 4)}`;
+    }
+
+    return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4, 8)}`;
+  }
+
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "";
   return `${String(date.getDate()).padStart(2, "0")}/${String(date.getMonth() + 1).padStart(2, "0")}/${date.getFullYear()}`;
@@ -73,8 +88,41 @@ function mapPatient(patient: Patient) {
     birthDate: toVnDate(patient.birthDate),
     gender: patient.gender,
     address: patient.address,
-    soCCCD: firstText(patient.citizenId, patient.soCCCD, raw.cccd, raw.cmnd, raw.citizen_id),
-    ngayCap: toVnDate(firstText(patient.citizenIssueDate, patient.ngayCap, raw.ngay_cap, raw.issueDate)),
+    soCCCD: firstText(
+      patient.citizenId,
+      patient.soCCCD,
+      raw.cccd,
+      raw.cmnd,
+      raw.citizen_id,
+      raw.citizenId,
+      raw.so_cccd,
+      raw.socccd,
+      raw.so_cmnd,
+      raw.socmnd,
+      raw.sothe,
+      raw.so_the,
+      raw.socmnd_cccd,
+      raw.so_giayto,
+      raw.so_giay_to,
+    ),
+    ngayCap: toVnDate(
+      firstText(
+        patient.citizenIssueDate,
+        patient.ngayCap,
+        raw.ngay_cap,
+        raw.ngaycap,
+        raw.ngay_cap_cccd,
+        raw.ngaycapcccd,
+        raw.ngay_cap_cmnd,
+        raw.ngaycapcmnd,
+        raw.ngay_cap_giayto,
+        raw.ngay_cap_giay_to,
+        raw.issueDate,
+        raw.issue_date,
+        raw.idIssueDate,
+        raw.id_issue_date,
+      ),
+    ),
     hasInsurance: patient.insurance?.status === "Còn hiệu lực",
   };
 }
