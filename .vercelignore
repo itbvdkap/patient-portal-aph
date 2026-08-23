@@ -2,7 +2,14 @@ dist/
 apps/mobile-app/dist/
 node_modules/
 .next/
+.next-dev/
+.next.bak-dev-cache/
+.next-stale-*/
 .expo/
 artifacts/
 coverage/
+__pycache__/
+*.pyc
+ICD_GIAI_TRINH_V1.py
+app.json
 *.log
