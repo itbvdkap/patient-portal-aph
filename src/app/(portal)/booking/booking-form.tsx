@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import Script from "next/script";
 import {
   BadgeCheck,
   Building2,
+  Camera,
   CalendarDays,
   CheckCircle2,
+  ChevronRight,
   Clock,
   FileText,
   HeartPulse,
@@ -168,7 +170,18 @@ type Html5QrcodeScannerConstructor = new (
   verbose: boolean,
 ) => Html5QrcodeScannerInstance;
 
+type Html5QrcodeFileScannerInstance = {
+  scanFile: (imageFile: File, showImage?: boolean) => Promise<string>;
+  clear: () => void;
+};
+
+type Html5QrcodeFileScannerConstructor = new (
+  elementId: string,
+  configOrVerbosityFlag?: boolean | { verbose?: boolean },
+) => Html5QrcodeFileScannerInstance;
+
 type Html5QrcodeModule = {
+  Html5Qrcode: Html5QrcodeFileScannerConstructor;
   Html5QrcodeScanner: Html5QrcodeScannerConstructor;
   Html5QrcodeScanType?: {
     SCAN_TYPE_CAMERA: unknown;
@@ -376,6 +389,16 @@ export function BookingForm({ linkedProfiles = [] }: { linkedProfiles?: BookingP
   function continueFromScheduleStep() {
     if (!form.appointmentDate.trim()) {
       setError("Vui lòng chọn ngày khám.");
+      return;
+    }
+
+    if (!form.department.trim()) {
+      setError("Vui lòng chọn chuyên khoa cần khám.");
+      return;
+    }
+
+    if (!form.appointmentTime.trim()) {
+      setError("Vui lòng chọn giờ khám.");
       return;
     }
 
@@ -736,10 +759,10 @@ export function BookingForm({ linkedProfiles = [] }: { linkedProfiles?: BookingP
 
       {step === 2 ? (
         <>
-      <Panel>
-        <SectionHeader title="Thông tin khám" meta="Chọn lịch" />
-        <div className="grid gap-3 sm:grid-cols-2">
-          <label className="sm:col-span-2">
+      <Panel className="rounded-2xl bg-white/90">
+        <SectionHeader title="Chọn lịch khám" meta="Express booking" />
+        <div className="grid gap-4">
+          <label>
             <span className={labelClass()}>Chi nhánh</span>
             <IconInput icon={Building2}>
               <select className={inputClass(true)} value={form.branch} onChange={(event) => update("branch", event.target.value)}>
@@ -768,45 +791,52 @@ export function BookingForm({ linkedProfiles = [] }: { linkedProfiles?: BookingP
             </IconInput>
           </label>
 
-          <label>
-            <span className={labelClass()}>Giờ khám</span>
-            <IconInput icon={Clock}>
-              <select className={inputClass(true)} value={form.appointmentTime} onChange={(event) => update("appointmentTime", event.target.value)}>
-                <option value="">Chọn giờ</option>
-                {timeSlots.map((slot) => (
-                  <option key={slot} value={slot}>
-                    {slot}
-                  </option>
-                ))}
-              </select>
-            </IconInput>
-          </label>
-
-          <label>
-            <span className={labelClass()}>Khoa khám</span>
-            <IconInput icon={HeartPulse}>
-              <select className={inputClass(true)} value={form.department} onChange={(event) => update("department", event.target.value)}>
-                <option value="">Chọn khoa</option>
-                {departments.map((department) => (
-                  <option key={department} value={department}>
-                    {cleanDisplay(department)}
-                  </option>
-                ))}
-              </select>
-            </IconInput>
-          </label>
-
-          <label>
-            <span className={labelClass()}>Bác sĩ</span>
-            <select className={inputClass()} value={form.bacsikham} onChange={(event) => update("bacsikham", event.target.value)}>
-              <option value="">Chọn nếu có nhu cầu</option>
-              {doctors.map((doctor) => (
-                  <option key={doctor} value={doctor}>
-                    {cleanDisplay(doctor)}
-                </option>
+          <ChoiceSection title="Chuyên khoa" meta={form.department || "Chọn khoa cần khám"} icon={HeartPulse}>
+            <div className="grid grid-cols-2 gap-2">
+              {departments.slice(0, 8).map((department) => (
+                <ChoiceButton
+                  key={department}
+                  label={cleanDisplay(department)}
+                  selected={form.department === department}
+                  onClick={() => update("department", department)}
+                />
               ))}
-            </select>
-          </label>
+            </div>
+          </ChoiceSection>
+
+          <ChoiceSection title="Bác sĩ" meta={form.bacsikham || "Có thể bỏ qua"} icon={UserRound}>
+            <div className="grid gap-2">
+              {doctors.slice(0, 4).map((doctor) => (
+                <ChoiceButton
+                  key={doctor}
+                  label={cleanDisplay(doctor)}
+                  selected={form.bacsikham === doctor}
+                  onClick={() => update("bacsikham", doctor)}
+                  wide
+                />
+              ))}
+              <ChoiceButton
+                label="Khoa - Bác sĩ khác"
+                selected={form.bacsikham === "Khoa - Bác sĩ khác"}
+                onClick={() => update("bacsikham", "Khoa - Bác sĩ khác")}
+                wide
+              />
+            </div>
+          </ChoiceSection>
+
+          <ChoiceSection title="Giờ khám" meta={form.appointmentTime || "Chọn khung giờ"} icon={Clock}>
+            <div className="grid grid-cols-3 gap-2">
+              {timeSlots.map((slot) => (
+                <ChoiceButton
+                  key={slot}
+                  label={slot}
+                  selected={form.appointmentTime === slot}
+                  onClick={() => update("appointmentTime", slot)}
+                  mono
+                />
+              ))}
+            </div>
+          </ChoiceSection>
 
           <label>
             <span className={labelClass()}>Loại đăng ký</span>
@@ -817,7 +847,7 @@ export function BookingForm({ linkedProfiles = [] }: { linkedProfiles?: BookingP
             </select>
           </label>
 
-          <label className="flex min-h-12 items-center gap-3 rounded-md border border-cream-200 bg-white px-3">
+          <label className="flex min-h-12 items-center gap-3 rounded-2xl border border-cream-200 bg-white px-3">
             <input
               type="checkbox"
               checked={form.hasInsurance}
@@ -829,6 +859,15 @@ export function BookingForm({ linkedProfiles = [] }: { linkedProfiles?: BookingP
               Có BHYT
             </span>
           </label>
+        </div>
+        <div className="mt-4 rounded-2xl border border-primary-100 bg-primary-50 p-3">
+          <div className="flex items-center gap-2 text-sm font-black text-primary-900">
+            <CheckCircle2 aria-hidden="true" className="h-5 w-5" />
+            Tóm tắt lịch khám
+          </div>
+          <p className="mt-1 text-sm font-semibold leading-6 text-slate-700">
+            {form.department || "Chưa chọn khoa"} · {form.bacsikham || "Bác sĩ theo sắp xếp"} · {form.appointmentTime || "Chưa chọn giờ"}
+          </p>
         </div>
       </Panel>
 
@@ -925,6 +964,62 @@ function BookingStepper({ step }: { step: 1 | 2 | 3 }) {
   );
 }
 
+function ChoiceSection({
+  title,
+  meta,
+  icon: Icon,
+  children,
+}: {
+  title: string;
+  meta: string;
+  icon: typeof UserRound;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="rounded-2xl border border-cream-200 bg-cream-50/70 p-3">
+      <div className="mb-3 flex items-center gap-3">
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-primary-50 text-primary-700">
+          <Icon aria-hidden="true" className="h-5 w-5" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <h3 className="font-serif text-base font-black text-ink">{title}</h3>
+          <p className="line-clamp-1 text-xs font-semibold text-slate-500">{meta}</p>
+        </div>
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function ChoiceButton({
+  label,
+  selected,
+  onClick,
+  wide = false,
+  mono = false,
+}: {
+  label: string;
+  selected: boolean;
+  onClick: () => void;
+  wide?: boolean;
+  mono?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex min-h-12 items-center justify-between gap-2 rounded-2xl border px-3 py-2 text-left text-sm font-black transition active:scale-[0.99] ${
+        selected
+          ? "border-primary-700 bg-primary-700 text-white shadow-[0_10px_24px_rgba(0,91,85,0.2)]"
+          : "border-cream-200 bg-white text-ink hover:border-primary-200 hover:bg-primary-50"
+      } ${wide ? "w-full" : ""} ${mono ? "clinical-mono justify-center text-center" : ""}`}
+    >
+      <span className="line-clamp-2 leading-5">{label}</span>
+      {!mono ? <ChevronRight aria-hidden="true" className={`h-4 w-4 shrink-0 ${selected ? "text-white" : "text-slate-300"}`} /> : null}
+    </button>
+  );
+}
+
 function WizardActions({
   primaryLabel,
   secondaryLabel,
@@ -973,8 +1068,53 @@ function CitizenQrScanner({
   onMessage: (message: string) => void;
 }) {
   const scannerId = useId().replace(/:/g, "");
+  const fileScannerId = `${scannerId}-file`;
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const scannerRef = useRef<Html5QrcodeScannerInstance | null>(null);
+  const fileScannerRef = useRef<Html5QrcodeFileScannerInstance | null>(null);
   const [status, setStatus] = useState("Đang chuẩn bị camera...");
+  const [fileScanning, setFileScanning] = useState(false);
+
+  const handleDecodedQr = useCallback((decodedText: string, fromFile = false) => {
+    const data = parseCitizenQr(decodedText);
+    if (!data) {
+      setStatus(
+        fromFile
+          ? "Ảnh đã chọn chưa đọc được QR CCCD. Vui lòng chụp rõ vùng mã QR trên CCCD."
+          : "QR chưa đúng định dạng CCCD. Vui lòng đưa rõ mã QR trên CCCD vào khung quét.",
+      );
+      return;
+    }
+
+    void scannerRef.current?.clear().catch(() => undefined);
+    scannerRef.current = null;
+    fileScannerRef.current?.clear();
+    fileScannerRef.current = null;
+    onResult(data);
+  }, [onResult]);
+
+  async function scanCapturedImage(file: File) {
+    setFileScanning(true);
+    setStatus("Đang đọc QR từ ảnh CCCD...");
+
+    try {
+      const qrModule = (await import("html5-qrcode")) as Html5QrcodeModule;
+      const fileScanner = new qrModule.Html5Qrcode(fileScannerId, false);
+      fileScannerRef.current = fileScanner;
+      const decodedText = await fileScanner.scanFile(file, true);
+      handleDecodedQr(decodedText, true);
+    } catch {
+      setStatus("Chưa đọc được QR từ ảnh. Vui lòng chụp gần hơn, đủ sáng, rõ vùng mã QR trên CCCD.");
+      onMessage("Chưa đọc được QR từ ảnh CCCD. Bạn có thể chụp lại hoặc nhập CCCD thủ công.");
+    } finally {
+      fileScannerRef.current?.clear();
+      fileScannerRef.current = null;
+      setFileScanning(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+    }
+  }
 
   useEffect(() => {
     if (!open) {
@@ -1011,15 +1151,7 @@ function CitizenQrScanner({
         scannerRef.current = scanner;
         scanner.render(
           (decodedText) => {
-            const data = parseCitizenQr(decodedText);
-            if (!data) {
-              setStatus("QR chưa đúng định dạng CCCD. Vui lòng đưa rõ mã QR trên CCCD vào khung quét.");
-              return;
-            }
-
-            void scannerRef.current?.clear().catch(() => undefined);
-            scannerRef.current = null;
-            onResult(data);
+            handleDecodedQr(decodedText);
           },
           () => undefined,
         );
@@ -1035,8 +1167,10 @@ function CitizenQrScanner({
       cancelled = true;
       void scannerRef.current?.clear().catch(() => undefined);
       scannerRef.current = null;
+      fileScannerRef.current?.clear();
+      fileScannerRef.current = null;
     };
-  }, [onMessage, onResult, open, scannerId]);
+  }, [handleDecodedQr, onMessage, open, scannerId]);
 
   if (!open) return null;
 
@@ -1058,8 +1192,45 @@ function CitizenQrScanner({
           </button>
         </div>
         <div className="flex-1 overflow-auto p-4">
+          <div className="mb-3 grid gap-2 sm:grid-cols-2">
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={fileScanning}
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-primary-800 px-4 text-sm font-black text-white shadow-sm hover:bg-primary-900 disabled:cursor-not-allowed disabled:bg-slate-500"
+            >
+              {fileScanning ? <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" /> : <Camera aria-hidden="true" className="h-4 w-4" />}
+              Chụp ảnh QR CCCD
+            </button>
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={fileScanning}
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-primary-100 bg-white px-4 text-sm font-black text-primary-800 hover:bg-primary-50 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <QrCode aria-hidden="true" className="h-4 w-4" />
+              Chọn ảnh QR
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              className="sr-only"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (file) {
+                  void scanCapturedImage(file);
+                }
+              }}
+            />
+          </div>
           <div id={scannerId} className="overflow-hidden rounded-md border border-cream-200 bg-white" />
+          <div id={fileScannerId} className="mt-3 overflow-hidden rounded-md border border-dashed border-cream-200 bg-white/70" />
           <p className="mt-3 rounded-md bg-cream-100 px-3 py-2 text-sm font-semibold leading-6 text-slate-700">{status}</p>
+          <p className="mt-2 text-xs font-semibold leading-5 text-slate-500">
+            Nếu Safari/Chrome không mở được camera live, dùng “Chụp ảnh QR CCCD” để điện thoại mở camera sau và tự lấy nét.
+          </p>
         </div>
       </div>
     </div>

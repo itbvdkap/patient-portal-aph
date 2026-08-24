@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowRight, BookOpenText, Building2, CalendarDays, ClipboardList, FileClock, FileText, HeartPulse, Pill, ShieldCheck, Stethoscope } from "lucide-react";
+import { ArrowRight, Bell, BookOpenText, Building2, CalendarDays, ClipboardList, FileClock, FileText, HeartPulse, Pill, ShieldCheck, Stethoscope } from "lucide-react";
 import { Badge, Panel, SectionHeader, StatBadge } from "@/components/ui";
 import { CopyButton } from "@/components/copy-button";
 import { createPatientRepository } from "@/lib/data";
@@ -107,24 +107,38 @@ export default async function DashboardPage() {
 
   return (
     <>
-      <header className="mb-2 flex items-start justify-between gap-3 border-b border-cream-200 pb-2">
-        <div className="min-w-0">
-          <p className="text-xs font-bold uppercase text-primary-700">Xin chào</p>
-          <h1 className="mt-0.5 line-clamp-1 font-serif text-xl font-black leading-6 text-ink sm:text-2xl">{patient.fullName}</h1>
-          <p className="mt-0.5 text-sm font-semibold text-slate-600">Mã BN: <span className="clinical-mono">{patient.hisPatientCode}</span></p>
+      <header className="mb-3 overflow-hidden rounded-2xl border border-primary-100 bg-gradient-to-br from-primary-900 via-primary-700 to-emerald-500 p-3 text-white shadow-[0_14px_34px_rgba(7,60,57,0.16)] sm:p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-[11px] font-black uppercase tracking-wide text-white/75">Xin chào</p>
+            <h1 className="mt-0.5 line-clamp-1 font-serif text-2xl font-black leading-7 text-white sm:text-3xl">{patient.fullName}</h1>
+            <p className="mt-1 text-sm font-semibold text-white/85">
+              Mã BN: <span className="clinical-mono font-black">{patient.hisPatientCode}</span>
+            </p>
+          </div>
+          <div className="flex shrink-0 flex-col items-end gap-2">
+            <Badge tone={patient.insurance.status === "Còn hiệu lực" ? "green" : "amber"}>{patient.insurance.status}</Badge>
+            <span className="hidden h-10 w-10 items-center justify-center rounded-full bg-white/15 ring-1 ring-white/20 sm:inline-flex">
+              <Bell aria-hidden="true" className="h-5 w-5" />
+            </span>
+          </div>
         </div>
-        <Badge tone={patient.insurance.status === "Còn hiệu lực" ? "green" : "amber"}>{patient.insurance.status}</Badge>
+        <div className="mt-3 grid grid-cols-3 gap-2">
+          <HeroMetric label="Lần khám" value={summary.visitsCount} />
+          <HeroMetric label="Phiếu XN" value={summary.labResultsCount} />
+          <HeroMetric label="Lịch hẹn" value={summary.appointmentsCount} />
+        </div>
       </header>
 
-      <section className="grid gap-2 lg:grid-cols-[1.05fr_0.95fr]">
-        <Panel className={`p-2.5 shadow-none sm:p-3 ${todayStatus?.hasActiveVisit ? "border-amber-200 bg-amber-50/80" : ""}`}>
+      <section className="grid gap-3 lg:grid-cols-[1.05fr_0.95fr]">
+        <Panel className={`rounded-2xl p-3 shadow-sm sm:p-4 ${todayStatus?.hasActiveVisit ? "border-amber-200 bg-amber-50/80" : "bg-white/85"}`}>
           <div className="flex items-start gap-2">
-            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary-50 text-primary-700">
-              <Stethoscope aria-hidden="true" className="h-4 w-4" />
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-primary-50 text-primary-700">
+              <Stethoscope aria-hidden="true" className="h-5 w-5" />
             </span>
             <div className="min-w-0 flex-1">
               <div className="mb-1 flex items-center justify-between gap-2">
-                <h2 className="text-sm font-black text-ink">Hôm nay</h2>
+                <h2 className="font-serif text-lg font-black text-ink">Hôm nay</h2>
                 {todayStatus?.hasActiveVisit && <Badge tone="amber">{todayStatus.currentStepText}</Badge>}
               </div>
               {todayStatus?.hasActiveVisit ? (
@@ -141,8 +155,8 @@ export default async function DashboardPage() {
               ) : (
                 <p className="line-clamp-2 text-sm font-medium leading-5 text-slate-600">Chưa có lịch khám nào hôm nay. Anh/chị có thể đăng ký nhanh từ ô Đăng ký khám bên dưới.</p>
               )}
-              <div className="mt-2">
-                <Link href="/today-visit" className="inline-flex min-h-8 w-full items-center justify-center rounded-md bg-primary-600 px-2.5 text-xs font-bold text-white shadow-sm hover:bg-primary-700">
+              <div className="mt-3">
+                <Link href="/today-visit" className="inline-flex min-h-10 w-full items-center justify-center rounded-xl bg-primary-700 px-3 text-sm font-black text-white shadow-sm hover:bg-primary-900">
                   Khám hôm nay
                 </Link>
               </div>
@@ -159,7 +173,7 @@ export default async function DashboardPage() {
         />
       </section>
 
-      <section className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-8">
+      <section className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-8">
         {shortcuts.map((item) => (
           <ShortcutCard key={item.href} {...item} />
         ))}
@@ -227,6 +241,15 @@ function HealthGuidePreview({ posts }: { posts: Awaited<ReturnType<typeof getFea
   );
 }
 
+function HeroMetric({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-2xl bg-white/14 px-3 py-2 ring-1 ring-white/16">
+      <p className="clinical-mono text-lg font-black leading-5 text-white">{value}</p>
+      <p className="mt-0.5 line-clamp-1 text-[11px] font-bold text-white/75">{label}</p>
+    </div>
+  );
+}
+
 function InsuranceDigitalCard({
   cardNumber,
   status,
@@ -241,7 +264,7 @@ function InsuranceDigitalCard({
   patientCode: string;
 }) {
   return (
-    <section className="overflow-hidden rounded-md border border-primary-800 bg-[linear-gradient(135deg,#005f56,#007c73_62%,#0f6ea8)] p-3 text-white shadow-[0_10px_24px_rgba(7,60,57,0.18)]">
+    <section className="overflow-hidden rounded-2xl border border-primary-800 bg-[linear-gradient(135deg,#005f56,#007c73_62%,#0f6ea8)] p-3 text-white shadow-[0_10px_24px_rgba(7,60,57,0.18)] sm:p-4">
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2">
           <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-white/14 text-white ring-1 ring-white/20">
@@ -254,7 +277,7 @@ function InsuranceDigitalCard({
         </div>
         <Badge tone={status === "Còn hiệu lực" ? "green" : "amber"}>{status}</Badge>
       </div>
-      <p className="clinical-mono mt-2 break-all text-base font-black tracking-normal text-white sm:text-lg">{cardNumber || "Chưa ghi nhận"}</p>
+      <p className="clinical-mono mt-3 break-all text-lg font-black tracking-normal text-white sm:text-xl">{cardNumber || "Chưa ghi nhận"}</p>
       <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
         <div>
           <p className="text-[10px] font-bold uppercase text-white/70">Từ ngày</p>
@@ -265,7 +288,7 @@ function InsuranceDigitalCard({
           <p className="clinical-mono mt-0.5 font-bold text-white">{formatOptionalDate(validTo)}</p>
         </div>
       </div>
-      <div className="mt-2 flex flex-wrap items-center gap-2">
+      <div className="mt-3 flex flex-wrap items-center gap-2">
         {cardNumber && <CopyButton value={cardNumber} label="Copy số thẻ" variant="dark" />}
         <CopyButton value={patientCode} label="Copy mã BN" variant="dark" />
         <Link href="/insurance" className="inline-flex min-h-9 items-center rounded-md px-2.5 text-xs font-black text-white ring-1 ring-white/25 hover:bg-white/10">
@@ -308,7 +331,7 @@ function ShortcutCard({
     </>
   );
   const className =
-    "relative min-h-[82px] rounded-md border border-cream-200 bg-cream-50 p-2.5 shadow-[0_8px_18px_rgba(7,60,57,0.045)] transition hover:-translate-y-0.5 hover:border-primary-200 hover:bg-primary-50";
+    "relative min-h-[104px] rounded-2xl border border-cream-200 bg-white/86 p-3 shadow-[0_10px_24px_rgba(7,60,57,0.055)] transition hover:-translate-y-0.5 hover:border-primary-200 hover:bg-primary-50";
 
   return external ? (
     <a href={href} target="_blank" rel="noreferrer" className={className}>

@@ -27,7 +27,7 @@ export default async function AdminAccountsPage({ searchParams }: { searchParams
       <AdminPageHeader
         eyebrow="Quản lý tài khoản"
         title="Tài khoản portal"
-        description="Tìm kiếm tài khoản theo họ tên, SĐT, MABN; lọc trạng thái xác minh, mật khẩu và khóa/mở khóa khi cần."
+        description="Tìm kiếm tài khoản theo họ tên, SĐT, MABN; lọc trạng thái xác minh, mật khẩu, khóa/mở khóa hoặc xóa mềm khi cần."
         actions={
           <Link href="/admin/accounts" className="inline-flex items-center gap-2 rounded-md border border-cream-200 bg-cream-50 px-3 py-2 text-sm font-black text-primary-800 shadow-sm hover:bg-primary-50">
             <RotateCcw aria-hidden="true" className="h-4 w-4" />
@@ -70,6 +70,7 @@ function AccountsToolbar({ data, rawParams }: { data: Awaited<ReturnType<typeof 
     { label: "Tất cả", href: buildHref(rawParams, { status: "", phoneVerified: "", passwordSet: "", page: "1" }), active: !data.filters.status && !data.filters.phoneVerified && !data.filters.passwordSet },
     { label: "Đang hoạt động", href: buildHref(rawParams, { status: "active", page: "1" }), active: data.filters.status === "active" },
     { label: "Đã khóa", href: buildHref(rawParams, { status: "locked", page: "1" }), active: data.filters.status === "locked" },
+    { label: "Đã xóa mềm", href: buildHref(rawParams, { status: "deleted", page: "1" }), active: data.filters.status === "deleted" },
     { label: "Đã xác minh SĐT", href: buildHref(rawParams, { phoneVerified: "yes", page: "1" }), active: data.filters.phoneVerified === "yes" },
     { label: "Chưa đặt mật khẩu", href: buildHref(rawParams, { passwordSet: "no", page: "1" }), active: data.filters.passwordSet === "no" },
   ];
@@ -118,7 +119,7 @@ function AccountsToolbar({ data, rawParams }: { data: Awaited<ReturnType<typeof 
 
       <div className="mt-3 flex items-start gap-2 rounded-md bg-primary-50 px-3 py-2 text-xs font-bold leading-5 text-primary-900">
         <ShieldCheck aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />
-        Khóa tài khoản sẽ thu hồi các phiên đang mở. Lý do khóa được lưu trong audit log.
+        Khóa hoặc xóa mềm tài khoản sẽ thu hồi các phiên đang mở. Lý do thao tác được lưu trong audit log.
       </div>
     </section>
   );

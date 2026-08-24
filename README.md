@@ -165,6 +165,41 @@ cd C:\PatientPortalAgent
 Get-Service AnPhuPatientPortalSyncAgent
 Invoke-RestMethod http://127.0.0.1:5080/health
 
+Booking HIS Auto-Match
+
+Agent có worker `BookingHisMatchWorker` để đối soát đăng ký online với lượt `TIEPDON` trong HIS. Worker đọc các lịch hẹn chưa match trong Supabase booking DB, tìm lượt HIS theo `mabn/ngày khám/phòng khám`, cập nhật `portal.lich_hen_kham`, ghi `portal.booking_his_matches`, rồi tạo bản ghi `portal.notification_outbox` để job gửi Zalo xử lý sau.
+
+Trong `C:\PatientPortalAgent\patientapi-service.env` cần có:
+
+```text
+PatientPortal__EnableBookingHisMatchWorker=true
+PatientPortal__BookingHisMatchIntervalSeconds=60
+PatientPortal__BookingHisMatchBatchSize=25
+PatientPortal__BookingHisMatchRetryMinutes=5
+ConnectionStrings__BookingDatabase=...
+```
+
+Kiểm tra lịch đã match:
+
+```sql
+select id, ma_lich_hen, old_patient_code, status, his_match_status,
+       his_mabn, his_maql, his_stt_kham, his_department_name,
+       his_match_confidence, his_match_reason, his_matched_at
+from portal.lich_hen_kham
+order by his_match_checked_at desc nulls last, ngay_kham desc
+limit 20;
+```
+
+Kiểm tra tin Zalo chờ gửi:
+
+```sql
+select id, channel, recipient_phone, template_key, appointment_id,
+       status, attempt_count, run_after, payload_json
+from portal.notification_outbox
+order by created_at desc
+limit 20;
+```
+
 Sync Lại patient_profile
 
 Sau khi cập nhật agent có thêm field mới, ví dụ CCCD/CMND, cần enqueue sync lại `patient_profile` cho bệnh nhân cần test.

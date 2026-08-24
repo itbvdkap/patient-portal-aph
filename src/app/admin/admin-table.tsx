@@ -65,6 +65,8 @@ export function AdminStatusBadge({ status }: { status: string }) {
     normalized.includes("fail") ||
     normalized.includes("missing") ||
     normalized.includes("locked") ||
+    normalized.includes("deleted") ||
+    normalized.includes("xóa") ||
     normalized.includes("thu hồi") ||
     normalized.includes("hết hạn") ||
     normalized.includes("huy") ||

@@ -144,11 +144,11 @@ export function AdminActionButton({
 }
 
 function needsNoteModal(action: string) {
-  return action === "approve_booking" || action === "cancel_booking" || action === "lock_account" || action === "unlink_profile";
+  return action === "approve_booking" || action === "cancel_booking" || action === "lock_account" || action === "delete_account" || action === "unlink_profile";
 }
 
 function requiresNote(action: string) {
-  return action === "unlink_profile" || action === "lock_account";
+  return action === "unlink_profile" || action === "lock_account" || action === "delete_account";
 }
 
 function modalCopy(action: string) {
@@ -180,6 +180,16 @@ function modalCopy(action: string) {
       label: "Lý do gỡ",
       placeholder: "Ví dụ: Liên kết nhầm hồ sơ / yêu cầu từ bệnh nhân.",
       submit: "Gỡ liên kết",
+    };
+  }
+  if (action === "delete_account") {
+    return {
+      eyebrow: "Tài khoản portal",
+      title: "Lý do xóa mềm tài khoản",
+      description: "Tài khoản sẽ bị xóa mềm và các phiên đang mở sẽ được thu hồi. Dữ liệu vẫn được giữ để truy vết, audit và phục vụ yêu cầu pháp lý.",
+      label: "Lý do xóa mềm",
+      placeholder: "Ví dụ: Tài khoản tạo nhầm / yêu cầu từ bệnh nhân / trùng tài khoản.",
+      submit: "Xóa mềm tài khoản",
     };
   }
   return {

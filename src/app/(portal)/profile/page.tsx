@@ -12,11 +12,13 @@ import { getAccountOverview } from "@/lib/account/portal-account";
 import { maskPhone } from "@/lib/auth/phone";
 import { getDemoPatientSession } from "@/lib/auth/session";
 import { createPatientRepository } from "@/lib/data";
+import type { Patient } from "@/types/patient";
 import { formatDate } from "@/utils/format";
 
 export default async function ProfilePage() {
   const session = getDemoPatientSession(await cookies());
-  const patient = session?.mabn ? await createPatientRepository().getCurrentPatient() : null;
+  const patientState = session?.mabn ? await getCurrentPatientSafe() : { patient: null, syncPending: false };
+  const patient = patientState.patient;
   const legalDocs = await loadLegalDocs();
   const account = session
     ? await getAccountOverview(session, patient ?? undefined)
@@ -31,10 +33,10 @@ export default async function ProfilePage() {
   const accountName = account.identity?.fullName || account.identity?.displayName || "Tài khoản An Phú Care";
 
   return (
-    <div className="-mx-3 -mt-3 bg-slate-50/40 pb-4 sm:-mx-5 lg:mx-0 lg:mt-0 lg:bg-transparent">
+    <div className="-mx-3 -mt-3 bg-slate-50/35 pb-4 sm:-mx-5 lg:mx-0 lg:mt-0 lg:bg-transparent">
       <AccountHero phone={displayPhone} accountReady={account.accountReady} />
 
-      <div className="mx-auto grid max-w-3xl gap-5 px-3 pt-4 sm:px-5 lg:px-0">
+      <div className="mx-auto grid max-w-3xl gap-4 px-3 pt-4 sm:px-5 lg:px-0">
         <AccountMenuSection title="Tài khoản">
           <AccountMenuDetails icon={UserRound} title="Thông tin cá nhân" meta={account.identity?.phoneMasked || (displayPhone ? maskPhone(displayPhone) : undefined)}>
             <dl className="grid gap-3 sm:grid-cols-2">
@@ -48,8 +50,13 @@ export default async function ProfilePage() {
           </AccountMenuDetails>
 
           <AccountMenuDetails icon={UsersRound} title="Hồ sơ y tế người thân" meta={`${account.profiles.length} hồ sơ`}>
+          {patientState.syncPending ? (
+            <p className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold leading-6 text-amber-900">
+              Hồ sơ đang chờ đồng bộ dữ liệu y tế. Anh/chị vẫn có thể chọn hoặc thêm hồ sơ, dữ liệu khám sẽ tự cập nhật sau khi sync agent xử lý xong.
+            </p>
+          ) : null}
           {patient ? (
-            <section className="mb-4 rounded-md border border-primary-100 bg-primary-50/70 p-3">
+            <section className="mb-4 rounded-2xl border border-primary-100 bg-primary-50/70 p-3">
               <SectionHeader title="Hồ sơ đang xem" meta={patient.hisPatientCode} />
               <dl className="grid gap-3 sm:grid-cols-2">
                 <Field label="Mã bệnh nhân" value={patient.hisPatientCode} />
@@ -68,7 +75,7 @@ export default async function ProfilePage() {
               Tài khoản đã đăng nhập bằng số điện thoại. Vui lòng thêm hồ sơ bằng mã bệnh nhân để xem kết quả khám, BHYT, đơn thuốc và lịch hẹn.
             </p>
           )}
-          <div className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
+      <div className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
             <section>
               <SectionHeader title="Chọn hồ sơ đang xem" meta={`${account.profiles.length} hồ sơ`} />
               <ProfileSwitcher profiles={account.profiles} />
@@ -121,19 +128,31 @@ export default async function ProfilePage() {
   );
 }
 
+async function getCurrentPatientSafe(): Promise<{ patient: Patient | null; syncPending: boolean }> {
+  try {
+    return { patient: await createPatientRepository().getCurrentPatient(), syncPending: false };
+  } catch (error) {
+    if (error instanceof Error && error.message === "Patient profile is not synced yet.") {
+      return { patient: null, syncPending: true };
+    }
+
+    throw error;
+  }
+}
+
 function AccountHero({ phone, accountReady }: { phone: string; accountReady: boolean }) {
   return (
-    <section className="relative overflow-hidden rounded-b-2xl bg-gradient-to-br from-primary-900 via-primary-700 to-sky-700 px-4 py-4 text-white shadow-[0_12px_28px_rgba(7,60,57,0.18)] lg:rounded-2xl">
-      <div className="absolute -left-10 -top-14 h-32 w-32 rounded-full bg-white/10" />
-      <div className="absolute -right-10 bottom-0 h-32 w-32 rounded-full bg-sky-300/10" />
+    <section className="relative overflow-hidden rounded-b-3xl bg-gradient-to-br from-primary-900 via-primary-700 to-emerald-500 px-4 py-3 text-white shadow-[0_12px_28px_rgba(7,60,57,0.16)] lg:rounded-3xl">
+      <div className="absolute -left-12 -top-16 h-36 w-36 rounded-full bg-white/10" />
+      <div className="absolute -right-12 bottom-0 h-32 w-32 rounded-full bg-sky-300/10" />
       <div className="relative mx-auto flex max-w-3xl items-center gap-3">
-        <BrandLogo size={58} className="ring-2 ring-white/80" />
+        <BrandLogo size={48} className="ring-2 ring-white/80" />
         <div className="min-w-0 flex-1">
           <p className="text-[11px] font-black uppercase tracking-wide text-white/75">An Phú Care</p>
           <h1 className="mt-0.5 font-serif text-xl font-black leading-6">Tài khoản</h1>
           <p className="clinical-mono mt-1 text-sm font-semibold text-white/90">{phone ? maskPhone(phone) : "Chưa có SĐT"}</p>
         </div>
-        <span className="inline-flex shrink-0 rounded-full bg-white/15 px-2.5 py-1 text-[11px] font-bold text-white ring-1 ring-white/25">
+        <span className="inline-flex max-w-[96px] shrink-0 rounded-full bg-white/15 px-2.5 py-1 text-center text-[11px] font-bold leading-4 text-white ring-1 ring-white/25 sm:max-w-none">
           {accountReady ? "Đã bảo vệ phiên" : "Đang cập nhật tài khoản"}
         </span>
       </div>
@@ -144,8 +163,8 @@ function AccountHero({ phone, accountReady }: { phone: string; accountReady: boo
 function AccountMenuSection({ title, children }: { title?: string; children: ReactNode }) {
   return (
     <section>
-      {title ? <h2 className="mb-3 px-2 text-lg font-black text-slate-500">{title}</h2> : null}
-      <div className="overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-[0_10px_30px_rgba(7,60,57,0.06)]">
+      {title ? <h2 className="mb-2 px-2 font-serif text-lg font-black text-ink">{title}</h2> : null}
+      <div className="overflow-hidden rounded-2xl border border-cream-200 bg-white/90 shadow-[0_10px_30px_rgba(7,60,57,0.055)]">
         {children}
       </div>
     </section>
@@ -167,16 +186,16 @@ function AccountMenuDetails({
 }) {
   return (
     <details className="group border-b border-slate-100 last:border-b-0">
-      <summary className="flex min-h-[76px] cursor-pointer list-none items-center gap-4 px-4 py-3">
-        <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl ${destructive ? "bg-rose-50 text-rose-600" : "bg-sky-50 text-sky-700"}`}>
-          <Icon aria-hidden="true" className="h-6 w-6" />
+      <summary className="flex min-h-[66px] cursor-pointer list-none items-center gap-3 px-4 py-3">
+        <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ${destructive ? "bg-rose-50 text-rose-600" : "bg-primary-50 text-primary-700"}`}>
+          <Icon aria-hidden="true" className="h-5 w-5" />
         </span>
         <span className="min-w-0 flex-1">
-          <span className={`block text-lg font-semibold leading-6 ${destructive ? "text-rose-700" : "text-ink"}`}>{title}</span>
+          <span className={`block text-base font-black leading-6 ${destructive ? "text-rose-700" : "text-ink"}`}>{title}</span>
           {meta ? <span className="clinical-mono mt-0.5 block text-xs font-semibold text-slate-500">{meta}</span> : null}
         </span>
-        <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-slate-300 transition group-open:rotate-180 group-open:text-primary-700">
-          <ChevronDown aria-hidden="true" className="h-6 w-6" />
+        <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-cream-50 text-slate-400 transition group-open:rotate-180 group-open:text-primary-700">
+          <ChevronDown aria-hidden="true" className="h-5 w-5" />
         </span>
       </summary>
       <div className="details-reveal border-t border-slate-100 bg-cream-50/75">

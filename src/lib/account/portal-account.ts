@@ -63,13 +63,14 @@ export interface PortalAccountAuthState {
   hasPassword: boolean;
   phoneVerified: boolean;
   status: string;
+  deletedAt?: string;
 }
 
 export async function getPortalAccountByPhone(phone: string): Promise<PortalAccountAuthState | null> {
   const supabase = createSupabaseServiceClient();
   const { data, error } = await supabase
     .from("portal_accounts")
-    .select("id,phone,full_name,display_name,password_hash,phone_verified_at,status")
+    .select("id,phone,full_name,display_name,password_hash,phone_verified_at,status,deleted_at")
     .eq("phone", phone)
     .maybeSingle();
 
@@ -82,7 +83,43 @@ export async function getPortalAccountByPhone(phone: string): Promise<PortalAcco
     hasPassword: Boolean(data.password_hash),
     phoneVerified: Boolean(data.phone_verified_at),
     status: data.status ?? "active",
+    deletedAt: data.deleted_at ?? undefined,
   };
+}
+
+export async function getPortalAccountById(accountId: string): Promise<PortalAccountAuthState | null> {
+  const supabase = createSupabaseServiceClient();
+  const { data, error } = await supabase
+    .from("portal_accounts")
+    .select("id,phone,full_name,display_name,password_hash,phone_verified_at,status,deleted_at")
+    .eq("id", accountId)
+    .maybeSingle();
+
+  if (error || !data) return null;
+
+  return {
+    accountId: data.id ?? accountId,
+    phone: data.phone ?? "",
+    fullName: data.full_name ?? data.display_name ?? undefined,
+    hasPassword: Boolean(data.password_hash),
+    phoneVerified: Boolean(data.phone_verified_at),
+    status: data.status ?? "active",
+    deletedAt: data.deleted_at ?? undefined,
+  };
+}
+
+export function portalAccountAccessError(account: Pick<PortalAccountAuthState, "status" | "deletedAt"> | null | undefined) {
+  if (!account) return null;
+  if (account.deletedAt || account.status === "deleted") {
+    return "Tài khoản này đã được ngừng sử dụng. Vui lòng liên hệ Bệnh viện Đa khoa An Phú để được hỗ trợ.";
+  }
+  if (account.status === "locked" || account.status === "disabled") {
+    return "Tài khoản của anh/chị đang tạm khóa. Vui lòng liên hệ Bệnh viện Đa khoa An Phú để được hỗ trợ.";
+  }
+  if (account.status && account.status !== "active") {
+    return "Tài khoản hiện không ở trạng thái hoạt động. Vui lòng liên hệ Bệnh viện Đa khoa An Phú để được hỗ trợ.";
+  }
+  return null;
 }
 
 export async function upsertVerifiedPortalAccount({
@@ -135,11 +172,11 @@ export async function verifyPortalAccountPassword(phone: string, password: strin
   const supabase = createSupabaseServiceClient();
   const { data, error } = await supabase
     .from("portal_accounts")
-    .select("id,phone,full_name,display_name,password_hash,phone_verified_at,status")
+    .select("id,phone,full_name,display_name,password_hash,phone_verified_at,status,deleted_at")
     .eq("phone", phone)
     .maybeSingle();
 
-  if (error || !data || data.status === "locked" || data.status === "disabled") {
+  if (error || !data || portalAccountAccessError({ status: data.status ?? "active", deletedAt: data.deleted_at ?? undefined })) {
     return null;
   }
 
@@ -630,13 +667,19 @@ export async function isPortalSessionActive(session: AuthenticatedPatientSession
     const supabase = createSupabaseServiceClient();
     const { data, error } = await supabase
       .from("portal_account_sessions")
-      .select("revoked_at,expires_at")
+      .select("account_id,account_key,revoked_at,expires_at")
       .eq("session_id", session.sessionId)
       .maybeSingle();
 
     if (error || !data) return true;
     if (data.revoked_at) return false;
     if (data.expires_at && new Date(data.expires_at).getTime() <= Date.now()) return false;
+
+    const accountFilter = data.account_id ? { id: data.account_id } : data.account_key ? { account_key: data.account_key } : null;
+    if (accountFilter) {
+      const { data: account } = await supabase.from("portal_accounts").select("status,deleted_at").match(accountFilter).maybeSingle();
+      if (portalAccountAccessError({ status: account?.status ?? "active", deletedAt: account?.deleted_at ?? undefined })) return false;
+    }
 
     await supabase.from("portal_account_sessions").update({ last_seen_at: new Date().toISOString() }).eq("session_id", session.sessionId);
     return true;

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { setPortalAccountPassword } from "@/lib/account/portal-account";
+import { getPortalAccountById, portalAccountAccessError, setPortalAccountPassword } from "@/lib/account/portal-account";
 import { validatePassword } from "@/lib/auth/password";
 import { getDemoPatientSession } from "@/lib/auth/session";
 
@@ -18,6 +18,12 @@ export async function POST(request: Request) {
   }
 
   try {
+    const account = await getPortalAccountById(session.accountId);
+    const accessError = portalAccountAccessError(account);
+    if (accessError) {
+      return NextResponse.json({ error: accessError }, { status: 403 });
+    }
+
     await setPortalAccountPassword(session.accountId, password);
     return NextResponse.json({ data: { ok: true } });
   } catch (error) {

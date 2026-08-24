@@ -65,6 +65,7 @@ function AuditToolbar({ data, rawParams }: { data: Awaited<ReturnType<typeof get
   const tabs = [
     { label: "Tất cả", href: buildHref(rawParams, { action: "", targetType: "", page: "1" }), active: !data.filters.action && !data.filters.targetType },
     { label: "Khóa tài khoản", href: buildHref(rawParams, { action: "lock_account", page: "1" }), active: data.filters.action === "lock_account" },
+    { label: "Xóa tài khoản", href: buildHref(rawParams, { action: "delete_account", page: "1" }), active: data.filters.action === "delete_account" },
     { label: "Gỡ hồ sơ", href: buildHref(rawParams, { action: "unlink_profile", page: "1" }), active: data.filters.action === "unlink_profile" },
     { label: "Retry sync", href: buildHref(rawParams, { action: "retry_sync", page: "1" }), active: data.filters.action === "retry_sync" },
     { label: "Lịch khám", href: buildHref(rawParams, { targetType: "booking", page: "1" }), active: data.filters.targetType === "booking" },
@@ -301,6 +302,8 @@ function formatDate(value: unknown) {
 const ACTION_LABELS: Record<string, string> = {
   lock_account: "Khóa tài khoản",
   unlock_account: "Mở khóa tài khoản",
+  edit_account: "Sửa tài khoản",
+  delete_account: "Xóa mềm tài khoản",
   unlink_profile: "Gỡ hồ sơ",
   retry_sync: "Retry sync",
   approve_booking: "Xác nhận lịch",

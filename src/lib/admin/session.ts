@@ -114,7 +114,7 @@ const rolePermissions: Record<Exclude<AdminRole, "super_admin">, { paths: string
   },
   support: {
     paths: ["/admin", "/admin/accounts", "/admin/profiles", "/admin/sync", "/admin/otp", "/admin/audit"],
-    actions: ["unlink_profile", "retry_sync"],
+    actions: ["edit_account", "unlink_profile", "retry_sync", "lock_account", "unlock_account"],
   },
   content_admin: {
     paths: ["/admin", "/admin/content", "/admin/settings", "/admin/audit"],

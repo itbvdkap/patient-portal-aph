@@ -11,6 +11,8 @@ const actionSchema = z.object({
   action: z.enum([
     "lock_account",
     "unlock_account",
+    "edit_account",
+    "delete_account",
     "unlink_profile",
     "retry_sync",
     "approve_booking",
@@ -41,10 +43,16 @@ export async function POST(request: Request) {
   try {
     switch (parsed.data.action) {
       case "lock_account":
-        await setAccountStatus(parsed.data.target, "locked");
+        await setAccountStatus(parsed.data.target, "locked", session.username);
         break;
       case "unlock_account":
-        await setAccountStatus(parsed.data.target, "active");
+        await setAccountStatus(parsed.data.target, "active", session.username);
+        break;
+      case "edit_account":
+        await updateAccountInfo(parsed.data.target);
+        break;
+      case "delete_account":
+        await softDeleteAccount(parsed.data.target, session.username);
         break;
       case "unlink_profile":
         await unlinkProfile(parsed.data.target);
@@ -157,16 +165,27 @@ async function updateContentStatus(target: Record<string, string>, status: "publ
 
 }
 
-async function setAccountStatus(target: Record<string, string>, status: "active" | "locked") {
+async function setAccountStatus(target: Record<string, string>, status: "active" | "locked", adminUsername: string) {
   const supabase = createSupabaseServiceClient();
   const accountId = clean(target.accountId);
   const accountKey = clean(target.accountKey);
+  const note = clean(target.note);
 
   if (!accountId && !accountKey) {
     throw new Error("Thiếu định danh tài khoản.");
   }
+  if (status === "locked" && !note) {
+    throw new Error("Vui lòng nhập lý do khóa tài khoản.");
+  }
 
-  const accountQuery = supabase.from("portal_accounts").update({ status, updated_at: new Date().toISOString() });
+  const now = new Date().toISOString();
+  const accountQuery = supabase.from("portal_accounts").update({
+    status,
+    updated_at: now,
+    ...(status === "locked"
+      ? { locked_at: now, locked_by: adminUsername, locked_reason: note }
+      : { locked_at: null, locked_by: null, locked_reason: null }),
+  });
   const accountResult = accountId ? await accountQuery.eq("id", accountId) : await accountQuery.eq("account_key", accountKey);
   if (accountResult.error) throw new Error(accountResult.error.message);
 
@@ -178,6 +197,87 @@ async function setAccountStatus(target: Record<string, string>, status: "active"
     const sessionResult = accountId ? await sessionQuery.eq("account_id", accountId) : await sessionQuery.eq("account_key", accountKey);
     if (sessionResult.error) throw new Error(sessionResult.error.message);
   }
+}
+
+async function updateAccountInfo(target: Record<string, string>) {
+  const supabase = createSupabaseServiceClient();
+  const accountId = clean(target.accountId);
+  const accountKey = clean(target.accountKey);
+  const fullName = clean(target.fullName);
+  const displayName = clean(target.displayName);
+  const phoneVerified = clean(target.phoneVerified);
+
+  if (!accountId && !accountKey) {
+    throw new Error("Thiếu định danh tài khoản.");
+  }
+  if (!fullName && !displayName) {
+    throw new Error("Vui lòng nhập họ tên hoặc tên hiển thị.");
+  }
+  if (fullName.length > 120 || displayName.length > 120) {
+    throw new Error("Tên tài khoản không được vượt quá 120 ký tự.");
+  }
+  if (phoneVerified && !["yes", "no"].includes(phoneVerified)) {
+    throw new Error("Trạng thái xác minh SĐT không hợp lệ.");
+  }
+
+  const now = new Date().toISOString();
+  let nextPhoneVerifiedAt: string | null | undefined;
+  if (phoneVerified) {
+    const readQuery = supabase.from("portal_accounts").select("phone_verified_at").limit(1);
+    const readResult = accountId ? await readQuery.eq("id", accountId).maybeSingle() : await readQuery.eq("account_key", accountKey).maybeSingle();
+    if (readResult.error) throw new Error(readResult.error.message);
+
+    const desiredVerified = phoneVerified === "yes";
+    const currentVerified = Boolean(readResult.data?.phone_verified_at);
+    if (desiredVerified !== currentVerified) {
+      nextPhoneVerifiedAt = desiredVerified ? now : null;
+    }
+  }
+
+  const updatePayload: Record<string, string | null> = {
+    full_name: fullName || displayName,
+    display_name: displayName || fullName,
+    updated_at: now,
+  };
+  if (nextPhoneVerifiedAt !== undefined) {
+    updatePayload.phone_verified_at = nextPhoneVerifiedAt;
+  }
+
+  const accountQuery = supabase.from("portal_accounts").update(updatePayload);
+  const accountResult = accountId ? await accountQuery.eq("id", accountId) : await accountQuery.eq("account_key", accountKey);
+  if (accountResult.error) throw new Error(accountResult.error.message);
+}
+
+async function softDeleteAccount(target: Record<string, string>, adminUsername: string) {
+  const supabase = createSupabaseServiceClient();
+  const accountId = clean(target.accountId);
+  const accountKey = clean(target.accountKey);
+  const note = clean(target.note);
+
+  if (!accountId && !accountKey) {
+    throw new Error("Thiếu định danh tài khoản.");
+  }
+  if (!note) {
+    throw new Error("Vui lòng nhập lý do xóa tài khoản.");
+  }
+
+  const now = new Date().toISOString();
+  const accountQuery = supabase.from("portal_accounts").update({
+    status: "deleted",
+    deleted_at: now,
+    deleted_by: adminUsername,
+    deleted_reason: note,
+    updated_at: now,
+  });
+  const accountResult = accountId ? await accountQuery.eq("id", accountId) : await accountQuery.eq("account_key", accountKey);
+  if (accountResult.error) throw new Error(accountResult.error.message);
+
+  const sessionQuery = supabase
+    .from("portal_account_sessions")
+    .update({ revoked_at: now, last_seen_at: now })
+    .is("revoked_at", null);
+  const sessionResult = accountId ? await sessionQuery.eq("account_id", accountId) : await sessionQuery.eq("account_key", accountKey);
+  if (sessionResult.error) throw new Error(sessionResult.error.message);
 }
 
 async function unlinkProfile(target: Record<string, string>) {

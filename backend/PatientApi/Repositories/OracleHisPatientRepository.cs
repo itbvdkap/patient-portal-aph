@@ -153,16 +153,40 @@ public sealed class OracleHisPatientRepository(IConfiguration configuration) : I
               b.HOTEN as FullName,
               b.NGAYSINH as BirthDate,
               b.PHAI as Gender,
-              coalesce(dt.DIDONG, dt.NHA, dt.COQUAN) as Phone,
+              coalesce(
+                cast(dt.DIDONG as varchar2(50)),
+                cast(dt.NHA as varchar2(50)),
+                cast(dt.COQUAN as varchar2(50))
+              ) as Phone,
               b.DIACHI_HIENTAI as Address,
-              coalesce(b.CMND, b.CMND_BN, dt.CMND) as CitizenId,
-              cast(null as date) as CitizenIssueDate,
-              coalesce(kcb_bh.MA_THE_BHYT, to_nchar(bh.SOTHE)) as CardNumber,
-              case when kcb_bh.GT_THE_TU is not null then kcb_bh.GT_THE_TU else to_nchar(bh.TUNGAY, 'YYYYMMDD') end as ValidFrom,
-              case when kcb_bh.GT_THE_DEN is not null then kcb_bh.GT_THE_DEN else to_nchar(bh.DENNGAY, 'YYYYMMDD') end as ValidTo
+              coalesce(
+                cast(b.CMND as varchar2(50)),
+                cast(b.CMND_BN as varchar2(50)),
+                cast(dt.CMND as varchar2(50))
+              ) as CitizenId,
+              cast(null as date) as CitizenIssueDate
             from BTDBN b
             left join DIENTHOAI dt on dt.MABN = b.MABN
-            left join BHYT bh on bh.MABN = b.MABN
+            where b.MABN = :HisPatientCode
+            fetch first 1 rows only
+            """;
+
+        const string insuranceSql = """
+            select
+              coalesce(
+                cast(kcb_bh.MA_THE_BHYT as varchar2(50)),
+                cast(bh.SOTHE as varchar2(50))
+              ) as CardNumber,
+              case
+                when kcb_bh.GT_THE_TU is not null then cast(kcb_bh.GT_THE_TU as varchar2(30))
+                else cast(bh.TUNGAY as varchar2(30))
+              end as ValidFrom,
+              case
+                when kcb_bh.GT_THE_DEN is not null then cast(kcb_bh.GT_THE_DEN as varchar2(30))
+                else cast(bh.DENNGAY as varchar2(30))
+              end as ValidTo
+            from (select :HisPatientCode as MABN from dual) p
+            left join BHYT bh on bh.MABN = p.MABN
             left join (
               select MABN, MA_THE_BHYT, GT_THE_TU, GT_THE_DEN
               from (
@@ -179,8 +203,7 @@ public sealed class OracleHisPatientRepository(IConfiguration configuration) : I
                 where MA_THE_BHYT is not null
               )
               where rn = 1
-            ) kcb_bh on kcb_bh.MABN = b.MABN
-            where b.MABN = :HisPatientCode
+            ) kcb_bh on kcb_bh.MABN = p.MABN
             fetch first 1 rows only
             """;
 
@@ -193,19 +216,43 @@ public sealed class OracleHisPatientRepository(IConfiguration configuration) : I
         }
 
         string patientCode = Convert.ToString(row.HISPATIENTCODE) ?? hisPatientCode;
-        DateOnly validFrom = ToDateOnlyOrDefault(row.VALIDFROM);
-        DateOnly validTo = ToDateOnlyOrDefault(row.VALIDTO);
         string patientId = $"his-{patientCode}";
 
-        var insurance = new InsuranceCardDto(
-            Id: $"ins-{row.CARDNUMBER}",
-            PatientId: patientId,
-            CardNumber: row.CARDNUMBER ?? string.Empty,
-            BenefitCode: DeriveBenefitCode(row.CARDNUMBER),
-            RegisteredClinic: "Bệnh viện Đa khoa An Phú",
-            ValidFrom: validFrom,
-            ValidTo: validTo,
-            Status: validTo >= DateOnly.FromDateTime(DateTime.UtcNow) ? "Còn hiệu lực" : "Hết hiệu lực");
+        InsuranceCardDto insurance;
+        try
+        {
+            var insuranceRow = await connection.QuerySingleOrDefaultAsync(new CommandDefinition(
+                insuranceSql,
+                new { HisPatientCode = patientCode },
+                cancellationToken: cancellationToken,
+                commandTimeout: 20));
+
+            var cardNumber = Convert.ToString(insuranceRow?.CARDNUMBER) ?? string.Empty;
+            var validFrom = ToDateOnlyOrDefault(insuranceRow?.VALIDFROM);
+            var validTo = ToDateOnlyOrDefault(insuranceRow?.VALIDTO);
+
+            insurance = new InsuranceCardDto(
+                Id: $"ins-{cardNumber}",
+                PatientId: patientId,
+                CardNumber: cardNumber,
+                BenefitCode: DeriveBenefitCode(cardNumber),
+                RegisteredClinic: "Bệnh viện Đa khoa An Phú",
+                ValidFrom: validFrom,
+                ValidTo: validTo,
+                Status: validTo >= DateOnly.FromDateTime(DateTime.UtcNow) ? "Còn hiệu lực" : "Hết hiệu lực");
+        }
+        catch (OracleException exception) when (exception.Number is 1481 or 12704)
+        {
+            insurance = new InsuranceCardDto(
+                Id: $"ins-{patientCode}",
+                PatientId: patientId,
+                CardNumber: string.Empty,
+                BenefitCode: string.Empty,
+                RegisteredClinic: "Bệnh viện Đa khoa An Phú",
+                ValidFrom: DateOnly.MinValue,
+                ValidTo: DateOnly.MinValue,
+                Status: "Chưa ghi nhận");
+        }
 
         return new PatientDto(
             Id: patientId,

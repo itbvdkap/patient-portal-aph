@@ -192,6 +192,8 @@ export async function createBookingAppointment(input: BookingAppointmentInput) {
     co_bao_hiem: Boolean(input.hasInsurance),
     bacsikham: cleanString(input.bacsikham),
     ghichu: [oldPatientCode ? `Mã BN cũ: ${oldPatientCode}` : "", cleanString(input.ghichu)].filter(Boolean).join(" - ") || null,
+    old_patient_code: oldPatientCode,
+    patient_code: oldPatientCode,
     can_nang: input.weight ? Number(input.weight) : null,
     tinh_thanh: cleanString(input.province),
     phuong_xa: cleanString(input.ward),
@@ -227,6 +229,8 @@ export async function createBookingAppointment(input: BookingAppointmentInput) {
             co_bao_hiem,
             bacsikham,
             ghichu,
+            old_patient_code,
+            patient_code,
             can_nang,
             tinh_thanh,
             phuong_xa,
@@ -257,13 +261,15 @@ export async function createBookingAppointment(input: BookingAppointmentInput) {
             $15,
             $16,
             $17,
-            $18::date,
+            $18,
             $19,
-            $20,
+            $20::date,
             $21,
             $22,
             $23,
-            $24
+            $24,
+            $25,
+            $26
           )
           returning id, ma_lich_hen, ho_ten, ngay_kham::text, chi_nhanh
         `,
@@ -281,6 +287,8 @@ export async function createBookingAppointment(input: BookingAppointmentInput) {
           baseRecord.co_bao_hiem,
           baseRecord.bacsikham,
           baseRecord.ghichu,
+          baseRecord.old_patient_code,
+          baseRecord.patient_code,
           baseRecord.can_nang,
           baseRecord.tinh_thanh,
           baseRecord.phuong_xa,
@@ -330,6 +338,7 @@ export async function createBookingAppointment(input: BookingAppointmentInput) {
           ngay_kham: created.ngay_kham,
           chi_nhanh: created.chi_nhanh,
           source: "patient_portal",
+          old_patient_code: baseRecord.old_patient_code,
         }),
       ],
     );

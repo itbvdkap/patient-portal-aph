@@ -4,7 +4,7 @@ import { demoSessionCookie } from "@/lib/auth/demo-auth";
 import { accountIdFromPhone, verifyOtpHash } from "@/lib/auth/otp";
 import { normalizeVietnamPhone } from "@/lib/auth/phone";
 import { createPatientSessionCookie } from "@/lib/auth/session";
-import { getLinkedProfilesForAccount, recordPortalOtpLogin } from "@/lib/account/portal-account";
+import { getLinkedProfilesForAccount, getPortalAccountByPhone, portalAccountAccessError, recordPortalOtpLogin } from "@/lib/account/portal-account";
 import { enqueuePatientSync } from "@/lib/supabase/portal-sync";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
 
@@ -57,6 +57,12 @@ export async function POST(request: Request) {
       .from("portal_otp_attempts")
       .update({ consumed_at: new Date().toISOString(), status: "verified", attempt_count: attempt.attempt_count + 1 })
       .eq("id", attempt.id);
+
+    const authState = await getPortalAccountByPhone(phone);
+    const accessError = portalAccountAccessError(authState);
+    if (accessError) {
+      return NextResponse.json({ error: accessError }, { status: 403 });
+    }
 
     const accountId = accountIdFromPhone(phone);
     const maxAge = 60 * 60 * 8;

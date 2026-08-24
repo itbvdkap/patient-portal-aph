@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { getPortalAccountByPhone, portalAccountAccessError } from "@/lib/account/portal-account";
 import { normalizeVietnamPhone } from "@/lib/auth/phone";
 import { generateOtp, hashOtp, maskedOtpPhone, maxOtpAttempts, otpProvider, otpTtlMinutes, sendOtpMessage } from "@/lib/auth/otp";
 import { verifyTurnstileToken } from "@/lib/security/turnstile";
@@ -26,6 +27,12 @@ export async function POST(request: Request) {
     const turnstile = await verifyTurnstileToken(parsed.data.cf_turnstile_response, request);
     if (!turnstile.ok) {
       return NextResponse.json({ error: turnstile.message }, { status: 403 });
+    }
+
+    const account = await getPortalAccountByPhone(phone);
+    const accessError = portalAccountAccessError(account);
+    if (accessError) {
+      return NextResponse.json({ error: accessError }, { status: 403 });
     }
 
     const provider = otpProvider();

@@ -1,11 +1,16 @@
 .next/
+.next.bak-*/
 .next-dev/
 .next-stale-*/
 .playwright-cli/
 node_modules/
 .expo/
+supabase/.temp/
 out/
+dist/
 coverage/
+__pycache__/
+apps/mobile-app/dist/
 .env*.local
 backend/**/appsettings.Development.json
 **/bin/

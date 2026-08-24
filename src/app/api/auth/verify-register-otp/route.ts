@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { upsertVerifiedPortalAccount, recordPortalPasswordLogin } from "@/lib/account/portal-account";
+import { getPortalAccountByPhone, portalAccountAccessError, upsertVerifiedPortalAccount, recordPortalPasswordLogin } from "@/lib/account/portal-account";
 import { consumeOtpAttempt } from "@/lib/auth/otp-attempts";
 import { normalizeVietnamPhone } from "@/lib/auth/phone";
 import { createPatientSessionCookie } from "@/lib/auth/session";
@@ -25,6 +25,12 @@ export async function POST(request: Request) {
   }
 
   try {
+    const authState = await getPortalAccountByPhone(phone);
+    const accessError = portalAccountAccessError(authState);
+    if (accessError) {
+      return NextResponse.json({ error: accessError }, { status: 403 });
+    }
+
     const { accountId } = await upsertVerifiedPortalAccount({ phone, fullName: parsed.data.fullName });
     const maxAge = 60 * 60 * 24 * 30;
     const { sessionId, accountKey, profiles } = await recordPortalPasswordLogin({

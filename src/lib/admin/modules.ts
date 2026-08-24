@@ -1,6 +1,6 @@
 import { Pool } from "pg";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
-import type { AdminRow } from "@/lib/admin/dashboard";
+import type { AdminRow, AdminRowAction } from "@/lib/admin/dashboard";
 
 export interface AdminModuleResult {
   rows: AdminRow[];
@@ -362,7 +362,7 @@ export async function getAdminAccounts(query: AdminAccountsQuery = {}): Promise<
     const supabase = createSupabaseServiceClient();
     const baseQuery = supabase
       .from("portal_accounts")
-      .select("account_key,id,phone_masked,phone,full_name,display_name,status,primary_mabn,phone_verified_at,password_set_at,last_login_at,created_at", {
+      .select("account_key,id,phone_masked,phone,full_name,display_name,status,primary_mabn,phone_verified_at,password_set_at,last_login_at,created_at,locked_at,locked_by,locked_reason,deleted_at,deleted_by,deleted_reason", {
         count: "exact",
       });
     const dataQuery = applyAccountFilters(baseQuery as unknown as AccountQueryBuilder, filters)
@@ -1029,11 +1029,17 @@ function mapAccountRows(rows: Record<string, unknown>[]): AdminRow[] {
       accountId: String(row.id ?? ""),
       accountKey: String(row.account_key ?? ""),
     },
-    actions:
-      String(row.status ?? "active") === "locked"
-        ? [{ action: "unlock_account", label: "Mở khóa", tone: "primary" }]
-        : [{ action: "lock_account", label: "Khóa", tone: "danger" }],
+    actions: accountActionsForStatus(String(row.status ?? "active")),
   }));
+}
+
+function accountActionsForStatus(status: string): AdminRowAction[] {
+  if (status === "deleted") return [];
+  if (status === "locked") return [{ action: "unlock_account", label: "Mở khóa", tone: "primary" }];
+  return [
+    { action: "lock_account", label: "Khóa", tone: "danger" },
+    { action: "delete_account", label: "Xóa mềm", tone: "danger" },
+  ];
 }
 
 function emptyAccountsResult(
@@ -1938,7 +1944,7 @@ async function findAccount(
   key: string,
   warnings: string[],
 ): Promise<Record<string, unknown> | null> {
-  const columns = "account_key,id,phone_masked,phone,full_name,display_name,status,primary_mabn,phone_verified_at,password_set_at,last_login_at,created_at,updated_at";
+  const columns = "account_key,id,phone_masked,phone,full_name,display_name,status,primary_mabn,phone_verified_at,password_set_at,last_login_at,created_at,updated_at,locked_at,locked_by,locked_reason,deleted_at,deleted_by,deleted_reason";
   const queries: Array<{ column: string; value: string }> = isUuid(key)
     ? [
         { column: "id", value: key },

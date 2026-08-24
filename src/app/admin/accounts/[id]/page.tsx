@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { AccountEditForm } from "@/app/admin/accounts/account-edit-form";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { AdminActionButton } from "@/app/admin/admin-action-button";
@@ -17,6 +18,8 @@ export default async function AdminAccountDetailPage({ params }: { params: Promi
   const account = data.account;
   const canLock = canAdminPerformAction(session.role, "lock_account");
   const canUnlock = canAdminPerformAction(session.role, "unlock_account");
+  const canDelete = canAdminPerformAction(session.role, "delete_account");
+  const canEdit = canAdminPerformAction(session.role, "edit_account");
 
   return (
     <AdminShell username={session.username} role={session.role}>
@@ -40,17 +43,28 @@ export default async function AdminAccountDetailPage({ params }: { params: Promi
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <AdminStatusBadge status={String(account.status ?? "active")} />
-                {String(account.status ?? "active") === "locked" && canUnlock ? (
+                {String(account.status ?? "active") === "deleted" ? null : String(account.status ?? "active") === "locked" && canUnlock ? (
                   <AdminActionButton action="unlock_account" label="Mở khóa" tone="primary" target={accountTarget(account)} />
-                ) : String(account.status ?? "active") !== "locked" && canLock ? (
-                  <AdminActionButton
-                    action="lock_account"
-                    label="Khóa tài khoản"
-                    tone="danger"
-                    target={accountTarget(account)}
-                    confirm="Khóa tài khoản này và thu hồi các phiên đang mở?"
-                  />
-                ) : null}
+                ) : (
+                  <>
+                    {canLock ? (
+                      <AdminActionButton
+                        action="lock_account"
+                        label="Khóa tài khoản"
+                        tone="danger"
+                        target={accountTarget(account)}
+                      />
+                    ) : null}
+                    {canDelete ? (
+                      <AdminActionButton
+                        action="delete_account"
+                        label="Xóa mềm"
+                        tone="danger"
+                        target={accountTarget(account)}
+                      />
+                    ) : null}
+                  </>
+                )}
               </div>
             </div>
 
@@ -59,7 +73,19 @@ export default async function AdminAccountDetailPage({ params }: { params: Promi
               <Info label="Mật khẩu" value={account.password_set_at ? `Đặt ${formatDate(account.password_set_at)}` : "Chưa đặt"} />
               <Info label="Đăng nhập gần nhất" value={formatDate(account.last_login_at)} />
               <Info label="Hồ sơ mặc định" value={String(account.primary_mabn ?? "Chưa chọn")} />
+              <Info label="Lý do khóa" value={account.locked_reason ? `${String(account.locked_reason)} (${String(account.locked_by ?? "admin")})` : "Không"} />
+              <Info label="Lý do xóa mềm" value={account.deleted_reason ? `${String(account.deleted_reason)} (${String(account.deleted_by ?? "admin")})` : "Không"} />
             </div>
+
+            {canEdit && String(account.status ?? "active") !== "deleted" ? (
+              <AccountEditForm
+                accountId={String(account.id ?? "")}
+                accountKey={String(account.account_key ?? "")}
+                fullName={String(account.full_name ?? "")}
+                displayName={String(account.display_name ?? account.full_name ?? "")}
+                phoneVerified={Boolean(account.phone_verified_at)}
+              />
+            ) : null}
           </section>
 
           <DetailSection title="Hồ sơ y tế liên kết" count={data.profiles.length}>

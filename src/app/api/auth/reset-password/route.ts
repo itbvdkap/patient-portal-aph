@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { getPortalAccountByPhone, setPortalAccountPassword } from "@/lib/account/portal-account";
+import { getPortalAccountByPhone, portalAccountAccessError, setPortalAccountPassword } from "@/lib/account/portal-account";
 import { consumeOtpAttempt } from "@/lib/auth/otp-attempts";
 import { validatePassword } from "@/lib/auth/password";
 import { normalizeVietnamPhone } from "@/lib/auth/phone";
@@ -26,6 +26,10 @@ export async function POST(request: Request) {
   const account = await getPortalAccountByPhone(phone);
   if (!account) {
     return NextResponse.json({ error: "Không tìm thấy tài khoản." }, { status: 404 });
+  }
+  const accessError = portalAccountAccessError(account);
+  if (accessError) {
+    return NextResponse.json({ error: accessError }, { status: 403 });
   }
 
   const consumed = await consumeOtpAttempt(phone, parsed.data.otp, "reset_password");

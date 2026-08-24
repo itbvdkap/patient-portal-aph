@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { getPortalAccountByPhone } from "@/lib/account/portal-account";
+import { getPortalAccountByPhone, portalAccountAccessError } from "@/lib/account/portal-account";
 import { createOtpAttempt } from "@/lib/auth/otp-attempts";
 import { normalizeVietnamPhone } from "@/lib/auth/phone";
 import { verifyTurnstileToken } from "@/lib/security/turnstile";
@@ -28,6 +28,10 @@ export async function POST(request: Request) {
   }
 
   const account = await getPortalAccountByPhone(phone);
+  const accessError = portalAccountAccessError(account);
+  if (accessError) {
+    return NextResponse.json({ error: accessError }, { status: 403 });
+  }
   if (account?.hasPassword) {
     return NextResponse.json({ error: "Số điện thoại này đã có tài khoản. Vui lòng đăng nhập bằng mật khẩu." }, { status: 409 });
   }

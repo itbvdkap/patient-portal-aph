@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { recordPortalPasswordLogin, verifyPortalAccountPassword } from "@/lib/account/portal-account";
+import { getPortalAccountByPhone, portalAccountAccessError, recordPortalPasswordLogin, verifyPortalAccountPassword } from "@/lib/account/portal-account";
 import { demoSessionCookie } from "@/lib/auth/demo-auth";
 import { normalizeVietnamPhone } from "@/lib/auth/phone";
 import { createPatientSessionCookie } from "@/lib/auth/session";
@@ -19,6 +19,12 @@ export async function POST(request: Request) {
   }
 
   const phone = normalizeVietnamPhone(parsed.data.phone);
+  const authState = await getPortalAccountByPhone(phone);
+  const accessError = portalAccountAccessError(authState);
+  if (accessError) {
+    return NextResponse.json({ error: accessError }, { status: 403 });
+  }
+
   const account = await verifyPortalAccountPassword(phone, parsed.data.password);
   if (!account) {
     return NextResponse.json({ error: "Số điện thoại hoặc mật khẩu không đúng." }, { status: 401 });

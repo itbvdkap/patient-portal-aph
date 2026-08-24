@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { getPortalAccountByPhone } from "@/lib/account/portal-account";
+import { getPortalAccountByPhone, portalAccountAccessError } from "@/lib/account/portal-account";
 import { createOtpAttempt } from "@/lib/auth/otp-attempts";
 import { normalizeVietnamPhone } from "@/lib/auth/phone";
 import { verifyTurnstileToken } from "@/lib/security/turnstile";
@@ -23,6 +23,10 @@ export async function POST(request: Request) {
 
   const phone = normalizeVietnamPhone(parsed.data.phone);
   const account = await getPortalAccountByPhone(phone);
+  const accessError = portalAccountAccessError(account);
+  if (accessError) {
+    return NextResponse.json({ error: accessError }, { status: 403 });
+  }
   if (!account?.phoneVerified) {
     return NextResponse.json({ error: "Không tìm thấy tài khoản đã xác minh với số điện thoại này." }, { status: 404 });
   }

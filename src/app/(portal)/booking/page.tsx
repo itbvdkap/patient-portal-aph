@@ -1,6 +1,5 @@
-import { ExternalLink } from "lucide-react";
+import { CalendarCheck, ExternalLink } from "lucide-react";
 import { cookies } from "next/headers";
-import { PageHeader } from "@/components/ui";
 import { BookingForm } from "./booking-form";
 import { getDemoPatientSession } from "@/lib/auth/session";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
@@ -158,21 +157,29 @@ export default async function BookingPage() {
 
   return (
     <>
-      <PageHeader
-        title="Đăng ký khám"
-        description="Đặt lịch khám ngay trong cổng thông tin, dữ liệu được chuyển về hệ thống đăng ký khám của Bệnh viện Đa khoa An Phú."
-        actions={
-          <a
-            href="https://benhvienanphu.vn/dang-ky-kham"
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex min-h-9 items-center gap-2 rounded-md bg-primary-700 px-3 text-sm font-bold text-white hover:bg-primary-900"
-          >
-            Mở ngoài
-            <ExternalLink aria-hidden="true" className="h-4 w-4" />
-          </a>
-        }
-      />
+      <header className="mb-4 overflow-hidden rounded-2xl border border-primary-100 bg-gradient-to-br from-primary-900 via-primary-700 to-emerald-500 p-4 text-white shadow-[0_14px_34px_rgba(7,60,57,0.16)]">
+        <div className="flex items-start gap-3">
+          <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white/15 ring-1 ring-white/20">
+            <CalendarCheck aria-hidden="true" className="h-6 w-6" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="text-[11px] font-black uppercase tracking-wide text-white/75">Express booking</p>
+            <h1 className="font-serif text-2xl font-black leading-7 text-white">Đăng ký khám</h1>
+            <p className="mt-1 text-sm font-semibold leading-6 text-white/82">
+              Chọn người bệnh, chuyên khoa, bác sĩ và giờ khám trong một luồng ngắn gọn.
+            </p>
+          </div>
+        </div>
+        <a
+          href="https://benhvienanphu.vn/dang-ky-kham"
+          target="_blank"
+          rel="noreferrer"
+          className="mt-3 inline-flex min-h-10 items-center gap-2 rounded-xl bg-white/14 px-3 text-sm font-black text-white ring-1 ring-white/25 hover:bg-white/20"
+        >
+          Mở form ngoài
+          <ExternalLink aria-hidden="true" className="h-4 w-4" />
+        </a>
+      </header>
 
       <BookingForm linkedProfiles={linkedProfiles} />
     </>

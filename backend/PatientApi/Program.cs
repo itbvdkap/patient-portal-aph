@@ -58,6 +58,11 @@ if (builder.Configuration.GetValue("PatientPortal:EnableSupabaseQueueAgent", fal
     builder.Services.AddHostedService<SupabaseQueueSyncAgent>();
 }
 
+if (builder.Configuration.GetValue("PatientPortal:EnableBookingHisMatchWorker", false))
+{
+    builder.Services.AddHostedService<BookingHisMatchWorker>();
+}
+
 var app = builder.Build();
 
 app.MapGet("/health", () => Results.Ok(new { status = "healthy", dataMode }));
