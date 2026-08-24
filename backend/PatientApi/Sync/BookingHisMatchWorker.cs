@@ -55,16 +55,19 @@ public sealed class BookingHisMatchWorker(
 
     private string? GetBookingConnectionString()
     {
-        return configuration.GetConnectionString("BookingDatabase")
+        var configured = configuration.GetConnectionString("BookingDatabase")
             ?? configuration.GetConnectionString("PortalBooking")
             ?? configuration["BOOKING_DATABASE_URL"];
+        return NormalizePostgresConnectionString(configured);
     }
 
     private async Task<bool> ProcessBatchAsync(string connectionString, CancellationToken cancellationToken)
     {
         var batchSize = Math.Clamp(configuration.GetValue("PatientPortal:BookingHisMatchBatchSize", 25), 1, 100);
-        await using var connection = new NpgsqlConnection(connectionString);
-        var bookings = (await connection.QueryAsync<PendingBooking>(new CommandDefinition(
+        List<PendingBooking> bookings;
+        await using (var connection = new NpgsqlConnection(connectionString))
+        {
+            bookings = (await connection.QueryAsync<PendingBooking>(new CommandDefinition(
             """
             select
               id as "Id",
@@ -87,6 +90,7 @@ public sealed class BookingHisMatchWorker(
             """,
             new { Limit = batchSize },
             cancellationToken: cancellationToken))).ToList();
+        }
 
         if (bookings.Count == 0) return false;
 
@@ -95,14 +99,14 @@ public sealed class BookingHisMatchWorker(
 
         foreach (var booking in bookings)
         {
-            await MatchOneAsync(connection, oracle, booking, cancellationToken);
+            await MatchOneAsync(connectionString, oracle, booking, cancellationToken);
         }
 
         return true;
     }
 
     private async Task MatchOneAsync(
-        NpgsqlConnection connection,
+        string connectionString,
         OracleHisPatientRepository oracle,
         PendingBooking booking,
         CancellationToken cancellationToken)
@@ -110,6 +114,7 @@ public sealed class BookingHisMatchWorker(
         var mabn = FirstNonEmpty(booking.OldPatientCode, booking.PatientCode);
         if (string.IsNullOrWhiteSpace(mabn))
         {
+            await using var connection = new NpgsqlConnection(connectionString);
             await MarkNeedsReviewAsync(connection, booking.Id, "Booking chưa có mã BN cũ nên không tự động đối soát HIS.", cancellationToken);
             return;
         }
@@ -121,16 +126,21 @@ public sealed class BookingHisMatchWorker(
 
             if (match is null || match.Confidence < 70)
             {
+                await using var connection = new NpgsqlConnection(connectionString);
                 await MarkRetryAsync(connection, booking.Id, match?.Reason ?? "Chưa tìm thấy lượt TIEPDON phù hợp trong HIS.", cancellationToken);
                 return;
             }
 
+            await using (var connection = new NpgsqlConnection(connectionString))
+            {
             await SaveMatchAsync(connection, booking, match, cancellationToken);
+            }
             logger.LogInformation("Matched booking {BookingId}/{BookingCode} to HIS MABN {Mabn}, MAQL {Maql}.", booking.Id, booking.BookingCode, mabn, match.Registration.Id);
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Booking HIS match failed for booking {BookingId}/{BookingCode}.", booking.Id, booking.BookingCode);
+            await using var connection = new NpgsqlConnection(connectionString);
             await MarkRetryAsync(connection, booking.Id, ex.Message, cancellationToken);
         }
     }
@@ -250,7 +260,7 @@ public sealed class BookingHisMatchWorker(
             mabn = FirstNonEmpty(booking.OldPatientCode, booking.PatientCode),
             mavaovien = registration.VisitId,
             maql = registration.Id,
-            registered_at = registration.RegisteredAt
+            registered_at = ToUtcDateTime(registration.RegisteredAt)
         };
 
         const string sql = """
@@ -333,7 +343,7 @@ public sealed class BookingHisMatchWorker(
             HisMakp = registration.DepartmentCode,
             HisDepartmentName = registration.DepartmentName,
             HisDoctorName = registration.DoctorName,
-            HisRegisteredAt = registration.RegisteredAt,
+            HisRegisteredAt = ToUtcDateTime(registration.RegisteredAt),
             MatchConfidence = match.Confidence,
             MatchReason = match.Reason,
             RawHisJson = JsonSerializer.Serialize(registration, JsonOptions),
@@ -350,6 +360,68 @@ public sealed class BookingHisMatchWorker(
     private static string? FirstNonEmpty(params string?[] values)
     {
         return values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))?.Trim();
+    }
+
+    private static DateTime ToUtcDateTime(DateTimeOffset value)
+    {
+        return value.ToUniversalTime().UtcDateTime;
+    }
+
+    private static string? NormalizePostgresConnectionString(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return value;
+        var trimmed = value.Trim();
+        if (!trimmed.StartsWith("postgres://", StringComparison.OrdinalIgnoreCase) &&
+            !trimmed.StartsWith("postgresql://", StringComparison.OrdinalIgnoreCase))
+        {
+            return trimmed;
+        }
+
+        var uri = new Uri(trimmed);
+        var userInfo = uri.UserInfo.Split(':', 2);
+        var username = userInfo.Length > 0 ? Uri.UnescapeDataString(userInfo[0]) : "";
+        var password = userInfo.Length > 1 ? Uri.UnescapeDataString(userInfo[1]) : "";
+        var database = uri.AbsolutePath.TrimStart('/');
+        var builder = new NpgsqlConnectionStringBuilder
+        {
+            Host = uri.Host,
+            Port = uri.Port > 0 ? uri.Port : 5432,
+            Database = string.IsNullOrWhiteSpace(database) ? "postgres" : Uri.UnescapeDataString(database),
+            Username = username,
+            Password = password,
+            SslMode = SslMode.Require,
+            Timeout = 60,
+            CommandTimeout = 60,
+            KeepAlive = 30,
+            Pooling = false
+        };
+
+        foreach (var item in ParseQuery(uri.Query))
+        {
+            if (builder.Pooling &&
+                item.Key.Equals("connection_limit", StringComparison.OrdinalIgnoreCase) &&
+                int.TryParse(item.Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var maxPoolSize) &&
+                maxPoolSize > 0)
+            {
+                builder.MaxPoolSize = maxPoolSize;
+            }
+        }
+
+        return builder.ConnectionString;
+    }
+
+    private static IEnumerable<KeyValuePair<string, string>> ParseQuery(string query)
+    {
+        var trimmed = query.TrimStart('?');
+        if (string.IsNullOrWhiteSpace(trimmed)) yield break;
+
+        foreach (var part in trimmed.Split('&', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var pieces = part.Split('=', 2);
+            var key = Uri.UnescapeDataString(pieces[0]);
+            var value = pieces.Length > 1 ? Uri.UnescapeDataString(pieces[1]) : "";
+            yield return new KeyValuePair<string, string>(key, value);
+        }
     }
 
     private static string Truncate(string value, int maxLength)

@@ -189,6 +189,25 @@ type Html5QrcodeModule = {
   };
 };
 
+type TurnstileApi = {
+  render: (
+    container: HTMLElement,
+    options: {
+      sitekey: string;
+      callback: (token: string) => void;
+      "expired-callback": () => void;
+      "error-callback": () => void;
+    },
+  ) => string;
+  remove: (widgetId: string) => void;
+};
+
+declare global {
+  interface Window {
+    turnstile?: TurnstileApi;
+  }
+}
+
 function inputClass(hasIcon = false) {
   return `min-h-12 w-full rounded-md border border-cream-200 bg-white px-3 text-sm font-semibold text-ink outline-none transition placeholder:text-slate-400 focus:border-primary-500 focus:ring-2 focus:ring-primary-100 ${
     hasIcon ? "pl-10" : ""
@@ -260,6 +279,7 @@ function parseCitizenQr(raw: string): CitizenQrData | null {
 }
 
 export function BookingForm({ linkedProfiles = [] }: { linkedProfiles?: BookingPatientProfile[] }) {
+  const turnstileSiteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
   const [form, setForm] = useState<BookingFormState>(initialForm);
   const [patientMode, setPatientMode] = useState<"new" | "old">(linkedProfiles.length ? "old" : "new");
   const [manualPatientCode, setManualPatientCode] = useState("");
@@ -273,6 +293,24 @@ export function BookingForm({ linkedProfiles = [] }: { linkedProfiles?: BookingP
   const [error, setError] = useState("");
   const [success, setSuccess] = useState<BookingResponse | null>(null);
   const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [turnstileReady, setTurnstileReady] = useState(false);
+  const [turnstileToken, setTurnstileToken] = useState("");
+  const [turnstileResetKey, setTurnstileResetKey] = useState(0);
+
+  const handleTurnstileToken = useCallback((token: string) => {
+    setTurnstileToken(token);
+    setError("");
+  }, []);
+
+  const clearTurnstileToken = useCallback(() => {
+    setTurnstileToken("");
+  }, []);
+
+  useEffect(() => {
+    if (turnstileSiteKey && window.turnstile) {
+      setTurnstileReady(true);
+    }
+  }, [turnstileSiteKey]);
 
   function update<K extends keyof BookingFormState>(key: K, value: BookingFormState[K]) {
     setForm((current) => ({ ...current, [key]: value }));
@@ -408,7 +446,11 @@ export function BookingForm({ linkedProfiles = [] }: { linkedProfiles?: BookingP
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const turnstileToken = event.currentTarget.querySelector<HTMLInputElement>('input[name="cf-turnstile-response"]')?.value ?? "";
+    if (turnstileSiteKey && !turnstileToken) {
+      setError("Vui lòng xác thực chống bot trước khi gửi. Nếu chưa thấy ô xác thực, hãy chờ vài giây hoặc tải lại trang.");
+      return;
+    }
+
     setIsSubmitting(true);
     setError("");
     setSuccess(null);
@@ -432,14 +474,18 @@ export function BookingForm({ linkedProfiles = [] }: { linkedProfiles?: BookingP
     } catch {
       setError("Không kết nối được hệ thống đăng ký khám. Vui lòng thử lại sau.");
     } finally {
+      if (turnstileSiteKey) {
+        setTurnstileToken("");
+        setTurnstileResetKey((current) => current + 1);
+      }
       setIsSubmitting(false);
     }
   }
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      {process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY && (
-        <Script src="https://challenges.cloudflare.com/turnstile/v0/api.js" strategy="lazyOnload" />
+      {turnstileSiteKey && (
+        <Script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" strategy="lazyOnload" onLoad={() => setTurnstileReady(true)} />
       )}
       {success && (
         <Panel className="border-primary-200 bg-primary-50">
@@ -899,14 +945,19 @@ export function BookingForm({ linkedProfiles = [] }: { linkedProfiles?: BookingP
       </Panel>
 
       <div className="sticky bottom-[72px] z-10 -mx-1 rounded-md border border-cream-200 bg-cream-50/95 p-2 shadow-[0_-10px_30px_rgba(7,60,57,0.12)] backdrop-blur sm:static sm:mx-0 sm:border-0 sm:bg-transparent sm:p-0 sm:shadow-none">
-        {process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY && (
-          <div className="mb-2 flex justify-center">
-            <div className="cf-turnstile" data-sitekey={process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY} />
-          </div>
+        {turnstileSiteKey && (
+          <TurnstileChallenge
+            key={turnstileResetKey}
+            siteKey={turnstileSiteKey}
+            ready={turnstileReady}
+            verified={Boolean(turnstileToken)}
+            onToken={handleTurnstileToken}
+            onClear={clearTurnstileToken}
+          />
         )}
         <button
           type="submit"
-          disabled={isSubmitting}
+          disabled={isSubmitting || Boolean(turnstileSiteKey && !turnstileToken)}
           className="flex min-h-12 w-full items-center justify-center gap-2 rounded-md border border-primary-950 bg-[#005f56] px-4 text-base font-black text-white shadow-[0_14px_32px_rgba(0,95,86,0.32)] ring-2 ring-primary-100 transition hover:bg-[#004c45] disabled:cursor-not-allowed disabled:border-slate-500 disabled:bg-slate-600 disabled:opacity-100"
         >
           {isSubmitting ? <Loader2 aria-hidden="true" className="h-5 w-5 animate-spin" /> : <Send aria-hidden="true" className="h-5 w-5" />}
@@ -961,6 +1012,51 @@ function BookingStepper({ step }: { step: 1 | 2 | 3 }) {
         })}
       </ol>
     </nav>
+  );
+}
+
+function TurnstileChallenge({
+  siteKey,
+  ready,
+  verified,
+  onToken,
+  onClear,
+}: {
+  siteKey: string;
+  ready: boolean;
+  verified: boolean;
+  onToken: (token: string) => void;
+  onClear: () => void;
+}) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!ready || !containerRef.current || !window.turnstile) {
+      return;
+    }
+
+    containerRef.current.innerHTML = "";
+    const widgetId = window.turnstile.render(containerRef.current, {
+      sitekey: siteKey,
+      callback: onToken,
+      "expired-callback": onClear,
+      "error-callback": onClear,
+    });
+
+    return () => {
+      window.turnstile?.remove(widgetId);
+    };
+  }, [onClear, onToken, ready, siteKey]);
+
+  return (
+    <div className="mb-2 rounded-md border border-primary-100 bg-primary-50/70 p-2">
+      <div className="flex justify-center overflow-hidden">
+        <div ref={containerRef} className="min-h-[65px]" />
+      </div>
+      <p className={`mt-1 text-center text-xs font-bold ${verified ? "text-primary-800" : "text-slate-500"}`}>
+        {verified ? "Đã xác thực chống bot, có thể gửi đăng ký." : ready ? "Vui lòng hoàn tất xác thực chống bot trước khi gửi." : "Đang tải xác thực chống bot..."}
+      </p>
+    </div>
   );
 }
 
