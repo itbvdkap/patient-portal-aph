@@ -138,9 +138,16 @@ export type BookingPatientProfile = {
 
 type BookingResponse = {
   message?: string;
+  nextStep?: string;
   data?: {
     ma_lich_hen?: string;
     id?: string | number;
+    ngay_kham?: string;
+    gio_kham?: string;
+    khoa_kham?: string;
+    chi_nhanh?: string;
+    status?: string;
+    his_match_status?: string;
   };
 };
 
@@ -233,6 +240,54 @@ function IconInput({
   );
 }
 
+function DatePickerInput({
+  value,
+  onChange,
+  required = false,
+  placeholder = "dd/mm/yyyy",
+  withIcon = false,
+  min,
+  max,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  required?: boolean;
+  placeholder?: string;
+  withIcon?: boolean;
+  min?: string;
+  max?: string;
+}) {
+  return (
+    <div className="relative">
+      {withIcon ? <CalendarDays aria-hidden="true" className="pointer-events-none absolute left-3 top-3.5 h-5 w-5 text-primary-700" /> : null}
+      <input
+        className={`${inputClass(withIcon)} pr-12`}
+        value={value}
+        onChange={(event) => onChange(formatVnDateInput(event.target.value))}
+        placeholder={placeholder}
+        inputMode="numeric"
+        maxLength={10}
+        required={required}
+      />
+      <input
+        type="date"
+        value={vnDateToIso(value)}
+        min={min}
+        max={max}
+        onChange={(event) => onChange(isoDateToVn(event.target.value))}
+        className="absolute right-1.5 top-1.5 z-10 h-9 w-9 cursor-pointer opacity-0"
+        aria-label="Chọn ngày"
+      />
+      <span
+        className="pointer-events-none absolute right-1.5 top-1.5 inline-flex h-9 w-9 items-center justify-center rounded-md bg-primary-50 text-primary-800"
+        aria-hidden="true"
+      >
+        <CalendarDays aria-hidden="true" className="h-4 w-4" />
+      </span>
+    </div>
+  );
+}
+
 function RequiredMark() {
   return <span className="text-rose-600">*</span>;
 }
@@ -242,6 +297,24 @@ function formatVnDateInput(value: string) {
   if (digits.length <= 2) return digits;
   if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
   return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
+}
+
+function vnDateToIso(value: string) {
+  const match = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(value.trim());
+  if (!match) return "";
+  const [, day, month, year] = match;
+  const date = new Date(Number(year), Number(month) - 1, Number(day));
+  if (date.getFullYear() !== Number(year) || date.getMonth() !== Number(month) - 1 || date.getDate() !== Number(day)) {
+    return "";
+  }
+  return `${year}-${month}-${day}`;
+}
+
+function isoDateToVn(value: string) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+  if (!match) return "";
+  const [, year, month, day] = match;
+  return `${day}/${month}/${year}`;
 }
 
 function formatCitizenDate(value: string | undefined) {
@@ -296,6 +369,7 @@ export function BookingForm({ linkedProfiles = [] }: { linkedProfiles?: BookingP
   const [turnstileReady, setTurnstileReady] = useState(false);
   const [turnstileToken, setTurnstileToken] = useState("");
   const [turnstileResetKey, setTurnstileResetKey] = useState(0);
+  const [todayIso, setTodayIso] = useState("");
 
   const handleTurnstileToken = useCallback((token: string) => {
     setTurnstileToken(token);
@@ -311,6 +385,10 @@ export function BookingForm({ linkedProfiles = [] }: { linkedProfiles?: BookingP
       setTurnstileReady(true);
     }
   }, [turnstileSiteKey]);
+
+  useEffect(() => {
+    setTodayIso(new Date().toISOString().slice(0, 10));
+  }, []);
 
   function update<K extends keyof BookingFormState>(key: K, value: BookingFormState[K]) {
     setForm((current) => ({ ...current, [key]: value }));
@@ -501,6 +579,31 @@ export function BookingForm({ linkedProfiles = [] }: { linkedProfiles?: BookingP
                   Mã lịch hẹn: {success.data.ma_lich_hen}
                 </p>
               )}
+              <div className="mt-3 grid gap-2 text-sm text-slate-700 sm:grid-cols-2">
+                {success.data?.ngay_kham && (
+                  <span>
+                    <strong>Ngày khám:</strong> {formatDateForDisplay(success.data.ngay_kham)}
+                  </span>
+                )}
+                {success.data?.gio_kham && (
+                  <span>
+                    <strong>Giờ:</strong> {success.data.gio_kham}
+                  </span>
+                )}
+                {success.data?.khoa_kham && (
+                  <span>
+                    <strong>Khoa/phòng:</strong> {success.data.khoa_kham}
+                  </span>
+                )}
+                {success.data?.status && (
+                  <span>
+                    <strong>Trạng thái:</strong> Đang chờ xác nhận
+                  </span>
+                )}
+              </div>
+              <p className="mt-3 rounded bg-white/70 px-3 py-2 text-xs font-semibold leading-5 text-primary-900">
+                {success.nextStep ?? "Anh/chị vui lòng theo dõi thông báo xác nhận từ bệnh viện."}
+              </p>
             </div>
           </div>
         </Panel>
@@ -577,15 +680,14 @@ export function BookingForm({ linkedProfiles = [] }: { linkedProfiles?: BookingP
             <div className="grid gap-2 sm:grid-cols-2">
               <label>
                 <span className={labelClass()}>Ngày sinh để xác minh</span>
-                <input
+                <DatePickerInput
                   value={manualVerifyBirthDate}
-                  onChange={(event) => {
-                    setManualVerifyBirthDate(formatVnDateInput(event.target.value));
+                  onChange={(value) => {
+                    setManualVerifyBirthDate(value);
                     setLookupMessage("");
                   }}
-                  className={inputClass()}
                   placeholder="dd/mm/yyyy"
-                  inputMode="numeric"
+                  max={todayIso || undefined}
                 />
               </label>
               <label>
@@ -701,12 +803,11 @@ export function BookingForm({ linkedProfiles = [] }: { linkedProfiles?: BookingP
 
           <label>
             <span className={labelClass()}>Ngày sinh</span>
-            <input
-              className={inputClass()}
+            <DatePickerInput
               value={form.birthDate}
-              onChange={(event) => update("birthDate", formatVnDateInput(event.target.value))}
+              onChange={(value) => update("birthDate", value)}
               placeholder="dd/mm/yyyy"
-              inputMode="numeric"
+              max={todayIso || undefined}
             />
           </label>
 
@@ -785,12 +886,11 @@ export function BookingForm({ linkedProfiles = [] }: { linkedProfiles?: BookingP
 
           <label>
             <span className={labelClass()}>Ngày cấp</span>
-            <input
-              className={inputClass()}
+            <DatePickerInput
               value={form.ngayCap}
-              onChange={(event) => update("ngayCap", formatVnDateInput(event.target.value))}
+              onChange={(value) => update("ngayCap", value)}
               placeholder="dd/mm/yyyy"
-              inputMode="numeric"
+              max={todayIso || undefined}
             />
           </label>
         </div>
@@ -825,16 +925,14 @@ export function BookingForm({ linkedProfiles = [] }: { linkedProfiles?: BookingP
             <span className={labelClass()}>
               Ngày khám <RequiredMark />
             </span>
-            <IconInput icon={CalendarDays}>
-              <input
-                className={inputClass(true)}
-                value={form.appointmentDate}
-                onChange={(event) => update("appointmentDate", formatVnDateInput(event.target.value))}
-                placeholder="dd/mm/yyyy"
-                inputMode="numeric"
-                required
-              />
-            </IconInput>
+            <DatePickerInput
+              value={form.appointmentDate}
+              onChange={(value) => update("appointmentDate", value)}
+              placeholder="dd/mm/yyyy"
+              withIcon
+              min={todayIso || undefined}
+              required
+            />
           </label>
 
           <ChoiceSection title="Chuyên khoa" meta={form.department || "Chọn khoa cần khám"} icon={HeartPulse}>
@@ -1058,6 +1156,14 @@ function TurnstileChallenge({
       </p>
     </div>
   );
+}
+
+function formatDateForDisplay(value: string) {
+  if (!value) return "";
+  const [datePart] = value.split("T");
+  const parts = datePart.split("-");
+  if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
+  return value;
 }
 
 function ChoiceSection({

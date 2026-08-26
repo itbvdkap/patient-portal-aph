@@ -73,7 +73,9 @@ public sealed record RegistrationDto(
     string DoctorName,
     string Status,
     string Reason,
-    string Notes);
+    string Notes,
+    string PayerTypeCode,
+    string PayerTypeName);
 
 public sealed record ActiveServiceDto(
     string Id,
@@ -84,7 +86,9 @@ public sealed record ActiveServiceDto(
     string DepartmentName,
     string ServiceName,
     string ServiceGroup,
-    string Status);
+    string Status,
+    string PayerTypeCode,
+    string PayerTypeName);
 
 public sealed record TodayVisitStatusDto(
     bool HasActiveVisit,

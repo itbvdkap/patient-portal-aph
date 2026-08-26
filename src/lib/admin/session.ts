@@ -110,7 +110,7 @@ function sessionSecret() {
 const rolePermissions: Record<Exclude<AdminRole, "super_admin">, { paths: string[]; actions: string[] }> = {
   booking_admin: {
     paths: ["/admin", "/admin/bookings", "/admin/profiles", "/admin/sync", "/admin/audit"],
-    actions: ["approve_booking", "cancel_booking", "retry_sync"],
+    actions: ["approve_booking", "cancel_booking", "retry_sync", "retry_booking_match", "send_booking_zalo", "test_zns_template"],
   },
   support: {
     paths: ["/admin", "/admin/accounts", "/admin/profiles", "/admin/sync", "/admin/otp", "/admin/audit"],

@@ -10,6 +10,7 @@ export interface AdminModuleResult {
 export interface AdminBookingsQuery {
   q?: string;
   status?: string;
+  ops?: string;
   dateFrom?: string;
   dateTo?: string;
   department?: string;
@@ -173,6 +174,14 @@ export interface AdminBookingsResult extends AdminModuleResult {
   pageSize: number;
   pageCount: number;
   filters: Required<Omit<AdminBookingsQuery, "page" | "pageSize">>;
+  stats: {
+    unmatched: number;
+    matchedUnsentZalo: number;
+    zaloError: number;
+    slaOver30: number;
+    slaOver120: number;
+    avgWaitMinutes: number;
+  };
   options: {
     statuses: string[];
     departments: string[];
@@ -266,6 +275,8 @@ export interface AdminAccountDetail {
 export interface AdminBookingDetail {
   booking: Record<string, unknown> | null;
   history: Record<string, unknown>[];
+  matches: Record<string, unknown>[];
+  notifications: Record<string, unknown>[];
   warnings: string[];
 }
 
@@ -602,7 +613,7 @@ export async function getAdminSettings(): Promise<AdminSettingsResult> {
     100,
   );
 
-  const entries = rows.map(mapSettingEntry).sort((a, b) => `${groupOrder(a.group)}-${a.key}`.localeCompare(`${groupOrder(b.group)}-${b.key}`));
+  const entries = mergeDefaultSettings(rows.map(mapSettingEntry)).sort((a, b) => `${groupOrder(a.group)}-${a.key}`.localeCompare(`${groupOrder(b.group)}-${b.key}`));
   return {
     warnings,
     entries,
@@ -895,10 +906,12 @@ export async function getAdminBookings(query: AdminBookingsQuery = {}): Promise<
     const pool = getBookingPool();
     const { whereSql, params } = buildBookingWhere(filters);
 
-    const [countResult, rowsResult, optionsResult] = await Promise.all([
-      pool.query<{ count: string }>(`select count(*)::text as count from portal.lich_hen_kham ${whereSql}`, params),
+    const fromSql = bookingOperationsFromSql();
+    const [countResult, rowsResult, optionsResult, statsResult] = await Promise.all([
+      pool.query<{ count: string }>(`select count(*)::text as count ${fromSql} ${whereSql}`, params),
       pool.query<{
       id: string;
+      patient_code: string | null;
       ma_lich_hen: string | null;
       ho_ten: string | null;
       so_dien_thoai: string | null;
@@ -908,12 +921,28 @@ export async function getAdminBookings(query: AdminBookingsQuery = {}): Promise<
       chi_nhanh: string | null;
       status: string | null;
       ngay_tao: string | null;
+      his_match_status: string | null;
+      his_stt_kham: string | null;
+      his_department_name: string | null;
+      his_matched_at: string | null;
+      his_maql: string | null;
+      zalo_confirm_sent_at: string | null;
+      outbox_id: string | null;
+      outbox_status: string | null;
+      outbox_error: string | null;
     }>(
       `
-        select id, ma_lich_hen, ho_ten, so_dien_thoai, ngay_kham::text, gio_kham, khoa_kham, chi_nhanh, status, ngay_tao::text
-        from portal.lich_hen_kham
+        select
+          l.id, l.patient_code, l.ma_lich_hen, l.ho_ten, l.so_dien_thoai, l.ngay_kham::text,
+          l.gio_kham, l.khoa_kham, l.chi_nhanh, l.status, l.ngay_tao::text,
+          l.his_match_status, l.his_stt_kham, l.his_department_name, l.his_matched_at::text, l.his_maql,
+          l.zalo_confirm_sent_at::text,
+          n.id::text as outbox_id,
+          n.status as outbox_status,
+          n.last_error as outbox_error
+        ${fromSql}
         ${whereSql}
-        order by ngay_tao desc nulls last, ngay_kham desc nulls last, id desc
+        order by l.ngay_tao desc nulls last, l.ngay_kham desc nulls last, l.id desc
         limit $${params.length + 1}
         offset $${params.length + 2}
       `,
@@ -932,9 +961,50 @@ export async function getAdminBookings(query: AdminBookingsQuery = {}): Promise<
           order by type, value
         `,
       ),
+      pool.query<{
+        unmatched: string | null;
+        matched_unsent_zalo: string | null;
+        zalo_error: string | null;
+        sla_over_30: string | null;
+        sla_over_120: string | null;
+        avg_wait_minutes: string | null;
+      }>(
+        `
+          select
+            count(*) filter (
+              where coalesce(l.his_match_status, 'PENDING') <> 'MATCHED'
+                and coalesce(l.status, '') <> 'DA_HUY'
+            )::text as unmatched,
+            count(*) filter (
+              where l.his_match_status = 'MATCHED'
+                and l.zalo_confirm_sent_at is null
+                and coalesce(n.status, '') <> 'sent'
+            )::text as matched_unsent_zalo,
+            count(*) filter (
+              where coalesce(n.status, '') in ('failed', 'retry')
+                 or nullif(n.last_error, '') is not null
+            )::text as zalo_error,
+            count(*) filter (
+              where coalesce(l.his_match_status, 'PENDING') <> 'MATCHED'
+                and coalesce(l.status, '') <> 'DA_HUY'
+                and l.ngay_tao <= now() - interval '30 minutes'
+            )::text as sla_over_30,
+            count(*) filter (
+              where coalesce(l.his_match_status, 'PENDING') <> 'MATCHED'
+                and coalesce(l.status, '') <> 'DA_HUY'
+                and l.ngay_tao <= now() - interval '120 minutes'
+            )::text as sla_over_120,
+            coalesce(round(avg(extract(epoch from (now() - l.ngay_tao)) / 60) filter (
+              where coalesce(l.his_match_status, 'PENDING') <> 'MATCHED'
+                and coalesce(l.status, '') <> 'DA_HUY'
+            )), 0)::text as avg_wait_minutes
+          ${fromSql}
+        `,
+      ),
     ]);
 
     const total = Number(countResult.rows[0]?.count ?? 0);
+    const statsRow = statsResult.rows[0];
     const pageCount = Math.max(1, Math.ceil(total / pageSize));
     const options = {
       statuses: optionsResult.rows.filter((row) => row.type === "status" && row.value).map((row) => String(row.value)),
@@ -949,30 +1019,102 @@ export async function getAdminBookings(query: AdminBookingsQuery = {}): Promise<
       pageSize,
       pageCount,
       filters,
+      stats: {
+        unmatched: Number(statsRow?.unmatched ?? 0),
+        matchedUnsentZalo: Number(statsRow?.matched_unsent_zalo ?? 0),
+        zaloError: Number(statsRow?.zalo_error ?? 0),
+        slaOver30: Number(statsRow?.sla_over_30 ?? 0),
+        slaOver120: Number(statsRow?.sla_over_120 ?? 0),
+        avgWaitMinutes: Number(statsRow?.avg_wait_minutes ?? 0),
+      },
       options,
       rows: rowsResult.rows.map((row) => ({
         id: row.id,
         primary: row.ho_ten || "Chưa có tên",
-        secondary: [row.ma_lich_hen, row.khoa_kham, row.ngay_kham, row.gio_kham, row.chi_nhanh].filter(Boolean).join(" · "),
-        meta: row.ngay_tao ? `Tạo ${formatDate(row.ngay_tao)} · ${maskPhone(row.so_dien_thoai)}` : maskPhone(row.so_dien_thoai),
+        secondary: [
+          row.ma_lich_hen,
+          row.khoa_kham,
+          row.ngay_kham,
+          row.gio_kham,
+          row.chi_nhanh,
+          row.his_match_status ? `HIS ${row.his_match_status}` : "",
+          row.his_stt_kham ? `STT ${row.his_stt_kham}` : "",
+          row.outbox_status ? `Zalo ${row.outbox_status}` : "",
+        ]
+          .filter(Boolean)
+          .join(" · "),
+        meta: [
+          row.ngay_tao ? `Tạo ${formatDate(row.ngay_tao)}` : "",
+          maskPhone(row.so_dien_thoai),
+          row.zalo_confirm_sent_at ? `ZNS ${formatDate(row.zalo_confirm_sent_at)}` : "",
+        ]
+          .filter(Boolean)
+          .join(" · "),
         href: `/admin/bookings/${row.id}`,
-        status: row.status ?? "CHO_DUYET",
+        status: row.his_match_status === "MATCHED" ? "MATCHED HIS" : row.status ?? "CHO_DUYET",
         entity: "booking",
         target: {
           bookingId: row.id,
           bookingCode: row.ma_lich_hen ?? "",
+          outboxId: row.outbox_id ?? "",
         },
-        actions: ["CHO_DUYET", "CHO_DUYET_LAI"].includes(row.status ?? "")
-          ? [
-              { action: "approve_booking", label: "Xác nhận", tone: "primary" },
-              { action: "cancel_booking", label: "Hủy", tone: "danger" },
-            ]
-          : [],
+        details: {
+          bookingCode: row.ma_lich_hen ?? "",
+          patientCode: row.patient_code ?? "",
+          phone: maskPhone(row.so_dien_thoai),
+          rawPhone: row.so_dien_thoai ?? "",
+          appointmentDate: row.ngay_kham ?? "",
+          appointmentTime: row.gio_kham ?? "",
+          department: row.khoa_kham ?? "",
+          branch: row.chi_nhanh ?? "",
+          createdAt: row.ngay_tao ? formatDate(row.ngay_tao) : "",
+          hisStatus: row.his_match_status ?? "",
+          hisTicket: row.his_stt_kham ?? "",
+          hisDepartment: row.his_department_name ?? "",
+          hisMaql: row.his_maql ?? "",
+          hisMatchedAt: row.his_matched_at ? formatDate(row.his_matched_at) : "",
+          zaloSentAt: row.zalo_confirm_sent_at ? formatDate(row.zalo_confirm_sent_at) : "",
+          outboxId: row.outbox_id ?? "",
+          outboxStatus: row.outbox_status ?? "",
+          outboxError: row.outbox_error ?? "",
+        },
+        actions: bookingActionsForRow({
+          status: row.status,
+          hisMatchStatus: row.his_match_status,
+          outboxId: row.outbox_id,
+          outboxStatus: row.outbox_status,
+        }),
       })),
     };
   } catch (error) {
     return emptyBookingsResult(filters, page, pageSize, [`portal.lich_hen_kham: ${error instanceof Error ? error.message : "Không đọc được booking DB"}`]);
   }
+}
+
+function bookingActionsForRow(row: { status: string | null; hisMatchStatus: string | null; outboxId: string | null; outboxStatus: string | null }): AdminRowAction[] {
+  const actions: AdminRowAction[] = [];
+  const status = row.status ?? "";
+  const hisStatus = row.hisMatchStatus ?? "";
+  const outboxStatus = row.outboxStatus ?? "";
+
+  if (["CHO_DUYET", "CHO_DUYET_LAI"].includes(status)) {
+    actions.push(
+      { action: "approve_booking", label: "Xác nhận", tone: "primary" },
+      { action: "cancel_booking", label: "Hủy", tone: "danger", confirm: "Hủy lịch đăng ký khám này?" },
+    );
+  }
+
+  if (hisStatus && hisStatus !== "MATCHED") {
+    actions.push({ action: "retry_booking_match", label: "Retry HIS", tone: "neutral" });
+  }
+
+  if (row.outboxId && outboxStatus !== "sent") {
+    actions.push({ action: "send_booking_zalo", label: "Gửi Zalo", tone: "primary" });
+  } else if (!row.outboxId && hisStatus === "MATCHED") {
+    actions.push({ action: "send_booking_zalo", label: "Tạo Zalo", tone: "primary" });
+  }
+
+  return actions;
 }
 
 function normalizeAccountFilters(query: AdminAccountsQuery): Required<Omit<AdminAccountsQuery, "page" | "pageSize">> {
@@ -1375,6 +1517,9 @@ function auditActionLabel(action: string) {
     retry_sync: "Retry sync",
     approve_booking: "Xác nhận lịch khám",
     cancel_booking: "Hủy lịch khám",
+    retry_booking_match: "Retry đối soát HIS",
+    send_booking_zalo: "Gửi Zalo",
+    test_zns_template: "Test ZNS template",
     edit_setting: "Sửa cấu hình",
     publish_content: "Xuất bản bài viết",
     archive_content: "Ẩn bài viết",
@@ -1391,6 +1536,7 @@ function auditTargetLabel(targetType: string, targetId: string, detail: Record<s
     profile: "Hồ sơ",
     sync_job: "Sync job",
     booking: "Lịch khám",
+    notification: "Tin nhắn",
     setting: "Cấu hình",
     content: "Bài viết",
     content_category: "Chuyên mục",
@@ -1630,6 +1776,47 @@ function mapSettingEntry(row: Record<string, unknown>): AdminSettingEntry {
   };
 }
 
+function mergeDefaultSettings(entries: AdminSettingEntry[]) {
+  const existing = new Set(entries.map((entry) => entry.key));
+  const defaults: AdminSettingEntry[] = [
+    {
+      key: "booking.zalo_auto_send_enabled",
+      value: "false",
+      displayValue: "false",
+      group: "booking",
+      groupLabel: settingGroupLabel("booking"),
+      label: "Tự động gửi Zalo khi HIS xác nhận",
+      description: "OFF: chỉ tạo tin nhắn pending để admin kiểm tra và gửi thủ công. ON: worker tự gửi khi booking đã match HIS.",
+      isSecret: false,
+      isEditable: true,
+      updatedBy: "default",
+      updatedAt: "",
+      status: "missing",
+      inputType: "boolean",
+      options: ["true", "false"],
+      validationHint: "Khuyến nghị để false trong lúc Zalo template đang chờ duyệt.",
+    },
+    {
+      key: "zalo.template.booking_his_confirmed",
+      value: "",
+      displayValue: "Chưa cấu hình",
+      group: "zalo",
+      groupLabel: settingGroupLabel("zalo"),
+      label: "Template Zalo xác nhận HIS",
+      description: "Template ID dùng cho tin nhắn xác nhận đăng ký đã vào HIS, có STT và phòng khám.",
+      isSecret: false,
+      isEditable: true,
+      updatedBy: "default",
+      updatedAt: "",
+      status: "missing",
+      inputType: "number",
+      options: [],
+      validationHint: "Nhập Template ID đã được Zalo duyệt, ví dụ 628108.",
+    },
+  ];
+  return [...entries, ...defaults.filter((entry) => !existing.has(entry.key))];
+}
+
 function settingGroups(entries: AdminSettingEntry[]) {
   const knownGroups = ["auth", "zalo", "booking", "sync", "content"];
   const extraGroups = [...new Set(entries.map((entry) => entry.group).filter((group) => !knownGroups.includes(group)))].sort();
@@ -1677,6 +1864,8 @@ function groupOrder(group: string) {
 function settingInputMeta(key: string): Pick<AdminSettingEntry, "inputType" | "options" | "validationHint"> {
   if (key === "auth.otp_provider") return { inputType: "select", options: ["test", "zalo", "off"], validationHint: "Chọn test, zalo hoặc off." };
   if (key === "auth.otp_ttl_minutes") return { inputType: "number", options: [], validationHint: "Nhập số phút từ 1 đến 30." };
+  if (key === "booking.zalo_auto_send_enabled") return { inputType: "boolean", options: ["true", "false"], validationHint: "Khuyến nghị false khi template Zalo đang chờ duyệt." };
+  if (key === "zalo.template.booking_his_confirmed") return { inputType: "number", options: [], validationHint: "Nhập Template ID đã được Zalo duyệt, ví dụ 628108." };
   if (key.includes("enabled")) return { inputType: "boolean", options: ["true", "false"], validationHint: "Chọn true hoặc false." };
   if (key.includes("url") || key.includes("endpoint")) return { inputType: "url", options: [], validationHint: "Nhập URL bắt đầu bằng http:// hoặc https://." };
   if (key.includes("template_id") || key.includes("max_attempts") || key.includes("ttl")) return { inputType: "number", options: [], validationHint: "Nhập số nguyên hợp lệ." };
@@ -1711,6 +1900,7 @@ function normalizeBookingFilters(query: AdminBookingsQuery): Required<Omit<Admin
   return {
     q: cleanText(query.q),
     status: cleanText(query.status),
+    ops: cleanText(query.ops),
     dateFrom: cleanDate(query.dateFrom),
     dateTo: cleanDate(query.dateTo),
     department: cleanText(query.department),
@@ -1730,18 +1920,38 @@ function buildBookingWhere(filters: Required<Omit<AdminBookingsQuery, "page" | "
     const search = `%${filters.q}%`;
     params.push(search, search, search, search);
     const index = params.length - 3;
-    where.push(`(ho_ten ilike $${index} or so_dien_thoai ilike $${index + 1} or ma_lich_hen ilike $${index + 2} or patient_code ilike $${index + 3})`);
+    where.push(`(l.ho_ten ilike $${index} or l.so_dien_thoai ilike $${index + 1} or l.ma_lich_hen ilike $${index + 2} or l.patient_code ilike $${index + 3})`);
   }
-  if (filters.status) add(filters.status, "status = ?");
-  if (filters.department) add(filters.department, "khoa_kham = ?");
-  if (filters.branch) add(filters.branch, "chi_nhanh = ?");
-  if (filters.dateFrom) add(filters.dateFrom, "ngay_kham >= ?::date");
-  if (filters.dateTo) add(filters.dateTo, "ngay_kham <= ?::date");
+  if (filters.status) add(filters.status, "l.status = ?");
+  if (filters.ops === "unmatched") {
+    where.push(`coalesce(l.his_match_status, 'PENDING') <> 'MATCHED' and coalesce(l.status, '') <> 'DA_HUY'`);
+  } else if (filters.ops === "matched_unsent_zalo") {
+    where.push(`l.his_match_status = 'MATCHED' and l.zalo_confirm_sent_at is null and coalesce(n.status, '') <> 'sent'`);
+  } else if (filters.ops === "zalo_error") {
+    where.push(`(coalesce(n.status, '') in ('failed', 'retry') or nullif(n.last_error, '') is not null)`);
+  }
+  if (filters.department) add(filters.department, "l.khoa_kham = ?");
+  if (filters.branch) add(filters.branch, "l.chi_nhanh = ?");
+  if (filters.dateFrom) add(filters.dateFrom, "l.ngay_kham >= ?::date");
+  if (filters.dateTo) add(filters.dateTo, "l.ngay_kham <= ?::date");
 
   return {
     whereSql: where.length ? `where ${where.join(" and ")}` : "",
     params,
   };
+}
+
+function bookingOperationsFromSql() {
+  return `
+    from portal.lich_hen_kham l
+    left join lateral (
+      select id, status, last_error, created_at
+      from portal.notification_outbox
+      where appointment_id = l.id
+      order by created_at desc nulls last, id desc
+      limit 1
+    ) n on true
+  `;
 }
 
 function emptyBookingsResult(
@@ -1758,6 +1968,14 @@ function emptyBookingsResult(
     pageSize,
     pageCount: 1,
     filters,
+    stats: {
+      unmatched: 0,
+      matchedUnsentZalo: 0,
+      zaloError: 0,
+      slaOver30: 0,
+      slaOver120: 0,
+      avgWaitMinutes: 0,
+    },
     options: { statuses: [], departments: [], branches: [] },
   };
 }
@@ -1827,11 +2045,11 @@ export async function getAdminAccountDetail(identifier: string): Promise<AdminAc
 export async function getAdminBookingDetail(bookingId: string): Promise<AdminBookingDetail> {
   const warnings: string[] = [];
   const key = decodeURIComponent(bookingId).trim();
-  if (!key) return { booking: null, history: [], warnings: ["Thiếu mã đăng ký khám."] };
+  if (!key) return { booking: null, history: [], matches: [], notifications: [], warnings: ["Thiếu mã đăng ký khám."] };
 
   try {
     const pool = getBookingPool();
-    const [bookingResult, historyResult] = await Promise.all([
+    const [bookingResult, historyResult, matchResult, notificationResult] = await Promise.all([
       pool.query("select * from portal.lich_hen_kham where id = $1 limit 1", [key]),
       pool.query(
         `
@@ -1843,17 +2061,41 @@ export async function getAdminBookingDetail(bookingId: string): Promise<AdminBoo
         `,
         [key],
       ),
+      pool.query(
+        `
+          select *
+          from portal.booking_his_matches
+          where appointment_id = $1
+          order by created_at desc nulls last, id desc
+          limit 20
+        `,
+        [key],
+      ),
+      pool.query(
+        `
+          select *
+          from portal.notification_outbox
+          where appointment_id = $1
+          order by created_at desc nulls last, id desc
+          limit 20
+        `,
+        [key],
+      ),
     ]);
 
     return {
       booking: (bookingResult.rows[0] ?? null) as Record<string, unknown> | null,
       history: historyResult.rows as Record<string, unknown>[],
+      matches: matchResult.rows as Record<string, unknown>[],
+      notifications: notificationResult.rows as Record<string, unknown>[],
       warnings,
     };
   } catch (error) {
     return {
       booking: null,
       history: [],
+      matches: [],
+      notifications: [],
       warnings: [`portal.lich_hen_kham: ${error instanceof Error ? error.message : "Không đọc được booking DB"}`],
     };
   }

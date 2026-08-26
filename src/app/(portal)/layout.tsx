@@ -52,6 +52,8 @@ export default async function PortalLayout({ children }: { children: React.React
 
   return (
     <AppShell
+      profiles={session.profiles}
+      currentMabn={session.mabn}
       upcomingAppointmentsCount={upcomingAppointmentsCount}
       pendingRegistrationsCount={pendingRegistrationsCount}
       activeTodayVisitCount={activeTodayVisitCount}

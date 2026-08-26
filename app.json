@@ -1,0 +1,18 @@
+{
+  "expo": {
+    "extra": {
+      "eas": {
+        "projectId": "08ddc3d1-8f6b-473f-a1ee-977eacf287f1"
+      }
+    },
+    "android": {
+      "package": "com.bvdkap.anphupatientportal"
+    },
+    "ios": {
+      "bundleIdentifier": "com.bvdkap.anphupatientportal",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    }
+  }
+}

@@ -325,7 +325,30 @@ public sealed class BookingHisMatchWorker(
             select
               'zalo', @RecipientPhone, 'booking_his_confirmed', @AppointmentId, cast(@PayloadJson as jsonb), 'pending'
             where nullif(@RecipientPhone, '') is not null
-            on conflict do nothing;
+            on conflict (appointment_id, channel, template_key)
+            where appointment_id is not null
+              and status in ('pending', 'retry', 'sent')
+            do update set
+              recipient_phone=excluded.recipient_phone,
+              payload_json=case
+                when portal.notification_outbox.status = 'sent' then portal.notification_outbox.payload_json
+                else excluded.payload_json
+              end,
+              status=case
+                when portal.notification_outbox.status = 'sent' then portal.notification_outbox.status
+                else 'pending'
+              end,
+              run_after=case
+                when portal.notification_outbox.status = 'sent' then portal.notification_outbox.run_after
+                else now()
+              end,
+              locked_by=null,
+              locked_until=null,
+              last_error=case
+                when portal.notification_outbox.status = 'sent' then portal.notification_outbox.last_error
+                else null
+              end,
+              updated_at=now();
             """;
 
         await connection.ExecuteAsync(new CommandDefinition(sql, new

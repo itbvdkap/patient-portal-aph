@@ -31,7 +31,11 @@ type BookingAppointmentRecord = {
   ma_lich_hen: string | null;
   ho_ten: string | null;
   ngay_kham: string | null;
+  gio_kham: string | null;
+  khoa_kham: string | null;
   chi_nhanh: string | null;
+  status: string | null;
+  his_match_status: string | null;
 };
 
 class DuplicateAppointmentError extends Error {
@@ -271,7 +275,7 @@ export async function createBookingAppointment(input: BookingAppointmentInput) {
             $25,
             $26
           )
-          returning id, ma_lich_hen, ho_ten, ngay_kham::text, chi_nhanh
+          returning id, ma_lich_hen, ho_ten, ngay_kham::text, gio_kham, khoa_kham, chi_nhanh, status, his_match_status
         `,
         [
           baseRecord.ho_ten,
@@ -348,6 +352,9 @@ export async function createBookingAppointment(input: BookingAppointmentInput) {
 
   return {
     message: "Bệnh viện đã tiếp nhận thông tin đăng ký khám.",
+    nextStep: oldPatientCode
+      ? "Hệ thống sẽ tự đối soát với lượt tiếp đón HIS. Khi có STT/phòng khám, bệnh viện sẽ thông báo qua Zalo nếu cấu hình gửi tin đang bật."
+      : "Nhân viên tiếp nhận sẽ kiểm tra thông tin và tạo mã bệnh nhân nếu cần trước khi xác nhận lịch.",
     data: created,
   };
 }

@@ -15,6 +15,9 @@ const actionSchema = z.object({
     "delete_account",
     "unlink_profile",
     "retry_sync",
+    "retry_booking_match",
+    "send_booking_zalo",
+    "test_zns_template",
     "approve_booking",
     "cancel_booking",
     "edit_setting",
@@ -60,6 +63,15 @@ export async function POST(request: Request) {
       case "retry_sync":
         await retrySync(parsed.data.target);
         break;
+      case "retry_booking_match":
+        await retryBookingMatch(parsed.data.target);
+        break;
+      case "send_booking_zalo":
+        await queueManualZaloSend(parsed.data.target);
+        break;
+      case "test_zns_template":
+        await queueZnsTemplateTest(parsed.data.target);
+        break;
       case "approve_booking":
         await updateBooking(parsed.data.target, "DA_XAC_NHAN", true, session.username);
         break;
@@ -103,21 +115,24 @@ async function updateSetting(target: Record<string, string>, adminUsername: stri
     .maybeSingle();
 
   if (readError) throw new Error(readError.message);
-  if (!setting) throw new Error("Không tìm thấy cấu hình cần sửa.");
-  if (setting.is_secret || looksLikeSecretKey(settingKey)) {
+  if (!setting && !isKnownEditableSetting(settingKey)) throw new Error("Không tìm thấy cấu hình cần sửa.");
+  if (setting?.is_secret || looksLikeSecretKey(settingKey)) {
     throw new Error("Cấu hình bảo mật/secret chỉ được đổi bằng biến môi trường server hoặc Vercel.");
   }
   validateSettingValue(settingKey, settingValue);
 
   const { error } = await supabase
     .from("portal_app_settings")
-    .update({
+    .upsert({
+      setting_key: settingKey,
       setting_value: settingValue,
+      setting_group: settingGroupFor(settingKey),
+      label: settingLabelFor(settingKey),
+      description: settingDescriptionFor(settingKey),
+      is_secret: false,
       updated_by: adminUsername,
       updated_at: new Date().toISOString(),
-    })
-    .eq("setting_key", settingKey)
-    .eq("is_secret", false);
+    }, { onConflict: "setting_key" });
 
   if (error) throw new Error(error.message);
 }
@@ -138,13 +153,43 @@ function validateSettingValue(settingKey: string, settingValue: string) {
   if ((settingKey.includes("url") || settingKey.includes("endpoint")) && settingValue && !/^https?:\/\/\S+$/i.test(settingValue)) {
     throw new Error("URL phải bắt đầu bằng http:// hoặc https://.");
   }
-  if ((settingKey.includes("template_id") || settingKey.includes("max_attempts") || settingKey.includes("ttl")) && settingValue && !/^\d+$/.test(settingValue)) {
+  if ((settingKey.includes("template_id") || settingKey.startsWith("zalo.template.") || settingKey.includes("max_attempts") || settingKey.includes("ttl")) && settingValue && !/^\d+$/.test(settingValue)) {
     throw new Error("Giá trị này phải là số nguyên.");
   }
 }
 
 function looksLikeSecretKey(key: string) {
   return /(secret|token|password|key|service_role|connection_string)/i.test(key);
+}
+
+function isKnownEditableSetting(key: string) {
+  return [
+    "booking.zalo_auto_send_enabled",
+    "zalo.template.booking_his_confirmed",
+  ].includes(key);
+}
+
+function settingGroupFor(key: string) {
+  if (key.startsWith("booking.")) return "booking";
+  if (key.startsWith("zalo.")) return "zalo";
+  if (key.startsWith("auth.")) return "auth";
+  return "general";
+}
+
+function settingLabelFor(key: string) {
+  const labels: Record<string, string> = {
+    "booking.zalo_auto_send_enabled": "Tự động gửi Zalo khi HIS xác nhận",
+    "zalo.template.booking_his_confirmed": "Template Zalo xác nhận HIS",
+  };
+  return labels[key] ?? key;
+}
+
+function settingDescriptionFor(key: string) {
+  const descriptions: Record<string, string> = {
+    "booking.zalo_auto_send_enabled": "OFF: chỉ tạo tin nhắn pending để admin kiểm tra và gửi thủ công. ON: worker tự gửi khi booking đã match HIS.",
+    "zalo.template.booking_his_confirmed": "Template ID dùng cho tin nhắn xác nhận đăng ký đã vào HIS, có STT và phòng khám.",
+  };
+  return descriptions[key] ?? "Cấu hình vận hành của portal.";
 }
 
 async function updateContentStatus(target: Record<string, string>, status: "published" | "archived") {
@@ -355,6 +400,160 @@ async function retrySync(target: Record<string, string>) {
   if (error) throw new Error(error.message);
 }
 
+async function retryBookingMatch(target: Record<string, string>) {
+  const bookingId = clean(target.bookingId);
+  if (!bookingId) throw new Error("Thiếu mã đăng ký khám.");
+
+  const pool = getBookingPool();
+  const { rowCount } = await pool.query(
+    `
+      update portal.lich_hen_kham
+      set his_match_status='RETRY',
+          his_match_next_check_at=now(),
+          his_match_checked_at=null
+      where id=$1
+    `,
+    [bookingId],
+  );
+  if (!rowCount) throw new Error("Không tìm thấy đăng ký khám.");
+}
+
+async function queueManualZaloSend(target: Record<string, string>) {
+  const bookingId = clean(target.bookingId);
+  const outboxId = clean(target.outboxId);
+  if (!bookingId && !outboxId) throw new Error("Thiếu tin nhắn Zalo cần gửi.");
+
+  const pool = getBookingPool();
+  const result = outboxId
+    ? await pool.query(
+        `
+          update portal.notification_outbox
+          set status='pending',
+              run_after=now(),
+              locked_by=null,
+              locked_until=null,
+              last_error=null,
+              payload_json=jsonb_set(payload_json, '{manual_send_requested}', 'true'::jsonb, true),
+              updated_at=now()
+          where id=$1
+            and status <> 'sent'
+        `,
+        [Number(outboxId)],
+      )
+    : await pool.query(
+        `
+          update portal.notification_outbox
+          set status='pending',
+              run_after=now(),
+              locked_by=null,
+              locked_until=null,
+              last_error=null,
+              payload_json=jsonb_set(payload_json, '{manual_send_requested}', 'true'::jsonb, true),
+              updated_at=now()
+          where appointment_id=$1
+            and channel='zalo'
+            and status <> 'sent'
+        `,
+        [bookingId],
+      );
+  if (result.rowCount) return;
+
+  if (!bookingId) throw new Error("Không tìm thấy tin nhắn Zalo pending/retry để gửi.");
+
+  const inserted = await pool.query(
+    `
+      insert into portal.notification_outbox (
+        channel,
+        recipient_phone,
+        template_key,
+        appointment_id,
+        payload_json,
+        status,
+        run_after
+      )
+      select
+        'zalo',
+        l.so_dien_thoai,
+        'booking_his_confirmed',
+        l.id,
+        jsonb_build_object(
+          'manual_send_requested', true,
+          'booking_code', l.ma_lich_hen,
+          'full_name', l.ho_ten,
+          'appointment_date', l.ngay_kham::text,
+          'appointment_time', l.gio_kham,
+          'department_name', coalesce(nullif(l.his_department_name, ''), l.khoa_kham),
+          'doctor_name', l.his_doctor_name,
+          'ticket_number', l.his_stt_kham,
+          'mabn', coalesce(nullif(l.his_mabn, ''), nullif(l.old_patient_code, ''), nullif(l.patient_code, '')),
+          'mavaovien', l.his_mavaovien,
+          'maql', l.his_maql,
+          'registered_at', l.his_registered_at
+        ),
+        'pending',
+        now()
+      from portal.lich_hen_kham l
+      where l.id=$1
+        and nullif(l.so_dien_thoai, '') is not null
+    `,
+    [bookingId],
+  );
+
+  if (!inserted.rowCount) throw new Error("Chưa tạo được tin Zalo. Vui lòng kiểm tra số điện thoại của lịch khám.");
+}
+
+async function queueZnsTemplateTest(target: Record<string, string>) {
+  const phone = normalizePhone(clean(target.phone));
+  const templateId = clean(target.templateId);
+  if (!phone) throw new Error("Vui lòng nhập số điện thoại nhận tin test.");
+  if (templateId && !/^\d+$/.test(templateId)) throw new Error("Template ID phải là số.");
+
+  const pool = getBookingPool();
+  const { rowCount } = await pool.query(
+    `
+      insert into portal.notification_outbox (
+        channel,
+        recipient_phone,
+        template_key,
+        template_id,
+        payload_json,
+        status,
+        run_after
+      )
+      values (
+        'zalo',
+        $1,
+        'booking_his_confirmed',
+        nullif($2, ''),
+        jsonb_build_object(
+          'manual_send_requested', true,
+          'is_test', true,
+          'booking_code', 'APTEST001',
+          'id_booking', 'APTEST001',
+          'full_name', 'Khách hàng test',
+          'customer_name', 'Khách hàng test',
+          'appointment_date', to_char(current_date, 'YYYY-MM-DD'),
+          'date_code', to_char(current_date, 'YYYY-MM-DD'),
+          'appointment_time', '08:00',
+          'schedule_time', '08:00',
+          'department_name', 'Pk Nội 1',
+          'phong_kham', 'Pk Nội 1',
+          'ticket_number', '01',
+          'stt_kham', '01',
+          'mabn', 'TEST0001',
+          'patient_code', 'TEST0001',
+          'address', '05 Đường 22 Tháng 12, P. An Phú, TP. Hồ Chí Minh'
+        ),
+        'pending',
+        now()
+      )
+    `,
+    [phone, templateId],
+  );
+
+  if (!rowCount) throw new Error("Chưa queue được tin test ZNS.");
+}
+
 async function updateBooking(target: Record<string, string>, status: "DA_XAC_NHAN" | "DA_HUY", trangThai: boolean, adminUsername: string) {
   const bookingId = clean(target.bookingId);
   const note = clean(target.note);
@@ -413,8 +612,8 @@ async function writeAuditLog({
     await supabase.from("portal_admin_audit_logs").insert({
       admin_username: adminUsername,
       action,
-      target_type: target.bookingId ? "booking" : target.jobId ? "sync_job" : target.mabn ? "profile" : target.settingKey ? "setting" : target.postId ? "content" : "account",
-      target_id: target.bookingId || target.jobId || target.mabn || target.settingKey || target.postId || target.accountId || target.accountKey || null,
+      target_type: action === "test_zns_template" || target.outboxId ? "notification" : target.bookingId ? "booking" : target.jobId ? "sync_job" : target.mabn ? "profile" : target.settingKey ? "setting" : target.postId ? "content" : "account",
+      target_id: action === "test_zns_template" ? target.phone || target.templateId || null : target.outboxId || target.bookingId || target.jobId || target.mabn || target.settingKey || target.postId || target.accountId || target.accountKey || null,
       detail_json: target,
       ip_address: request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? request.headers.get("x-real-ip"),
       user_agent: request.headers.get("user-agent"),
@@ -438,4 +637,11 @@ function getBookingPool() {
 
 function clean(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function normalizePhone(value: string) {
+  const digits = value.replace(/\D/g, "");
+  if (!digits) return "";
+  if (digits.startsWith("84") && digits.length >= 11) return `0${digits.slice(2)}`;
+  return digits;
 }

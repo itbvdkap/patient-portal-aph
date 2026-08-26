@@ -39,6 +39,7 @@ if (OperatingSystem.IsWindows())
 builder.Services.AddSingleton<PatientTokenValidator>();
 builder.Services.AddScoped<OracleHisPatientRepository>();
 builder.Services.AddHttpClient<SupabaseRestPortalStore>();
+builder.Services.AddHttpClient<ZaloZnsClient>();
 
 var dataMode = builder.Configuration["PatientPortal:DataMode"] ?? "OracleDirect";
 if (dataMode.Equals("Reporting", StringComparison.OrdinalIgnoreCase))
@@ -61,6 +62,12 @@ if (builder.Configuration.GetValue("PatientPortal:EnableSupabaseQueueAgent", fal
 if (builder.Configuration.GetValue("PatientPortal:EnableBookingHisMatchWorker", false))
 {
     builder.Services.AddHostedService<BookingHisMatchWorker>();
+}
+
+if (builder.Configuration.GetValue("PatientPortal:EnableNotificationOutboxWorker", false))
+{
+    builder.Services.AddHttpClient<NotificationOutboxWorker>();
+    builder.Services.AddHostedService(sp => sp.GetRequiredService<NotificationOutboxWorker>());
 }
 
 var app = builder.Build();

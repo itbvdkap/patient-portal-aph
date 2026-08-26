@@ -115,6 +115,8 @@ export interface Registration {
   status: string;
   reason: string;
   notes: string;
+  payerTypeCode?: string;
+  payerTypeName?: string;
 }
 
 export interface ActiveService {
@@ -127,6 +129,8 @@ export interface ActiveService {
   serviceName: string;
   serviceGroup: string;
   status: string;
+  payerTypeCode?: string;
+  payerTypeName?: string;
 }
 
 export interface TodayVisitStatus {

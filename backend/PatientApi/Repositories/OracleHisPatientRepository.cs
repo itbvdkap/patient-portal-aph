@@ -11,6 +11,22 @@ public sealed class OracleHisPatientRepository(IConfiguration configuration) : I
 {
     private readonly string _connectionString = configuration.GetConnectionString("OracleHis")
         ?? throw new InvalidOperationException("ConnectionStrings:OracleHis is not configured.");
+    private static readonly string[] PayerTypeColumnCandidates =
+    [
+        "MADOITUONG",
+        "MA_DOITUONG",
+        "DOITUONG",
+        "DOITUONG_ID",
+        "MADOITUONGBN",
+        "MADOITUONG_BN",
+        "MADOITUONGKCB",
+        "MADOITUONG_KCB",
+        "MADOITUONGVP",
+        "MADOITUONG_VP",
+        "MADOITUONGCLS",
+        "MADOITUONG_CLS",
+        "MADT"
+    ];
 
     private sealed record VisitClinicalInfo(string DepartmentName, string DoctorName);
 
@@ -736,6 +752,14 @@ public sealed class OracleHisPatientRepository(IConfiguration configuration) : I
 
         foreach (var schema in schemas)
         {
+            var payerTypeColumn = await FindFirstExistingColumnAsync(connection, schema, "TIEPDON", cancellationToken, PayerTypeColumnCandidates);
+            var payerTypeSelect = string.IsNullOrWhiteSpace(payerTypeColumn)
+                ? "null as PayerTypeCode, null as PayerTypeName"
+                : $"to_char(td.{payerTypeColumn}) as PayerTypeCode, {PayerTypeNameSqlExpression("td", payerTypeColumn, "dt")} as PayerTypeName";
+            var payerTypeJoin = string.IsNullOrWhiteSpace(payerTypeColumn)
+                ? string.Empty
+                : $"left join HGSOFT_BV.DOITUONG dt on dt.MA = td.{payerTypeColumn}";
+
             var sql = $"""
                 select
                   to_char(td.MAQL) as Id,
@@ -747,10 +771,12 @@ public sealed class OracleHisPatientRepository(IConfiguration configuration) : I
                   bs.HOTEN as DoctorName,
                   td.DONE as DoneStatus,
                   td.LY_DO_VV as Reason,
-                  td.GHICHU as Notes
+                  td.GHICHU as Notes,
+                  {payerTypeSelect}
                 from {schema}.TIEPDON td
                 left join BTDKP_BV kp on kp.MAKP = td.MAKP
                 left join DMBS bs on bs.MA = td.MABS
+                {payerTypeJoin}
                 where td.MABN = :HisPatientCode
                 order by td.NGAY desc, td.MAQL desc
                 """;
@@ -769,12 +795,70 @@ public sealed class OracleHisPatientRepository(IConfiguration configuration) : I
             }
         }
 
+        if (registrations.Count == 0)
+        {
+            registrations.AddRange(await GetRegistrationsFromFollowUpAsync(connection, hisPatientCode, cancellationToken));
+        }
+
         return registrations
             .Where(registration => registration.RegisteredAt > DateTimeOffset.MinValue)
             .GroupBy(registration => registration.Id)
             .Select(group => group.First())
             .OrderByDescending(registration => registration.RegisteredAt)
             .ToList();
+    }
+
+    private static async Task<IReadOnlyList<RegistrationDto>> GetRegistrationsFromFollowUpAsync(
+        OracleConnection connection,
+        string hisPatientCode,
+        CancellationToken cancellationToken)
+    {
+        var payerTypeColumn = await FindFirstExistingColumnAsync(connection, "HGSOFT_BV", "THEODOI_KCB", cancellationToken, PayerTypeColumnCandidates);
+        var payerTypeSelect = string.IsNullOrWhiteSpace(payerTypeColumn)
+            ? "null as PayerTypeCode, null as PayerTypeName"
+            : $"to_char(kcb.{payerTypeColumn}) as PayerTypeCode, {PayerTypeNameSqlExpression("kcb", payerTypeColumn, "dt")} as PayerTypeName";
+        var payerTypeJoin = string.IsNullOrWhiteSpace(payerTypeColumn)
+            ? string.Empty
+            : $"left join HGSOFT_BV.DOITUONG dt on dt.MA = kcb.{payerTypeColumn}";
+
+        const string departmentName = "N'Tiếp đón/KCB'";
+        var sql = $"""
+            select
+              to_char(kcb.MAVAOVIEN) as Id,
+              to_char(kcb.MAVAOVIEN) as VisitId,
+              kcb.NGAY_TIEPDON as RegisteredAt,
+              null as TicketNumber,
+              null as DepartmentCode,
+              {departmentName} as DepartmentName,
+              null as DoctorName,
+              case
+                when kcb.NGAY_XUATVIEN is not null or kcb.NGAY_THANHTOAN is not null then 'x'
+                else null
+              end as DoneStatus,
+              kcb.LY_DO_VV as Reason,
+              coalesce(kcb.GHI_CHU, kcb.PP_DIEU_TRI, kcb.LY_DO_VNT) as Notes,
+              {payerTypeSelect}
+            from THEODOI_KCB kcb
+            {payerTypeJoin}
+            where kcb.MABN = :HisPatientCode
+              and kcb.NGAY_TIEPDON is not null
+            order by kcb.NGAY_TIEPDON desc, kcb.MAVAOVIEN desc
+            """;
+
+        var rows = await connection.QueryAsync(
+            new CommandDefinition(
+                sql,
+                new { HisPatientCode = hisPatientCode },
+                cancellationToken: cancellationToken,
+                commandTimeout: 30));
+
+        var registrations = new List<RegistrationDto>();
+        foreach (var row in rows)
+        {
+            registrations.Add(MapRegistration(row, hisPatientCode));
+        }
+
+        return registrations;
     }
 
     public async Task<TodayVisitStatusDto> GetTodayVisitStatusAsync(string hisPatientCode, CancellationToken cancellationToken)
@@ -786,6 +870,13 @@ public sealed class OracleHisPatientRepository(IConfiguration configuration) : I
 
         RegistrationDto? registration = null;
         var services = new List<ActiveServiceDto>();
+        var registrationPayerTypeColumn = await FindFirstExistingColumnAsync(connection, schema, "TIEPDON", cancellationToken, PayerTypeColumnCandidates);
+        var registrationPayerTypeSelect = string.IsNullOrWhiteSpace(registrationPayerTypeColumn)
+            ? "null as PayerTypeCode, null as PayerTypeName"
+            : $"to_char(td.{registrationPayerTypeColumn}) as PayerTypeCode, {PayerTypeNameSqlExpression("td", registrationPayerTypeColumn, "dt")} as PayerTypeName";
+        var registrationPayerTypeJoin = string.IsNullOrWhiteSpace(registrationPayerTypeColumn)
+            ? string.Empty
+            : $"left join HGSOFT_BV.DOITUONG dt on dt.MA = td.{registrationPayerTypeColumn}";
 
         var registrationSql = $"""
             select
@@ -798,10 +889,12 @@ public sealed class OracleHisPatientRepository(IConfiguration configuration) : I
               bs.HOTEN as DoctorName,
               td.DONE as DoneStatus,
               td.LY_DO_VV as Reason,
-              td.GHICHU as Notes
+              td.GHICHU as Notes,
+              {registrationPayerTypeSelect}
             from {schema}.TIEPDON td
             left join BTDKP_BV kp on kp.MAKP = td.MAKP
             left join DMBS bs on bs.MA = td.MABS
+            {registrationPayerTypeJoin}
             where td.MABN = :HisPatientCode
               and td.NGAY >= :Today
               and td.NGAY < :Tomorrow
@@ -819,6 +912,14 @@ public sealed class OracleHisPatientRepository(IConfiguration configuration) : I
             registration = null;
         }
 
+        var servicePayerTypeColumn = await FindFirstExistingColumnAsync(connection, schema, "V_CHIDINH", cancellationToken, PayerTypeColumnCandidates);
+        var servicePayerTypeSelect = string.IsNullOrWhiteSpace(servicePayerTypeColumn)
+            ? "null as PayerTypeCode, null as PayerTypeName"
+            : $"to_char(cd.{servicePayerTypeColumn}) as PayerTypeCode, {PayerTypeNameSqlExpression("cd", servicePayerTypeColumn, "dt_cls")} as PayerTypeName";
+        var servicePayerTypeJoin = string.IsNullOrWhiteSpace(servicePayerTypeColumn)
+            ? string.Empty
+            : $"left join HGSOFT_BV.DOITUONG dt_cls on dt_cls.MA = cd.{servicePayerTypeColumn}";
+
         var servicesSql = $"""
             select
               to_char(cd.ID) as Id,
@@ -829,11 +930,13 @@ public sealed class OracleHisPatientRepository(IConfiguration configuration) : I
               kp.TENKP as DepartmentName,
               coalesce(cd.TENVP_CHITIET, vp.TEN) as ServiceName,
               lvp.TEN as ServiceGroup,
-              vp.ID_LOAI as ServiceGroupId
+              vp.ID_LOAI as ServiceGroupId,
+              {servicePayerTypeSelect}
             from {schema}.V_CHIDINH cd
             left join V_GIAVP vp on vp.ID = cd.MAVP
             left join V_LOAIVP lvp on lvp.ID = vp.ID_LOAI
             left join BTDKP_BV kp on kp.MAKP = cd.MAKP
+            {servicePayerTypeJoin}
             where cd.MABN = :HisPatientCode
               and cd.NGAYUD >= :Today
               and cd.NGAYUD < :Tomorrow
@@ -1166,6 +1269,24 @@ public sealed class OracleHisPatientRepository(IConfiguration configuration) : I
         return count > 0;
     }
 
+    private static async Task<string> FindFirstExistingColumnAsync(
+        OracleConnection connection,
+        string schema,
+        string tableName,
+        CancellationToken cancellationToken,
+        params string[] columnNames)
+    {
+        foreach (var columnName in columnNames)
+        {
+            if (await SchemaHasColumnAsync(connection, schema, tableName, columnName, cancellationToken))
+            {
+                return columnName;
+            }
+        }
+
+        return string.Empty;
+    }
+
     private static async Task<string> BuildPerformedAtExpressionAsync(OracleConnection connection, string schema, CancellationToken cancellationToken)
     {
         var hasResultDate = await SchemaHasColumnAsync(connection, schema, "V_CHIDINH", "NGAY_KQ", cancellationToken);
@@ -1366,7 +1487,28 @@ public sealed class OracleHisPatientRepository(IConfiguration configuration) : I
             DoctorName: FirstNonEmpty(row.DOCTORNAME),
             Status: MapRegistrationStatus(row.DONESTATUS),
             Reason: FirstNonEmpty(row.REASON),
-            Notes: FirstNonEmpty(row.NOTES));
+            Notes: FirstNonEmpty(row.NOTES),
+            PayerTypeCode: FirstNonEmpty(row.PAYERTYPECODE),
+            PayerTypeName: FirstNonEmpty(row.PAYERTYPENAME));
+    }
+
+    private static string PayerTypeNameSqlExpression(string tableAlias, string payerTypeColumn, string dictionaryAlias)
+    {
+        return $"""
+            coalesce(
+              to_char({dictionaryAlias}.TEN),
+              case to_char({tableAlias}.{payerTypeColumn})
+                when '1' then 'BHYT'
+                when '2' then 'Thu Phí'
+                when '3' then 'Miễn'
+                when '4' then 'Nước Ngoài'
+                when '5' then 'Hao phí'
+                when '6' then 'BẢO LÃNH VP'
+                when '9' then 'Khám Sức Khỏe'
+                when '10' then 'XN SÀNG LỌC'
+              end
+            )
+            """;
     }
 
     private static ActiveServiceDto MapActiveService(dynamic row)
@@ -1384,7 +1526,9 @@ public sealed class OracleHisPatientRepository(IConfiguration configuration) : I
             DepartmentName: FirstNonEmpty(row.DEPARTMENTNAME),
             ServiceName: FirstNonEmpty(row.SERVICENAME, "Dịch vụ cận lâm sàng"),
             ServiceGroup: ClassifyServiceGroup(row.SERVICEGROUPID, row.SERVICEGROUP),
-            Status: resultAt.HasValue ? "Đã có kết quả" : startedAt.HasValue ? "Đang thực hiện" : "Chờ thực hiện");
+            Status: resultAt.HasValue ? "Đã có kết quả" : startedAt.HasValue ? "Đang thực hiện" : "Chờ thực hiện",
+            PayerTypeCode: FirstNonEmpty(row.PAYERTYPECODE),
+            PayerTypeName: FirstNonEmpty(row.PAYERTYPENAME));
     }
 
     private static string MapRegistrationStatus(object? value)

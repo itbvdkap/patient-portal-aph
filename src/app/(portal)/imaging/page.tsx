@@ -1,9 +1,8 @@
-import { AlertTriangle, ChevronDown, Eye } from "lucide-react";
-import { Badge, EmptyState, PageHeader, Panel, SecureDataNotice } from "@/components/ui";
+import { AlertTriangle } from "lucide-react";
+import { PageHeader, Panel, SecureDataNotice } from "@/components/ui";
+import { ImagingResultsList } from "@/app/(portal)/imaging/imaging-results-list";
 import { createPatientRepository } from "@/lib/data";
 import type { ImagingResult } from "@/types/patient";
-import { formatDate, formatDateTime } from "@/utils/format";
-import { normalizeDisplayText } from "@anphu/patient-domain";
 
 export default async function ImagingPage() {
   const repository = createPatientRepository();
@@ -16,8 +15,6 @@ export default async function ImagingPage() {
   } catch (error) {
     loadError = error instanceof Error ? error.message : "Không tải được dữ liệu chẩn đoán hình ảnh.";
   }
-
-  const groups = groupImagingResults(results);
 
   return (
     <>
@@ -40,88 +37,7 @@ export default async function ImagingPage() {
         </Panel>
       )}
 
-      <div className="space-y-5">
-        {!loadError && groups.length === 0 && <EmptyState text="Chưa có dữ liệu chẩn đoán hình ảnh." />}
-
-        {groups.map((group) => (
-          <section key={group.dateKey} className="space-y-3">
-            <div>
-              <h2 className="clinical-mono text-base font-bold text-ink">{formatDate(group.dateKey)}</h2>
-              <p className="clinical-mono text-sm text-slate-600">{group.items.length} kết quả</p>
-            </div>
-
-            {group.items.map((result) => (
-              <Panel key={result.id}>
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                  <div>
-                    <h3 className="font-serif text-lg font-bold text-ink">{normalizeDisplayText(result.techniqueName)}</h3>
-                    <p className="clinical-mono mt-1 text-sm text-slate-600">
-                      {formatDateTime(result.date)} · {normalizeDisplayText(result.doctorName) || "Chưa ghi nhận bác sĩ"}
-                    </p>
-                  </div>
-                  <span className="inline-flex min-h-9 w-fit items-center gap-2 rounded-md bg-primary-50 px-3 text-sm font-bold text-primary-700">
-                    <Eye aria-hidden="true" className="h-4 w-4" />
-                    Kết quả
-                  </span>
-                </div>
-
-                {result.conclusion && (
-                  <div className={`mt-3 rounded-md border p-3 text-sm font-bold leading-6 ${isNotableConclusion(result.conclusion) ? "border-amber-200 bg-amber-50 text-amber-950" : "border-primary-100 bg-primary-50 text-primary-900"}`}>
-                    <Badge tone={isNotableConclusion(result.conclusion) ? "amber" : "green"}>
-                      {isNotableConclusion(result.conclusion) ? "Có phát hiện" : "Kết luận"}
-                    </Badge>
-                    <p className="mt-2 whitespace-pre-line">{normalizeDisplayText(result.conclusion)}</p>
-                    {isNotableConclusion(result.conclusion) && (
-                      <p className="mt-2 text-sm font-semibold leading-6 text-amber-900">
-                        Có phát hiện cần lưu ý. Vui lòng trao đổi thêm với bác sĩ khi tái khám hoặc khi có triệu chứng bất thường.
-                      </p>
-                    )}
-                  </div>
-                )}
-
-                {result.description && (
-                  <details className="group mt-3">
-                    <summary className="flex cursor-pointer list-none items-center gap-1.5 text-sm font-bold text-primary-700">
-                      <span>Xem mô tả chi tiết</span>
-                      <ChevronDown aria-hidden="true" className="h-4 w-4 transition group-open:rotate-180" />
-                    </summary>
-                    <div className="details-reveal">
-                      <p className="mt-3 whitespace-pre-line text-sm leading-6 text-slate-700">{normalizeDisplayText(result.description)}</p>
-                    </div>
-                  </details>
-                )}
-              </Panel>
-            ))}
-          </section>
-        ))}
-      </div>
+      {!loadError && <ImagingResultsList results={results} />}
     </>
   );
-}
-
-function groupImagingResults(results: ImagingResult[]) {
-  const dateMap = new Map<string, ImagingResult[]>();
-
-  for (const result of results) {
-    const dateKey = result.date.slice(0, 10);
-    const items = dateMap.get(dateKey) ?? [];
-
-    items.push(result);
-    dateMap.set(dateKey, items);
-  }
-
-  return Array.from(dateMap.entries()).map(([dateKey, items]) => ({
-    dateKey,
-    items,
-  }));
-}
-
-function isNotableConclusion(value?: string) {
-  const normalized = normalizeDisplayText(value ?? "").toLowerCase();
-
-  if (!normalized.trim()) {
-    return false;
-  }
-
-  return !/(bình thường|binh thuong|không phát hiện|khong phat hien|chưa phát hiện|chua phat hien)/i.test(normalized);
 }

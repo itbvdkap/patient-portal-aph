@@ -167,7 +167,9 @@ Invoke-RestMethod http://127.0.0.1:5080/health
 
 Booking HIS Auto-Match
 
-Agent có worker `BookingHisMatchWorker` để đối soát đăng ký online với lượt `TIEPDON` trong HIS. Worker đọc các lịch hẹn chưa match trong Supabase booking DB, tìm lượt HIS theo `mabn/ngày khám/phòng khám`, cập nhật `portal.lich_hen_kham`, ghi `portal.booking_his_matches`, rồi tạo bản ghi `portal.notification_outbox` để job gửi Zalo xử lý sau.
+Agent có worker `BookingHisMatchWorker` để đối soát đăng ký online với lượt `TIEPDON` trong HIS. Worker đọc các lịch hẹn chưa match trong Supabase booking DB, tìm lượt HIS theo `mabn/ngày khám/phòng khám`, cập nhật `portal.lich_hen_kham`, ghi `portal.booking_his_matches`, rồi tạo bản ghi `portal.notification_outbox`.
+
+Agent cũng có `NotificationOutboxWorker` để đọc `portal.notification_outbox`, gửi Zalo ZNS, cập nhật `sent/retry/failed` và ghi `zalo_confirm_sent_at` vào lịch hẹn khi gửi thành công. Trong lúc template Zalo đang chờ duyệt, nên để `booking.zalo_auto_send_enabled=false`: hệ thống vẫn match HIS và tạo outbox, admin kiểm tra rồi bấm gửi thủ công từng phiếu trong `/admin/bookings`.
 
 Trong `C:\PatientPortalAgent\patientapi-service.env` cần có:
 
@@ -176,7 +178,19 @@ PatientPortal__EnableBookingHisMatchWorker=true
 PatientPortal__BookingHisMatchIntervalSeconds=60
 PatientPortal__BookingHisMatchBatchSize=25
 PatientPortal__BookingHisMatchRetryMinutes=5
+PatientPortal__EnableNotificationOutboxWorker=true
+PatientPortal__NotificationOutboxAutoSendEnabled=false
+PatientPortal__NotificationOutboxIntervalSeconds=30
+PatientPortal__NotificationOutboxBatchSize=20
+PatientPortal__NotificationOutboxRetryMinutes=5
 ConnectionStrings__BookingDatabase=...
+ZALO_ZNS_ENDPOINT=https://business.openapi.zalo.me/message/template
+ZALO_TOKEN_ENDPOINT=https://oauth.zaloapp.com/v4/oa/access_token
+ZALO_APP_ID=...
+ZALO_SECRET_KEY=...
+ZALO_ACCESS_TOKEN=...
+ZALO_REFRESH_TOKEN=...
+ZALO_BOOKING_CONFIRMED_TEMPLATE_ID=...
 ```
 
 Kiểm tra lịch đã match:
@@ -194,7 +208,7 @@ Kiểm tra tin Zalo chờ gửi:
 
 ```sql
 select id, channel, recipient_phone, template_key, appointment_id,
-       status, attempt_count, run_after, payload_json
+       status, attempt_count, run_after, last_error, sent_at, payload_json
 from portal.notification_outbox
 order by created_at desc
 limit 20;

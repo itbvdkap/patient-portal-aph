@@ -132,7 +132,10 @@ export default async function TodayVisitPage() {
                     </p>
                     <p className="mt-1 text-sm text-slate-500">Chỉ định: {formatDateTime(service.orderedAt)}</p>
                   </div>
-                  <Badge tone={statusTone(service.status)}>{service.status || "Chưa ghi nhận"}</Badge>
+                  <div className="flex shrink-0 flex-wrap items-center gap-1.5 sm:justify-end">
+                    {service.payerTypeName ? <Badge tone={isBhytPayer(service.payerTypeName) ? "green" : "slate"}>{service.payerTypeName}</Badge> : null}
+                    <Badge tone={statusTone(service.status)}>{service.status || "Chưa ghi nhận"}</Badge>
+                  </div>
                 </div>
               </div>
             ))}
@@ -141,6 +144,10 @@ export default async function TodayVisitPage() {
       </Panel>
     </>
   );
+}
+
+function isBhytPayer(value: string) {
+  return value.trim().toLowerCase() === "bhyt";
 }
 
 function ProgressTimeline({

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { AdminActionButton } from "@/app/admin/admin-action-button";
@@ -50,6 +51,9 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
                     {canCancel && <AdminActionButton action="cancel_booking" label="Hủy lịch" tone="danger" target={bookingTarget(booking)} />}
                   </>
                 )}
+                {canAdminPerformAction(session.role, "retry_booking_match") && (
+                  <AdminActionButton action="retry_booking_match" label="Retry HIS" tone="neutral" target={bookingTarget(booking)} />
+                )}
               </div>
             </div>
 
@@ -62,12 +66,69 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
               <Info label="Ngày cấp" value={formatDateOnly(booking.ngayCap ?? booking.ngay_cap ?? booking.cccd_ngay_cap)} />
               <Info label="Chi nhánh" value={String(booking.chi_nhanh ?? "Chưa chọn")} />
               <Info label="Tạo lúc" value={formatDate(booking.ngay_tao)} />
+              <Info label="Trạng thái HIS" value={String(booking.his_match_status ?? "PENDING")} />
+              <Info label="STT khám" value={String(booking.his_stt_kham ?? "Chưa match")} />
+              <Info label="Phòng khám HIS" value={String(booking.his_department_name ?? "Chưa match")} />
+              <Info label="Đã gửi Zalo" value={booking.zalo_confirm_sent_at ? formatDate(booking.zalo_confirm_sent_at) : "Chưa gửi"} />
             </div>
 
             <div className="mt-4 grid gap-3 lg:grid-cols-2">
               <TextBlock label="Địa chỉ" value={String(booking.dia_chi ?? "Chưa ghi nhận")} />
               <TextBlock label="Triệu chứng / lý do khám" value={String(booking.trieu_chung ?? booking.ghichu ?? "Chưa ghi nhận")} />
             </div>
+          </section>
+
+          <section className="grid gap-5 lg:grid-cols-2">
+            <DataPanel title="Đối soát HIS" count={data.matches.length} empty="Chưa có bản ghi match HIS.">
+              {data.matches.map((item, index) => (
+                <div key={String(item.id ?? index)} className="rounded-md border border-cream-200 bg-cream-100/50 p-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <AdminStatusBadge status={String(item.match_status ?? "MATCH")} />
+                    <span className="clinical-mono text-xs font-black text-slate-500">{String(item.match_confidence ?? "")}%</span>
+                  </div>
+                  <p className="mt-2 text-sm font-black text-ink">
+                    {String(item.his_department_name ?? "Chưa có phòng")} · STT {String(item.his_stt_kham ?? "chưa có")}
+                  </p>
+                  <p className="mt-1 clinical-mono text-xs font-bold text-slate-600">
+                    MABN {String(item.his_mabn ?? "")} · MAQL {String(item.his_maql ?? "")}
+                  </p>
+                  <p className="mt-2 text-xs font-semibold leading-5 text-slate-600">{String(item.match_reason ?? "Không ghi lý do.")}</p>
+                  <p className="mt-1 clinical-mono text-xs font-bold text-slate-500">{formatDate(item.created_at)}</p>
+                </div>
+              ))}
+            </DataPanel>
+
+            <DataPanel title="Tin nhắn Zalo" count={data.notifications.length} empty="Chưa có tin nhắn Zalo trong outbox.">
+              {data.notifications.map((item, index) => {
+                const status = String(item.status ?? "pending");
+                const lastError = String(item.last_error ?? "");
+                const target = {
+                  ...bookingTarget(booking),
+                  outboxId: String(item.id ?? ""),
+                };
+                return (
+                  <div key={String(item.id ?? index)} className="rounded-md border border-cream-200 bg-cream-100/50 p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <AdminStatusBadge status={status} />
+                        <span className="clinical-mono text-xs font-black text-slate-500">#{String(item.id ?? "")}</span>
+                      </div>
+                      {status !== "sent" && canAdminPerformAction(session.role, "send_booking_zalo") && (
+                        <AdminActionButton action="send_booking_zalo" label="Gửi Zalo" tone="primary" target={target} />
+                      )}
+                    </div>
+                    <p className="mt-2 text-sm font-black text-ink">{String(item.template_key ?? "booking_his_confirmed")}</p>
+                    <p className="mt-1 clinical-mono text-xs font-bold text-slate-600">
+                      {String(item.recipient_phone ?? "")} · {String(item.attempt_count ?? 0)}/{String(item.max_attempts ?? 5)}
+                    </p>
+                    {lastError && <p className="mt-2 rounded-md bg-rose-50 px-3 py-2 text-xs font-bold leading-5 text-rose-700">{lastError}</p>}
+                    <p className="mt-1 clinical-mono text-xs font-bold text-slate-500">
+                      Tạo {formatDate(item.created_at)} · Gửi {formatDate(item.sent_at)}
+                    </p>
+                  </div>
+                );
+              })}
+            </DataPanel>
           </section>
 
           <section className="rounded-md border border-cream-200 bg-cream-50 p-4 shadow-[0_8px_22px_rgba(7,60,57,0.055)]">
@@ -103,6 +164,18 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
         <Empty text="Không tìm thấy phiếu đăng ký khám." />
       )}
     </AdminShell>
+  );
+}
+
+function DataPanel({ title, count, empty, children }: { title: string; count: number; empty: string; children: ReactNode }) {
+  return (
+    <section className="rounded-md border border-cream-200 bg-cream-50 p-4 shadow-[0_8px_22px_rgba(7,60,57,0.055)]">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <h3 className="font-serif text-xl font-black text-ink">{title}</h3>
+        <span className="clinical-mono text-sm font-black text-slate-500">{count}</span>
+      </div>
+      <div className="grid gap-3">{count ? children : <Empty text={empty} />}</div>
+    </section>
   );
 }
 

@@ -7,16 +7,20 @@ import {
   ArrowLeft,
   BookOpenText,
   CalendarDays,
+  CheckCircle2,
+  ChevronsUpDown,
   ClipboardList,
   Clock3,
   FileClock,
   HeartPulse,
   Hospital,
+  Loader2,
   Home,
   LogOut,
   MessageCircle,
   PhoneCall,
   Pill,
+  Activity,
   ScanSearch,
   ShieldCheck,
   UserRound,
@@ -27,6 +31,7 @@ import { DemoBanner } from "@/components/demo-banner";
 import { InstallAppButton } from "@/components/install-app-button";
 import { AccessibilityTextToggle } from "@/components/accessibility-text-toggle";
 import { hospitalHotlines, hospitalZaloUrl } from "@/lib/content/hospital-info";
+import type { PatientSessionProfile } from "@/lib/auth/session";
 
 type NavItem = {
   href: string;
@@ -46,6 +51,7 @@ const primaryItems: NavItem[] = [
 ];
 
 const moreItems: NavItem[] = [
+  { href: "/health-tracking", label: "Theo dõi sức khỏe", shortLabel: "Sức khỏe", icon: Activity },
   { href: "/hospital-info", label: "Thông tin bệnh viện", shortLabel: "Bệnh viện", icon: Hospital },
   { href: "/health-guide", label: "Cẩm nang sức khỏe", shortLabel: "Cẩm nang", icon: BookOpenText },
   { href: "/prescriptions", label: "Đơn thuốc", shortLabel: "Thuốc", icon: Pill },
@@ -56,11 +62,15 @@ const moreItems: NavItem[] = [
 
 export function AppShell({
   children,
+  profiles = [],
+  currentMabn = "",
   upcomingAppointmentsCount = 0,
   pendingRegistrationsCount = 0,
   activeTodayVisitCount = 0,
 }: {
   children: React.ReactNode;
+  profiles?: PatientSessionProfile[];
+  currentMabn?: string;
   upcomingAppointmentsCount?: number;
   pendingRegistrationsCount?: number;
   activeTodayVisitCount?: number;
@@ -109,6 +119,7 @@ export function AppShell({
             <AccessibilityTextToggle />
           </div>
           <InstallAppButton className="mt-5 w-full" />
+          <ProfileQuickSwitch profiles={profiles} currentMabn={currentMabn} variant="sidebar" />
           <nav className="mt-6 space-y-1" aria-label="Điều hướng chính">
             {allItems.map((item) => (
               <NavLink key={item.href} item={item} active={pathname.startsWith(item.href)} />
@@ -125,13 +136,13 @@ export function AppShell({
         </aside>
 
         <main className="w-full min-w-0 px-3 pb-24 pt-3 sm:px-5 lg:px-7 lg:pb-8 lg:pt-5">
-          <div className="mb-3 flex items-center justify-between gap-2 rounded-md border border-cream-200 bg-cream-50 px-3 py-3 shadow-[0_8px_22px_rgba(7,60,57,0.055)] lg:hidden">
-            <div className="flex min-w-0 items-center gap-2">
+          <div className="mb-3 flex min-h-14 items-center justify-between gap-2 rounded-md border border-cream-200 bg-cream-50 px-2.5 py-2 shadow-[0_8px_22px_rgba(7,60,57,0.055)] sm:px-3 lg:hidden">
+            <div className="flex min-w-0 shrink-0 items-center gap-1.5">
               {showBackButton && (
                 <button
                   type="button"
                   onClick={goBack}
-                  className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-primary-700 hover:bg-primary-50"
+                  className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-primary-700 hover:bg-primary-50"
                   aria-label="Quay lại"
                   title="Quay lại"
                 >
@@ -140,13 +151,18 @@ export function AppShell({
               )}
               <Brand compact />
             </div>
-            <div className="flex shrink-0 items-center gap-1">
-              {showHeaderUtilities && <AccessibilityTextToggle compact />}
-              {showHeaderUtilities && <InstallAppButton compact className="hidden min-[360px]:inline-flex" />}
+            <div className="flex min-w-0 flex-1 items-center justify-end gap-1">
+              {showHeaderUtilities && (
+                <span className="hidden min-[430px]:inline-flex">
+                  <AccessibilityTextToggle compact />
+                </span>
+              )}
+              {showHeaderUtilities && <InstallAppButton compact className="hidden min-[500px]:inline-flex" />}
+              <ProfileQuickSwitch profiles={profiles} currentMabn={currentMabn} variant="header" />
               <button
                 type="button"
                 onClick={logout}
-                className="inline-flex h-11 w-11 items-center justify-center rounded-md text-rose-700 hover:bg-rose-50"
+                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-rose-700 hover:bg-rose-50"
                 aria-label="Đăng xuất"
               >
                 <LogOut aria-hidden="true" className="h-5 w-5" />
@@ -160,12 +176,15 @@ export function AppShell({
       <FloatingSupportActions />
 
       <nav className="safe-bottom fixed inset-x-0 bottom-0 z-20 border-t border-cream-200 bg-cream-50/95 backdrop-blur lg:hidden" aria-label="Điều hướng dưới">
-        <div className="grid grid-cols-6">
+        <div className="grid grid-cols-5">
           <BottomLink item={decoratedPrimaryItems[0]} label="Trang chủ" active={pathname.startsWith("/dashboard")} />
           <BottomLink item={decoratedPrimaryItems[1]} label="Hôm nay" active={pathname.startsWith("/today-visit")} />
-          <BottomLink item={decoratedPrimaryItems[3]} label="Lịch sử" active={pathname.startsWith("/visits")} />
-          <BottomLink item={decoratedPrimaryItems[4]} label="Xét nghiệm" active={pathname.startsWith("/lab-results")} />
-          <BottomLink item={decoratedPrimaryItems[5]} label="CĐHA" active={pathname.startsWith("/imaging")} />
+          <BottomLink item={decoratedPrimaryItems[2]} label="Đăng ký" active={pathname.startsWith("/registrations")} />
+          <BottomLink
+            item={{ href: "/health-tracking", label: "Hồ sơ y tế", shortLabel: "Hồ sơ", icon: Activity }}
+            label="Hồ sơ"
+            active={["/health-tracking", "/visits", "/lab-results", "/imaging", "/prescriptions", "/insurance"].some((prefix) => pathname.startsWith(prefix))}
+          />
           <BottomLink item={accountItem} label="Tài khoản" active={pathname.startsWith("/profile")} />
         </div>
       </nav>
@@ -173,11 +192,145 @@ export function AppShell({
   );
 }
 
+function ProfileQuickSwitch({
+  profiles,
+  currentMabn,
+  variant,
+}: {
+  profiles: PatientSessionProfile[];
+  currentMabn: string;
+  variant: "header" | "sidebar";
+}) {
+  const [open, setOpen] = useState(false);
+  const [loadingMabn, setLoadingMabn] = useState<string | null>(null);
+  const [message, setMessage] = useState("");
+  const currentProfile = profiles.find((profile) => profile.mabn === currentMabn) ?? profiles[0];
+
+  if (!profiles.length || !currentProfile) return null;
+
+  async function selectProfile(mabn: string) {
+    if (mabn === currentMabn) {
+      setOpen(false);
+      return;
+    }
+
+    setMessage("");
+    setLoadingMabn(mabn);
+    try {
+      const response = await fetch("/api/account/select-profile", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mabn }),
+      });
+      const body = (await response.json().catch(() => null)) as { error?: string } | null;
+
+      if (!response.ok) {
+        setMessage(body?.error ?? "Không đổi được hồ sơ.");
+        return;
+      }
+
+      setOpen(false);
+      window.location.assign("/dashboard");
+    } finally {
+      setLoadingMabn(null);
+    }
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className={
+          variant === "sidebar"
+            ? "mt-4 flex w-full items-center justify-between gap-2 rounded-md border border-primary-100 bg-primary-50/80 px-3 py-2.5 text-left text-primary-900 shadow-sm hover:border-primary-200"
+            : "inline-flex h-10 min-w-0 max-w-[11rem] flex-1 items-center gap-1.5 rounded-md border border-primary-100 bg-primary-50 px-2 text-primary-800 shadow-sm hover:border-primary-200 sm:max-w-[14rem] sm:flex-none"
+        }
+        aria-label="Đổi hồ sơ y tế đang xem"
+        aria-expanded={open}
+        title="Đổi hồ sơ y tế"
+      >
+        <span className="min-w-0">
+          <span className={variant === "sidebar" ? "block text-xs font-bold uppercase text-primary-700" : "sr-only"}>Hồ sơ đang xem</span>
+          <span className="block truncate text-xs font-black sm:text-sm">{currentProfile.fullName || "Hồ sơ"}</span>
+          <span className="clinical-mono block truncate text-xs font-bold text-slate-600">BN {currentProfile.mabn}</span>
+        </span>
+        <ChevronsUpDown aria-hidden="true" className="h-4 w-4 shrink-0" />
+      </button>
+
+      {open ? (
+        <div
+          className="fixed inset-0 z-50 flex items-end bg-black/35 px-3 pb-[calc(env(safe-area-inset-bottom)+1rem)] pt-8 backdrop-blur-[2px] lg:items-center lg:justify-center"
+          onClick={() => setOpen(false)}
+        >
+          <section
+            className="mx-auto max-h-[82vh] w-full max-w-lg overflow-hidden rounded-t-2xl border border-cream-200 bg-cream-50 shadow-[0_24px_60px_rgba(7,60,57,0.24)] lg:rounded-2xl"
+            aria-label="Đổi hồ sơ y tế đang xem"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-cream-200 px-4 py-3">
+              <div>
+                <h2 className="font-serif text-lg font-black text-ink">Đổi hồ sơ y tế</h2>
+                <p className="clinical-mono mt-0.5 text-xs font-semibold text-slate-500">{profiles.length} hồ sơ đã liên kết</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setOpen(false)}
+                className="inline-flex h-10 w-10 items-center justify-center rounded-full text-slate-500 hover:bg-cream-100 hover:text-ink"
+                aria-label="Đóng đổi hồ sơ"
+              >
+                <X aria-hidden="true" className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="grid max-h-[65vh] gap-3 overflow-auto p-4">
+              {profiles.map((profile) => {
+                const active = profile.mabn === currentMabn;
+                return (
+                  <button
+                    key={profile.mabn}
+                    type="button"
+                    onClick={() => selectProfile(profile.mabn)}
+                    disabled={loadingMabn !== null}
+                    className={`flex min-h-20 items-center justify-between gap-3 rounded-md border p-3 text-left transition disabled:cursor-wait ${
+                      active ? "border-primary-200 bg-primary-50/80" : "border-cream-200 bg-white/80 hover:border-primary-200 hover:bg-primary-50/60"
+                    }`}
+                  >
+                    <span className="min-w-0">
+                      <span className="block truncate font-serif text-lg font-black leading-6 text-ink">{profile.fullName || `Mã BN ${profile.mabn}`}</span>
+                      <span className="clinical-mono mt-1 block text-sm font-bold text-slate-600">Mã BN: {profile.mabn}</span>
+                      {profile.relationship ? <span className="mt-1 block text-sm font-semibold text-slate-500">{profile.relationship}</span> : null}
+                    </span>
+                    <span className="inline-flex min-w-20 shrink-0 items-center justify-center gap-1 rounded-md bg-white px-3 py-2 text-sm font-black text-primary-700 ring-1 ring-primary-100">
+                      {loadingMabn === profile.mabn ? (
+                        <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" />
+                      ) : active ? (
+                        <>
+                          <CheckCircle2 aria-hidden="true" className="h-4 w-4" />
+                          Đang xem
+                        </>
+                      ) : (
+                        "Chọn"
+                      )}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {message ? <p className="mx-4 mb-4 rounded-md bg-amber-100 px-3 py-2 text-sm font-semibold text-amber-900">{message}</p> : null}
+          </section>
+        </div>
+      ) : null}
+    </>
+  );
+}
+
 function Brand({ compact = false }: { compact?: boolean }) {
   return (
     <div className="flex items-center gap-3">
-      <BrandLogo size={compact ? 38 : 44} />
-      <div className="min-w-0">
+      <BrandLogo size={compact ? 34 : 44} />
+      <div className={`min-w-0 ${compact ? "hidden min-[520px]:block" : ""}`}>
         <p className="truncate text-sm font-bold text-ink">Bệnh viện Đa khoa An Phú</p>
         {!compact && <p className="mt-0.5 text-xs font-semibold uppercase text-primary-700">Cổng thông tin bệnh nhân</p>}
       </div>

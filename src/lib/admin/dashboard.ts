@@ -17,6 +17,7 @@ export interface AdminRow {
   status?: string;
   entity?: "account" | "profile" | "booking" | "sync";
   target?: Record<string, string>;
+  details?: Record<string, string>;
   actions?: AdminRowAction[];
 }
 
