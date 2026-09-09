@@ -31,6 +31,7 @@ Ngày cập nhật: 09/09/2026
   - `PatientPortal__NotificationOutboxAutoSendEnabled=false`;
   - `ZALO_BOOKING_CONFIRMED_TEMPLATE_ID=628108`.
 - Oracle script: `deploy/oracle/hgsoft_soyba_dangkykham_online.sql`
+  - thêm `MAVAOVIEN` để HIS ghi ngược mã vào viện/lượt tiếp đón sau khi lưu đăng ký online;
   - thêm `TRANGTHAI_ZALO`;
   - thêm `NGAYGUI_ZALO`;
   - thêm `LOI_ZALO`.

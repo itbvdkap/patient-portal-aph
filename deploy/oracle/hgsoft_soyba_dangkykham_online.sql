@@ -24,6 +24,22 @@ begin
     from all_tab_columns
    where owner = 'HGSOFT_SOYBA'
      and table_name = 'DANGKYKHAM'
+     and column_name = 'MAVAOVIEN';
+
+  if v_count = 0 then
+    execute immediate 'alter table hgsoft_soyba.dangkykham add (mavaovien number)';
+  end if;
+end;
+/
+
+declare
+  v_count number;
+begin
+  select count(*)
+    into v_count
+    from all_tab_columns
+   where owner = 'HGSOFT_SOYBA'
+     and table_name = 'DANGKYKHAM'
      and column_name = 'TRANGTHAI_ZALO';
 
   if v_count = 0 then
