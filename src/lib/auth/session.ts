@@ -1,10 +1,13 @@
 import type { ReadonlyRequestCookies } from "next/dist/server/web/spec-extension/adapters/request-cookies";
 import { createHmac, randomUUID, timingSafeEqual } from "crypto";
 import { demoPatientCode, demoSessionCookie } from "@/lib/auth/demo-auth";
+import { isPatientBranchCode, patientBranchName, type PatientBranchCode } from "@anphu/patient-domain";
 
 export interface PatientSessionProfile {
   mabn: string;
   patientId: string;
+  branchCode: PatientBranchCode;
+  branchName: string;
   fullName?: string;
   relationship?: string;
 }
@@ -13,6 +16,8 @@ export interface AuthenticatedPatientSession {
   patientId: string;
   userId: string;
   mabn: string;
+  branchCode: PatientBranchCode;
+  branchName: string;
   sessionId?: string;
   accountId?: string;
   accountKey?: string;
@@ -22,27 +27,30 @@ export interface AuthenticatedPatientSession {
 
 interface PatientSessionPayload {
   mabn?: string;
+  branchCode?: string;
   exp: number;
   sid?: string;
   accountId?: string;
   accountKey?: string;
   phone?: string;
-  profiles?: Array<{ mabn: string; fullName?: string; relationship?: string }>;
+  profiles?: Array<{ mabn: string; branchCode?: string; branchName?: string; fullName?: string; relationship?: string }>;
 }
 
 export function createPatientSessionCookie(
   hisPatientCode: string,
   maxAgeSeconds: number,
-  options: { sessionId?: string; accountId?: string; accountKey?: string; phone?: string; profiles?: Array<{ mabn: string; fullName?: string; relationship?: string }> } = {},
+  options: { sessionId?: string; accountId?: string; accountKey?: string; phone?: string; branchCode?: PatientBranchCode; profiles?: Array<{ mabn: string; branchCode?: string; branchName?: string; fullName?: string; relationship?: string }> } = {},
 ) {
+  const branchCode = normalizeBranchCode(options.branchCode);
   const payload: PatientSessionPayload = {
     mabn: hisPatientCode || undefined,
+    branchCode,
     exp: Math.floor(Date.now() / 1000) + maxAgeSeconds,
     sid: options.sessionId ?? randomUUID(),
     accountId: options.accountId,
     accountKey: options.accountKey,
     phone: options.phone,
-    profiles: normalizeProfiles(options.profiles ?? [{ mabn: hisPatientCode }]),
+    profiles: normalizeProfiles(options.profiles ?? [{ mabn: hisPatientCode, branchCode }]),
   };
   const encodedPayload = Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
   return `${encodedPayload}.${sign(encodedPayload)}`;
@@ -57,6 +65,7 @@ export function getDemoPatientSession(cookies: ReadonlyRequestCookies): Authenti
 
   const payload = readSignedPayload(cookieValue);
   const hisPatientCode = payload?.mabn ?? readDevelopmentMabn(cookieValue);
+  const branchCode = normalizeBranchCode(payload?.branchCode);
 
   const accountId = payload?.accountId;
 
@@ -66,13 +75,15 @@ export function getDemoPatientSession(cookies: ReadonlyRequestCookies): Authenti
 
   const profiles = normalizeProfiles(payload?.profiles ?? (hisPatientCode ? [{ mabn: hisPatientCode }] : [])).map((profile) => ({
     ...profile,
-    patientId: `his-${profile.mabn}`,
+    patientId: branchPatientId(profile.branchCode, profile.mabn),
   }));
 
   return {
-    patientId: hisPatientCode ? `his-${hisPatientCode}` : "",
+    patientId: hisPatientCode ? branchPatientId(branchCode, hisPatientCode) : "",
     userId: accountId ? `account-${accountId}` : payload?.accountKey ? `account-${payload.accountKey}` : `patient-${hisPatientCode}`,
     mabn: hisPatientCode ?? "",
+    branchCode,
+    branchName: patientBranchName(branchCode),
     sessionId: payload?.sid,
     accountId,
     accountKey: payload?.accountKey,
@@ -124,22 +135,35 @@ function verifySignature(value: string, signature: string) {
   return expected.length === actual.length && timingSafeEqual(expected, actual);
 }
 
-function normalizeProfiles(profiles: Array<{ mabn: string; fullName?: string; relationship?: string }>) {
+function normalizeProfiles(profiles: Array<{ mabn: string; branchCode?: string; branchName?: string; fullName?: string; relationship?: string }>) {
   const seen = new Set<string>();
-  const result: Array<{ mabn: string; fullName?: string; relationship?: string }> = [];
+  const result: Array<{ mabn: string; branchCode: PatientBranchCode; branchName: string; fullName?: string; relationship?: string }> = [];
 
   for (const profile of profiles) {
     const mabn = profile.mabn?.trim();
-    if (!mabn || seen.has(mabn)) continue;
-    seen.add(mabn);
+    const branchCode = normalizeBranchCode(profile.branchCode);
+    const key = `${branchCode}:${mabn}`;
+    if (!mabn || seen.has(key)) continue;
+    seen.add(key);
     result.push({
       mabn,
+      branchCode,
+      branchName: profile.branchName?.trim() || patientBranchName(branchCode),
       ...(profile.fullName ? { fullName: profile.fullName } : {}),
       ...(profile.relationship ? { relationship: profile.relationship } : {}),
     });
   }
 
   return result;
+}
+
+function normalizeBranchCode(value: unknown): PatientBranchCode {
+  return isPatientBranchCode(value) ? value : "CN1";
+}
+
+export function branchPatientId(branchCode: PatientBranchCode | string, mabn: string) {
+  const normalizedBranchCode = normalizeBranchCode(branchCode);
+  return `his-${normalizedBranchCode}-${mabn}`;
 }
 
 function sessionSecret() {

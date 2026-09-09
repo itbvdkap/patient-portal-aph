@@ -33,7 +33,7 @@ export async function POST(request: Request) {
 
     const { accountId } = await upsertVerifiedPortalAccount({ phone, fullName: parsed.data.fullName });
     const maxAge = 60 * 60 * 24 * 30;
-    const { sessionId, accountKey, profiles } = await recordPortalPasswordLogin({
+    const { sessionId, accountKey, branchCode, profiles } = await recordPortalPasswordLogin({
       accountId,
       phone,
       request,
@@ -49,6 +49,7 @@ export async function POST(request: Request) {
         accountId,
         accountKey,
         phone,
+        branchCode,
         profiles,
       }),
       {

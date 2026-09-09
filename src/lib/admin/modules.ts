@@ -283,6 +283,7 @@ export interface AdminBookingDetail {
 export interface AdminProfileDetail {
   mabn: string;
   links: Record<string, unknown>[];
+  branchMappings: Record<string, unknown>[];
   snapshots: Record<string, unknown>[];
   syncJobs: Record<string, unknown>[];
   warnings: string[];
@@ -2104,15 +2105,24 @@ export async function getAdminBookingDetail(bookingId: string): Promise<AdminBoo
 export async function getAdminProfileDetail(mabn: string): Promise<AdminProfileDetail> {
   const warnings: string[] = [];
   const key = decodeURIComponent(mabn).trim();
-  if (!key) return { mabn: "", links: [], snapshots: [], syncJobs: [], warnings: ["Thiếu mã bệnh nhân."] };
+  if (!key) return { mabn: "", links: [], branchMappings: [], snapshots: [], syncJobs: [], warnings: ["Thiếu mã bệnh nhân."] };
 
-  const [links, snapshots, syncJobs] = await Promise.all([
+  const [links, branchMappings, snapshots, syncJobs] = await Promise.all([
     readFilteredSupabaseRows(
       "portal_account_profiles",
       "account_key,account_id,mabn,display_name,patient_name,relationship,is_default,is_active,verified_at,linked_at,last_selected_at",
       "mabn",
       key,
       "linked_at",
+      warnings,
+      80,
+    ),
+    readFilteredSupabaseRows(
+      "portal_patient_branch_mappings",
+      "id,account_key,identity_hash,branch_code,his_mabn,patient_name,source,verified_at,last_seen_at,created_at,updated_at",
+      "his_mabn",
+      key,
+      "updated_at",
       warnings,
       80,
     ),
@@ -2136,7 +2146,7 @@ export async function getAdminProfileDetail(mabn: string): Promise<AdminProfileD
     ),
   ]);
 
-  return { mabn: key, links, snapshots, syncJobs, warnings };
+  return { mabn: key, links, branchMappings, snapshots, syncJobs, warnings };
 }
 
 export async function getAdminSyncJobDetail(jobId: string): Promise<AdminSyncJobDetail> {

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { CalendarPlus } from "lucide-react";
 import { Badge, EmptyState, PageHeader, Panel, SectionHeader } from "@/components/ui";
 import { createPatientRepository } from "@/lib/data";
+import type { Registration } from "@/types/patient";
 import { formatDateTime } from "@/utils/format";
 
 type SearchParams = Record<string, string | string[] | undefined>;
@@ -27,6 +28,67 @@ function statusBucket(status: string, registeredAt: string, today: Date) {
 function normalizeFilter(value: string | string[] | undefined) {
   const raw = Array.isArray(value) ? value[0] : value;
   return raw && ["all", "pending", "waiting", "active", "done", "other"].includes(raw) ? raw : "all";
+}
+
+function isGenericDepartmentName(value: string) {
+  const normalized = value.trim().toLowerCase();
+  return !normalized || normalized === "tiếp đón/kcb" || normalized === "tiep don/kcb" || normalized.includes("chưa ghi nhận");
+}
+
+function getRegistrationDisplay(registration: Registration, today: Date) {
+  const hasTicket = Boolean(registration.ticketNumber?.trim());
+  const hasDepartmentCode = Boolean(registration.departmentCode?.trim());
+  const hasDepartmentName = !isGenericDepartmentName(registration.departmentName);
+  const hasDepartment = hasDepartmentCode || hasDepartmentName;
+  const departmentTitle = hasDepartmentName ? registration.departmentName : `Phòng khám mã ${registration.departmentCode}`;
+  const isFutureOrToday = new Date(registration.registeredAt) >= today;
+  const isFollowUpFallback = !hasTicket && !hasDepartment && registration.id === registration.visitId;
+
+  if (hasTicket && hasDepartment) {
+    return {
+      title: departmentTitle,
+      detail: `STT khám: ${registration.ticketNumber}`,
+      alert: "",
+    };
+  }
+
+  if (hasDepartment) {
+    return {
+      title: departmentTitle,
+      detail: "STT khám: Đang chờ HIS cấp số",
+      alert: "Đã có phòng khám, hệ thống đang chờ cập nhật STT khám từ HIS.",
+    };
+  }
+
+  if (hasTicket) {
+    return {
+      title: "Đang chờ cập nhật phòng khám",
+      detail: `STT khám: ${registration.ticketNumber}`,
+      alert: "Đã có STT khám, hệ thống đang chờ cập nhật tên phòng từ HIS.",
+    };
+  }
+
+  if (isFutureOrToday && isFollowUpFallback) {
+    return {
+      title: "Chờ bệnh viện tiếp nhận trên HIS",
+      detail: "STT/phòng khám: Chưa có",
+      alert: "Sau khi quầy tiếp nhận xử lý trên HIS, STT và phòng khám sẽ tự cập nhật.",
+    };
+  }
+
+  if (!isFutureOrToday) {
+    return {
+      title: "Chưa ghi nhận phòng khám",
+      detail: "STT khám: Chưa ghi nhận",
+      alert: "",
+    };
+  }
+
+  return {
+    title: "Đã tiếp nhận, đang chờ cấp STT/phòng khám",
+    detail: "STT/phòng khám: Đang cập nhật",
+    alert: "HIS đã có lượt đăng ký nhưng chưa trả đủ STT hoặc phòng khám.",
+  };
 }
 
 export default async function RegistrationsPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
@@ -86,9 +148,14 @@ export default async function RegistrationsPage({ searchParams }: { searchParams
         <Panel className="mb-4 border-amber-200 bg-amber-50/80 shadow-none">
           <p className="text-sm font-bold text-amber-950">Có lượt đăng ký chưa khám</p>
           <p className="mt-1 text-sm leading-6 text-amber-900">
-            {formatDateTime(nextPendingRegistration.registeredAt)} · {nextPendingRegistration.departmentName}
-            {nextPendingRegistration.ticketNumber ? ` · STT ${nextPendingRegistration.ticketNumber}` : ""}
+            {nextPendingRegistration.branchName ? `${nextPendingRegistration.branchName} · ` : ""}{formatDateTime(nextPendingRegistration.registeredAt)} · {getRegistrationDisplay(nextPendingRegistration, today).title} ·{" "}
+            {getRegistrationDisplay(nextPendingRegistration, today).detail}
           </p>
+          {getRegistrationDisplay(nextPendingRegistration, today).alert ? (
+            <p className="mt-2 rounded-md bg-white/65 px-3 py-2 text-xs font-semibold leading-5 text-amber-900">
+              {getRegistrationDisplay(nextPendingRegistration, today).alert}
+            </p>
+          ) : null}
         </Panel>
       )}
 
@@ -116,28 +183,34 @@ export default async function RegistrationsPage({ searchParams }: { searchParams
           <EmptyState text="Không có lượt đăng ký phù hợp với bộ lọc đang chọn." />
         ) : (
           <div className="grid gap-2">
-            {filteredRegistrations.map((registration) => (
-              <a
-                key={registration.id}
-                href={`/visits/${registration.visitId}`}
-                className="block rounded-md border border-cream-200 bg-white/85 p-3 shadow-[0_8px_18px_rgba(7,60,57,0.04)] transition hover:border-primary-200 hover:bg-primary-50"
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <p className="clinical-mono text-sm font-black text-ink">{formatDateTime(registration.registeredAt)}</p>
-                    <p className="mt-1 line-clamp-1 text-sm font-black text-slate-800">{registration.departmentName || "Chưa ghi nhận phòng"}</p>
-                    <p className="mt-1 line-clamp-1 text-xs font-semibold text-slate-500">
-                      STT: {registration.ticketNumber || "Chưa ghi nhận"}
-                      {registration.reason || registration.notes ? ` · ${[registration.reason, registration.notes].filter(Boolean).join(" · ")}` : ""}
-                    </p>
+            {filteredRegistrations.map((registration) => {
+              const display = getRegistrationDisplay(registration, today);
+
+              return (
+                <a
+                  key={registration.id}
+                  href={`/visits/${registration.visitId}`}
+                  className="block rounded-md border border-cream-200 bg-white/85 p-3 shadow-[0_8px_18px_rgba(7,60,57,0.04)] transition hover:border-primary-200 hover:bg-primary-50"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="clinical-mono text-sm font-black text-ink">{formatDateTime(registration.registeredAt)}</p>
+                      {registration.branchName ? <p className="mt-1 text-xs font-black text-primary-700">{registration.branchName}</p> : null}
+                      <p className="mt-1 line-clamp-1 text-sm font-black text-slate-800">{display.title}</p>
+                      <p className="mt-1 line-clamp-1 text-xs font-semibold text-slate-500">
+                        {display.detail}
+                        {registration.reason || registration.notes ? ` · ${[registration.reason, registration.notes].filter(Boolean).join(" · ")}` : ""}
+                      </p>
+                      {display.alert ? <p className="mt-2 rounded-md bg-amber-50 px-2 py-1.5 text-xs font-semibold leading-5 text-amber-900">{display.alert}</p> : null}
+                    </div>
+                    <div className="flex shrink-0 flex-col items-end gap-1">
+                      <Badge tone={statusTone(registration.status)}>{registration.status}</Badge>
+                      {registration.payerTypeName ? <Badge tone={isBhytPayer(registration.payerTypeName) ? "green" : "slate"}>{registration.payerTypeName}</Badge> : null}
+                    </div>
                   </div>
-                  <div className="flex shrink-0 flex-col items-end gap-1">
-                    <Badge tone={statusTone(registration.status)}>{registration.status}</Badge>
-                    {registration.payerTypeName ? <Badge tone={isBhytPayer(registration.payerTypeName) ? "green" : "slate"}>{registration.payerTypeName}</Badge> : null}
-                  </div>
-                </div>
-              </a>
-            ))}
+                </a>
+              );
+            })}
           </div>
         )}
       </Panel>

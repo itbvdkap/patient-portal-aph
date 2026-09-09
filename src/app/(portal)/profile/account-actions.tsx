@@ -2,11 +2,16 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { CheckCircle2, ChevronUp, IdCard, Loader2, LogOut, Phone, Plus, Search, ShieldAlert, Smartphone, Trash2, UserRound, X } from "lucide-react";
-import type { AccountDeviceSession, AccountPatientProfile } from "@/lib/account/portal-account";
+import { CheckCircle2, ChevronUp, IdCard, KeyRound, Loader2, LogOut, Pencil, Phone, Plus, Save, Search, ShieldAlert, Smartphone, Trash2, UserRound, X } from "lucide-react";
+import type { AccountDeviceSession, AccountIdentity, AccountPatientProfile } from "@/lib/account/portal-account";
+import { PATIENT_BRANCHES, type PatientBranchCode } from "@anphu/patient-domain";
 import { formatDateTime } from "@/utils/format";
 
 const relationshipOptions = ["Bản thân", "Con", "Cha/Mẹ", "Vợ/Chồng", "Anh/Chị/Em", "Ông/Bà", "Người giám hộ", "Người thân", "Khác"];
+
+function profileKey(profile: { mabn: string; branchCode?: string }) {
+  return `${profile.branchCode ?? "CN1"}:${profile.mabn}`;
+}
 
 function vnDateToIso(value: string) {
   const trimmed = value.trim();
@@ -28,23 +33,232 @@ function formatVnDateInput(value: string) {
   return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
 }
 
+export function AccountIdentityForm({ identity, accountName, phone }: { identity?: AccountIdentity; accountName: string; phone: string }) {
+  const router = useRouter();
+  const [editing, setEditing] = useState(false);
+  const [fullName, setFullName] = useState(accountName);
+  const [message, setMessage] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  async function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setMessage("");
+    setSubmitting(true);
+
+    try {
+      const response = await fetch("/api/account/profile", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fullName }),
+      });
+      const body = (await response.json().catch(() => null)) as { error?: string } | null;
+
+      if (!response.ok) {
+        setMessage(body?.error ?? "Chưa cập nhật được thông tin tài khoản.");
+        return;
+      }
+
+      setEditing(false);
+      setMessage("Đã cập nhật thông tin tài khoản.");
+      router.refresh();
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  function cancel() {
+    setFullName(accountName);
+    setMessage("");
+    setEditing(false);
+  }
+
+  return (
+    <form onSubmit={submit} className="mt-3 rounded-md border border-primary-100 bg-primary-50/50 p-3">
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-sm font-black text-ink">Tên hiển thị trong app</p>
+          <p className="mt-0.5 text-xs font-semibold leading-5 text-slate-600">Không thay đổi dữ liệu hồ sơ y tế/HIS.</p>
+        </div>
+        {!editing ? (
+          <button
+            type="button"
+            onClick={() => setEditing(true)}
+            className="inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-md bg-primary-700 px-3 text-sm font-bold text-white hover:bg-primary-800"
+          >
+            <Pencil aria-hidden="true" className="h-4 w-4" />
+            Sửa
+          </button>
+        ) : null}
+      </div>
+
+      {editing ? (
+        <div className="mt-3 grid gap-3">
+          <label className="grid gap-1.5 text-sm font-bold text-ink">
+            Tên tài khoản
+            <input
+              value={fullName}
+              onChange={(event) => setFullName(event.target.value)}
+              className="h-11 rounded-md border border-cream-200 bg-white/90 px-3 text-base font-semibold outline-none focus:border-primary-600 focus:ring-2 focus:ring-primary-100"
+              autoComplete="name"
+              required
+            />
+          </label>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="submit"
+              disabled={submitting}
+              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-md bg-primary-700 px-4 text-sm font-bold text-white hover:bg-primary-800 disabled:cursor-not-allowed disabled:opacity-70"
+            >
+              {submitting ? <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" /> : <Save aria-hidden="true" className="h-4 w-4" />}
+              Lưu
+            </button>
+            <button
+              type="button"
+              onClick={cancel}
+              disabled={submitting}
+              className="inline-flex min-h-10 items-center justify-center rounded-md border border-cream-200 bg-white px-4 text-sm font-bold text-slate-700 hover:bg-cream-50 disabled:cursor-not-allowed disabled:opacity-70"
+            >
+              Hủy
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {message ? (
+        <p className={`mt-3 rounded-md px-3 py-2 text-sm font-semibold leading-6 ${message.startsWith("Đã") ? "bg-white text-primary-800" : "bg-amber-100 text-amber-900"}`}>
+          {message}
+        </p>
+      ) : null}
+
+      {identity?.phoneVerifiedAt || editing ? null : (
+        <p className="mt-3 rounded-md bg-amber-50 px-3 py-2 text-xs font-semibold leading-5 text-amber-900">
+          Số điện thoại tài khoản {phone ? `(${phone}) ` : ""}chưa được xác minh.
+        </p>
+      )}
+    </form>
+  );
+}
+
+export function ChangePasswordForm({ hasPassword }: { hasPassword: boolean }) {
+  const router = useRouter();
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [message, setMessage] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  async function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setMessage("");
+
+    if (newPassword !== confirmPassword) {
+      setMessage("Mật khẩu nhập lại chưa khớp.");
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const response = await fetch("/api/account/change-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ currentPassword, newPassword }),
+      });
+      const body = (await response.json().catch(() => null)) as { error?: string } | null;
+
+      if (!response.ok) {
+        setMessage(body?.error ?? "Chưa đổi được mật khẩu.");
+        return;
+      }
+
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+      setMessage("Đã cập nhật mật khẩu.");
+      router.refresh();
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <form onSubmit={submit} className="grid gap-3">
+      <p className="text-sm font-semibold leading-6 text-slate-600">
+        {hasPassword ? "Nhập mật khẩu hiện tại để đổi sang mật khẩu mới." : "Tài khoản chưa có mật khẩu. Bạn có thể tạo mật khẩu mới ngay tại đây."}
+      </p>
+      {hasPassword ? (
+        <label className="grid gap-1.5 text-sm font-bold text-ink">
+          Mật khẩu hiện tại
+          <input
+            type="password"
+            value={currentPassword}
+            onChange={(event) => setCurrentPassword(event.target.value)}
+            className="h-11 rounded-md border border-cream-200 bg-white/90 px-3 text-base font-semibold outline-none focus:border-primary-600 focus:ring-2 focus:ring-primary-100"
+            autoComplete="current-password"
+            required
+          />
+        </label>
+      ) : null}
+      <label className="grid gap-1.5 text-sm font-bold text-ink">
+        Mật khẩu mới
+        <input
+          type="password"
+          value={newPassword}
+          onChange={(event) => setNewPassword(event.target.value)}
+          className="h-11 rounded-md border border-cream-200 bg-white/90 px-3 text-base font-semibold outline-none focus:border-primary-600 focus:ring-2 focus:ring-primary-100"
+          autoComplete="new-password"
+          minLength={6}
+          required
+        />
+      </label>
+      <label className="grid gap-1.5 text-sm font-bold text-ink">
+        Nhập lại mật khẩu mới
+        <input
+          type="password"
+          value={confirmPassword}
+          onChange={(event) => setConfirmPassword(event.target.value)}
+          className="h-11 rounded-md border border-cream-200 bg-white/90 px-3 text-base font-semibold outline-none focus:border-primary-600 focus:ring-2 focus:ring-primary-100"
+          autoComplete="new-password"
+          minLength={6}
+          required
+        />
+      </label>
+
+      {message ? (
+        <p className={`rounded-md px-3 py-2 text-sm font-semibold leading-6 ${message.startsWith("Đã") ? "bg-primary-50 text-primary-800" : "bg-amber-100 text-amber-900"}`}>
+          {message}
+        </p>
+      ) : null}
+
+      <button
+        type="submit"
+        disabled={submitting || (hasPassword && !currentPassword) || !newPassword || !confirmPassword}
+        className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-md bg-primary-700 px-4 text-sm font-bold text-white hover:bg-primary-800 disabled:cursor-not-allowed disabled:opacity-70"
+      >
+        {submitting ? <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" /> : <KeyRound aria-hidden="true" className="h-4 w-4" />}
+        Cập nhật mật khẩu
+      </button>
+    </form>
+  );
+}
+
 export function ProfileSwitcher({ profiles }: { profiles: AccountPatientProfile[] }) {
   const router = useRouter();
-  const [loadingMabn, setLoadingMabn] = useState<string | null>(null);
-  const [removingMabn, setRemovingMabn] = useState<string | null>(null);
-  const [confirmRemoveMabn, setConfirmRemoveMabn] = useState<string | null>(null);
+  const [loadingKey, setLoadingKey] = useState<string | null>(null);
+  const [removingKey, setRemovingKey] = useState<string | null>(null);
+  const [confirmRemoveKey, setConfirmRemoveKey] = useState<string | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [message, setMessage] = useState("");
   const currentProfile = profiles.find((profile) => profile.isCurrent) ?? profiles[0];
 
-  async function selectProfile(mabn: string) {
+  async function selectProfile(profile: AccountPatientProfile) {
+    const key = profileKey(profile);
     setMessage("");
-    setLoadingMabn(mabn);
+    setLoadingKey(key);
     try {
       const response = await fetch("/api/account/select-profile", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mabn }),
+        body: JSON.stringify({ mabn: profile.mabn, branchCode: profile.branchCode }),
       });
 
       const body = (await response.json().catch(() => null)) as { error?: string } | null;
@@ -57,24 +271,25 @@ export function ProfileSwitcher({ profiles }: { profiles: AccountPatientProfile[
       router.refresh();
       router.push("/dashboard");
     } finally {
-      setLoadingMabn(null);
+      setLoadingKey(null);
     }
   }
 
-  async function removeProfile(mabn: string) {
-    if (confirmRemoveMabn !== mabn) {
-      setConfirmRemoveMabn(mabn);
+  async function removeProfile(profile: AccountPatientProfile) {
+    const key = profileKey(profile);
+    if (confirmRemoveKey !== key) {
+      setConfirmRemoveKey(key);
       setMessage("Bấm Gỡ liên kết một lần nữa để xác nhận.");
       return;
     }
 
     setMessage("");
-    setRemovingMabn(mabn);
+    setRemovingKey(key);
     try {
       const response = await fetch("/api/account/unlink-profile", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mabn }),
+        body: JSON.stringify({ mabn: profile.mabn, branchCode: profile.branchCode }),
       });
 
       const body = (await response.json().catch(() => null)) as { error?: string } | null;
@@ -85,8 +300,8 @@ export function ProfileSwitcher({ profiles }: { profiles: AccountPatientProfile[
 
       router.refresh();
     } finally {
-      setRemovingMabn(null);
-      setConfirmRemoveMabn(null);
+      setRemovingKey(null);
+      setConfirmRemoveKey(null);
     }
   }
 
@@ -105,7 +320,8 @@ export function ProfileSwitcher({ profiles }: { profiles: AccountPatientProfile[
             </span>
             <span className="min-w-0">
               <span className="block truncate font-serif text-lg font-black leading-6 text-ink">{currentProfile.fullName}</span>
-              <span className="clinical-mono mt-0.5 block text-sm font-bold text-slate-600">Mã BN: {currentProfile.mabn}</span>
+              <span className="mt-0.5 block text-sm font-black text-primary-700">{currentProfile.branchName}</span>
+              <span className="clinical-mono mt-0.5 block text-sm font-bold text-slate-600">{currentProfile.branchCode} · Mã BN: {currentProfile.mabn}</span>
               <span className="mt-0.5 block text-sm font-semibold text-slate-500">{currentProfile.relationship || "Hồ sơ liên kết"}</span>
             </span>
           </span>
@@ -146,7 +362,7 @@ export function ProfileSwitcher({ profiles }: { profiles: AccountPatientProfile[
             <div className="grid max-h-[65vh] gap-3 overflow-auto p-4">
               {profiles.map((profile) => (
                 <article
-                  key={profile.mabn}
+                  key={profileKey(profile)}
                   className={`rounded-md border p-3 ${
                     profile.isCurrent ? "border-primary-200 bg-primary-50/80" : "border-cream-200 bg-white/70"
                   }`}
@@ -162,30 +378,31 @@ export function ProfileSwitcher({ profiles }: { profiles: AccountPatientProfile[
                           </span>
                         ) : null}
                       </div>
-                      <p className="clinical-mono mt-1 text-sm font-bold text-slate-600">Mã BN: {profile.mabn}</p>
+                      <p className="mt-1 text-sm font-black text-primary-700">{profile.branchName}</p>
+                      <p className="clinical-mono mt-1 text-sm font-bold text-slate-600">{profile.branchCode} · Mã BN: {profile.mabn}</p>
                       {profile.relationship ? <p className="mt-1 text-sm font-semibold text-slate-500">{profile.relationship}</p> : null}
                     </div>
                     <div className="grid shrink-0 gap-2">
                       <button
                         type="button"
-                        onClick={() => selectProfile(profile.mabn)}
-                        disabled={profile.isCurrent || loadingMabn !== null || removingMabn !== null}
+                        onClick={() => selectProfile(profile)}
+                        disabled={profile.isCurrent || loadingKey !== null || removingKey !== null}
                         className="inline-flex min-h-10 items-center justify-center rounded-md bg-ink px-3 text-sm font-bold text-white hover:bg-primary-900 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
                       >
-                        {loadingMabn === profile.mabn ? <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" /> : profile.isCurrent ? "Đã chọn" : "Chọn"}
+                        {loadingKey === profileKey(profile) ? <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" /> : profile.isCurrent ? "Đã chọn" : "Chọn"}
                       </button>
                       <button
                         type="button"
-                        onClick={() => removeProfile(profile.mabn)}
-                        disabled={profiles.length <= 1 || loadingMabn !== null || removingMabn !== null}
+                        onClick={() => removeProfile(profile)}
+                        disabled={profiles.length <= 1 || loadingKey !== null || removingKey !== null}
                         className={`inline-flex min-h-10 items-center justify-center gap-1 rounded-md border px-3 text-sm font-bold transition disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400 ${
-                          confirmRemoveMabn === profile.mabn
+                          confirmRemoveKey === profileKey(profile)
                             ? "border-rose-700 bg-rose-700 text-white"
                             : "border-rose-200 bg-white text-rose-700 hover:bg-rose-50"
                         }`}
                       >
-                        {removingMabn === profile.mabn ? <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" /> : <Trash2 aria-hidden="true" className="h-4 w-4" />}
-                        {confirmRemoveMabn === profile.mabn ? "Xác nhận gỡ" : "Gỡ"}
+                        {removingKey === profileKey(profile) ? <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" /> : <Trash2 aria-hidden="true" className="h-4 w-4" />}
+                        {confirmRemoveKey === profileKey(profile) ? "Xác nhận gỡ" : "Gỡ"}
                       </button>
                     </div>
                   </div>
@@ -202,8 +419,11 @@ export function ProfileSwitcher({ profiles }: { profiles: AccountPatientProfile[
 export function LinkProfileForm() {
   const router = useRouter();
   const [mabn, setMabn] = useState("");
+  const [branchCode, setBranchCode] = useState<PatientBranchCode>("CN1");
   const [lookup, setLookup] = useState<{
     hisPatientCode: string;
+    branchCode?: PatientBranchCode;
+    branchName?: string;
     patientCodeMasked: string;
     fullName: string;
     phoneMasked: string;
@@ -230,12 +450,14 @@ export function LinkProfileForm() {
       const response = await fetch("/api/account/lookup-profile", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mabn }),
+        body: JSON.stringify({ mabn, branchCode }),
       });
       const body = (await response.json().catch(() => null)) as {
         error?: string;
         data?: {
           hisPatientCode: string;
+          branchCode?: PatientBranchCode;
+          branchName?: string;
           patientCodeMasked: string;
           fullName: string;
           phoneMasked: string;
@@ -274,7 +496,7 @@ export function LinkProfileForm() {
       const response = await fetch("/api/account/link-profile", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mabn, phone, citizenId, birthDate: normalizedBirthDate, relationship }),
+        body: JSON.stringify({ mabn, branchCode, phone, citizenId, birthDate: normalizedBirthDate, relationship }),
       });
       const body = (await response.json().catch(() => null)) as { error?: string; data?: { fullName?: string } } | null;
 
@@ -298,6 +520,26 @@ export function LinkProfileForm() {
 
   return (
     <form onSubmit={submit} className="grid gap-3">
+      <div className="grid gap-2 sm:grid-cols-2">
+        {PATIENT_BRANCHES.map((branch) => (
+          <button
+            key={branch.code}
+            type="button"
+            onClick={() => {
+              setBranchCode(branch.code);
+              setLookup(null);
+              setMessage("");
+            }}
+            className={`rounded-md border px-3 py-2 text-left text-sm font-black transition ${
+              branchCode === branch.code ? "border-primary-700 bg-primary-700 text-white" : "border-cream-200 bg-white text-ink hover:border-primary-200"
+            }`}
+          >
+            <span className="block">{branch.shortName}</span>
+            <span className={`mt-0.5 block text-xs font-semibold ${branchCode === branch.code ? "text-white/80" : "text-slate-500"}`}>{branch.location}</span>
+          </button>
+        ))}
+      </div>
+
       <label className="grid gap-1.5 text-sm font-bold text-ink">
         Mã bệnh nhân
         <span className="flex min-h-12 items-center gap-2 rounded-md border border-cream-200 bg-white/80 px-3 focus-within:border-primary-600 focus-within:ring-2 focus-within:ring-primary-100">
@@ -334,6 +576,7 @@ export function LinkProfileForm() {
             </span>
             <div className="min-w-0 flex-1">
               <h3 className="font-serif text-lg font-black uppercase leading-6 text-primary-800">{lookup.fullName}</h3>
+              <p className="mt-1 text-sm font-black text-primary-800">{lookup.branchName ?? PATIENT_BRANCHES.find((branch) => branch.code === branchCode)?.name}</p>
               <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
                 <dt className="font-semibold text-slate-500">Mã NB</dt>
                 <dd className="clinical-mono font-bold text-ink">{lookup.patientCodeMasked}</dd>

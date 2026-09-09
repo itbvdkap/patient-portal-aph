@@ -1,10 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import Script from "next/script";
 import {
   BadgeCheck,
-  Building2,
   Camera,
   CalendarDays,
   CheckCircle2,
@@ -24,15 +24,9 @@ import {
   X,
 } from "lucide-react";
 import { Badge, Panel, SectionHeader } from "@/components/ui";
-import { normalizeDisplayText } from "@anphu/patient-domain";
+import { isPatientBranchCode, normalizeDisplayText, PATIENT_BRANCHES, type PatientBranchCode } from "@anphu/patient-domain";
 
 const provinces = ["TP. Hồ Chí Minh", "TP. Đồng Nai", "Tây Ninh", "Lâm Đồng", "Đồng Tháp", "An Giang", "Khác"];
-
-const branches = [
-  "Bệnh viện An Phú CN1 - Thuận An",
-  "Bệnh viện An Phú CN2 - VSIP II (Dự kiến hoạt động 2026)",
-  "Phòng khám An Phú CN3 - Đồng Nai",
-];
 
 const departments = [
   "Nội khoa",
@@ -89,7 +83,7 @@ type BookingFormState = {
   province: string;
   ward: string;
   address: string;
-  branch: string;
+  branchCode: PatientBranchCode;
   soCCCD: string;
   ngayCap: string;
   appointmentDate: string;
@@ -112,7 +106,7 @@ const initialForm: BookingFormState = {
   province: "",
   ward: "",
   address: "",
-  branch: branches[0],
+  branchCode: "CN1",
   soCCCD: "",
   ngayCap: "",
   appointmentDate: "",
@@ -126,6 +120,7 @@ const initialForm: BookingFormState = {
 
 export type BookingPatientProfile = {
   oldPatientCode: string;
+  branchCode?: PatientBranchCode;
   fullName: string;
   phone?: string;
   birthDate?: string;
@@ -352,6 +347,7 @@ function parseCitizenQr(raw: string): CitizenQrData | null {
 }
 
 export function BookingForm({ linkedProfiles = [] }: { linkedProfiles?: BookingPatientProfile[] }) {
+  const searchParams = useSearchParams();
   const turnstileSiteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
   const [form, setForm] = useState<BookingFormState>(initialForm);
   const [patientMode, setPatientMode] = useState<"new" | "old">(linkedProfiles.length ? "old" : "new");
@@ -390,6 +386,13 @@ export function BookingForm({ linkedProfiles = [] }: { linkedProfiles?: BookingP
     setTodayIso(new Date().toISOString().slice(0, 10));
   }, []);
 
+  useEffect(() => {
+    const branchCode = searchParams.get("branch");
+    if (isPatientBranchCode(branchCode)) {
+      setForm((current) => (current.branchCode === branchCode ? current : { ...current, branchCode }));
+    }
+  }, [searchParams]);
+
   function update<K extends keyof BookingFormState>(key: K, value: BookingFormState[K]) {
     setForm((current) => ({ ...current, [key]: value }));
     setError("");
@@ -405,6 +408,7 @@ export function BookingForm({ linkedProfiles = [] }: { linkedProfiles?: BookingP
     setForm((current) => ({
       ...current,
       oldPatientCode: profile.oldPatientCode,
+      branchCode: profile.branchCode ?? current.branchCode,
       fullName: cleanDisplay(profile.fullName),
       phone: profile.phone ?? current.phone,
       birthDate: profile.birthDate ?? current.birthDate,
@@ -615,6 +619,8 @@ export function BookingForm({ linkedProfiles = [] }: { linkedProfiles?: BookingP
         </div>
       )}
 
+      <BranchSelector value={form.branchCode} onChange={(branchCode) => update("branchCode", branchCode)} />
+
       <BookingStepper step={step} />
 
       {step === 1 ? (
@@ -658,7 +664,12 @@ export function BookingForm({ linkedProfiles = [] }: { linkedProfiles?: BookingP
                     }`}
                   >
                     <span className="block font-serif text-base font-black text-ink">{cleanDisplay(profile.fullName)}</span>
-                    <span className="clinical-mono mt-1 block text-sm font-bold text-slate-600">Mã BN: {profile.oldPatientCode}</span>
+                    <span className="clinical-mono mt-1 block text-sm font-bold text-slate-600">
+                      {profile.branchCode ?? "CN1"} · Mã BN: {profile.oldPatientCode}
+                    </span>
+                    {profile.birthDate ? (
+                      <span className="mt-1 block text-sm font-bold text-slate-600">Ngày sinh: {profile.birthDate}</span>
+                    ) : null}
                   </button>
                 ))}
               </div>
@@ -909,19 +920,6 @@ export function BookingForm({ linkedProfiles = [] }: { linkedProfiles?: BookingP
         <SectionHeader title="Chọn lịch khám" meta="Express booking" />
         <div className="grid gap-4">
           <label>
-            <span className={labelClass()}>Chi nhánh</span>
-            <IconInput icon={Building2}>
-              <select className={inputClass(true)} value={form.branch} onChange={(event) => update("branch", event.target.value)}>
-                {branches.map((branch) => (
-                  <option key={branch} value={branch}>
-                    {cleanDisplay(branch)}
-                  </option>
-                ))}
-              </select>
-            </IconInput>
-          </label>
-
-          <label>
             <span className={labelClass()}>
               Ngày khám <RequiredMark />
             </span>
@@ -1073,6 +1071,28 @@ export function BookingForm({ linkedProfiles = [] }: { linkedProfiles?: BookingP
         </>
       ) : null}
     </form>
+  );
+}
+
+function BranchSelector({ value, onChange }: { value: PatientBranchCode; onChange: (value: PatientBranchCode) => void }) {
+  return (
+    <Panel className="border-primary-100 bg-primary-50/60">
+      <SectionHeader title="Chọn chi nhánh khám" meta="Bắt buộc trước khi đăng ký" />
+      <div className="grid gap-2 sm:grid-cols-2">
+        {PATIENT_BRANCHES.map((branch) => (
+          <ChoiceButton
+            key={branch.code}
+            label={`${branch.shortName} · ${branch.location}`}
+            selected={value === branch.code}
+            onClick={() => onChange(branch.code)}
+            wide
+          />
+        ))}
+      </div>
+      <p className="mt-2 text-xs font-semibold leading-5 text-primary-900">
+        Hệ thống sẽ lưu chi nhánh này vào phiếu đăng ký để agent CN1/CN3 xử lý đúng server HIS.
+      </p>
+    </Panel>
   );
 }
 

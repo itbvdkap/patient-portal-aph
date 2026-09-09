@@ -3,6 +3,8 @@ import { z } from "zod";
 export const patientSessionProfileSchema = z.object({
   mabn: z.string(),
   patientId: z.string(),
+  branchCode: z.string().default("CN1"),
+  branchName: z.string().optional(),
   fullName: z.string().optional(),
   relationship: z.string().optional(),
 });
@@ -13,6 +15,7 @@ export const mobileSessionSchema = z.object({
   accountKey: z.string().optional(),
   phoneMasked: z.string().optional(),
   currentMabn: z.string().optional(),
+  currentBranchCode: z.string().optional(),
   profiles: z.array(patientSessionProfileSchema).default([]),
 });
 

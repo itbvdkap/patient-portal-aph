@@ -7,6 +7,7 @@ import { createPatientSessionCookie, getDemoPatientSession } from "@/lib/auth/se
 
 const selectProfileSchema = z.object({
   mabn: z.string().trim().min(1).max(20),
+  branchCode: z.enum(["CN1", "CN3"]).optional().default("CN1"),
 });
 
 export async function POST(request: Request) {
@@ -20,7 +21,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Mã bệnh nhân không hợp lệ." }, { status: 400 });
   }
 
-  const profiles = await selectAccountProfile(session, parsed.data.mabn).catch(() => null);
+  const profiles = await selectAccountProfile(session, parsed.data).catch(() => null);
   if (!profiles) {
     return NextResponse.json({ error: "Hồ sơ này chưa được liên kết với tài khoản." }, { status: 403 });
   }
@@ -34,6 +35,7 @@ export async function POST(request: Request) {
       accountId: session.accountId,
       accountKey: session.accountKey,
       phone: session.phone,
+      branchCode: parsed.data.branchCode,
       profiles,
     }),
     {

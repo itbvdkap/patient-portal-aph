@@ -17,6 +17,7 @@ export async function GET() {
       accountKey: session.accountKey,
       phoneMasked: session.phone ? maskPhone(session.phone) : undefined,
       currentMabn: session.mabn || undefined,
+      currentBranchCode: session.branchCode,
       profiles: session.profiles,
     },
   });

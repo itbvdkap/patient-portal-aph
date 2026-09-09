@@ -69,7 +69,8 @@ export async function POST(request: Request) {
     const profiles = await getLinkedProfilesForAccount(accountId);
     const currentProfile = profiles.find((profile) => profile.isActive) ?? profiles[0];
     const mabn = currentProfile?.mabn ?? "";
-    const { sessionId, accountKey } = await recordPortalOtpLogin({ accountId, phone, mabn, request, maxAgeSeconds: maxAge });
+    const branchCode = currentProfile?.branchCode ?? "CN1";
+    const { sessionId, accountKey } = await recordPortalOtpLogin({ accountId, phone, mabn, branchCode, request, maxAgeSeconds: maxAge });
     const response = NextResponse.json({
       data: {
         accountId,
@@ -86,6 +87,7 @@ export async function POST(request: Request) {
         accountId,
         accountKey,
         phone,
+        branchCode,
         profiles,
       }),
       {
@@ -98,7 +100,7 @@ export async function POST(request: Request) {
     );
 
     if (mabn && process.env.PATIENT_DATA_MODE === "supabase") {
-      void enqueuePatientSync(mabn, "all").catch(() => undefined);
+      void enqueuePatientSync(mabn, "all", undefined, branchCode).catch(() => undefined);
     }
 
     return response;

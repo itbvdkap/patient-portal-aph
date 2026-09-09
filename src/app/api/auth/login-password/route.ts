@@ -31,7 +31,7 @@ export async function POST(request: Request) {
   }
 
   const maxAge = parsed.data.remember ? 60 * 60 * 24 * 30 : 60 * 60 * 8;
-  const { sessionId, accountKey, mabn, profiles } = await recordPortalPasswordLogin({
+  const { sessionId, accountKey, mabn, branchCode, profiles } = await recordPortalPasswordLogin({
     accountId: account.accountId,
     phone,
     request,
@@ -52,6 +52,7 @@ export async function POST(request: Request) {
       accountId: account.accountId,
       accountKey,
       phone,
+      branchCode,
       profiles,
     }),
     {
@@ -64,7 +65,7 @@ export async function POST(request: Request) {
   );
 
   if (mabn && process.env.PATIENT_DATA_MODE === "supabase") {
-    void enqueuePatientSync(mabn, "all").catch(() => undefined);
+    void enqueuePatientSync(mabn, "all", undefined, branchCode).catch(() => undefined);
   }
 
   return response;

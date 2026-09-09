@@ -117,6 +117,8 @@ export interface Registration {
   notes: string;
   payerTypeCode?: string;
   payerTypeName?: string;
+  branchCode?: string;
+  branchName?: string;
 }
 
 export interface ActiveService {
@@ -139,6 +141,21 @@ export interface TodayVisitStatus {
   currentStepText: string;
   registration?: Registration | null;
   services: ActiveService[];
+  queueStatus?: ClinicQueueStatus | null;
+}
+
+export interface ClinicQueueStatus {
+  departmentCode: string;
+  departmentName: string;
+  patientTicketNumber: string;
+  currentTicketNumber: string;
+  waitingAhead: number;
+  estimatedMinutes?: number | null;
+  estimatedText: string;
+  updatedAt: string;
+  source: string;
+  branchCode?: string;
+  branchName?: string;
 }
 
 export interface PatientSummary {

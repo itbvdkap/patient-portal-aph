@@ -7,6 +7,7 @@ import { createPatientSessionCookie, getDemoPatientSession } from "@/lib/auth/se
 
 const unlinkProfileSchema = z.object({
   mabn: z.string().trim().min(1).max(20),
+  branchCode: z.enum(["CN1", "CN3"]).optional().default("CN1"),
 });
 
 export async function POST(request: Request) {
@@ -22,7 +23,7 @@ export async function POST(request: Request) {
 
   let result;
   try {
-    result = await unlinkAccountProfile(session, parsed.data.mabn);
+    result = await unlinkAccountProfile(session, parsed.data);
   } catch (error) {
     if (error instanceof Error && error.message === "cannot_remove_last_profile") {
       return NextResponse.json({ error: "Tài khoản cần giữ ít nhất một hồ sơ y tế." }, { status: 409 });
@@ -44,6 +45,7 @@ export async function POST(request: Request) {
       accountId: session.accountId,
       accountKey: session.accountKey,
       phone: session.phone,
+      branchCode: result.currentBranchCode,
       profiles: result.profiles,
     }),
     {

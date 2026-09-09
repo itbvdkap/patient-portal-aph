@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createBookingAppointment, isDuplicateAppointmentError } from "@/lib/booking/appointments";
 import { verifyTurnstileToken } from "@/lib/security/turnstile";
+import { normalizePatientBranchCode } from "@anphu/patient-domain";
 
 export const runtime = "nodejs";
 
@@ -16,9 +17,13 @@ const appointmentSchema = z.object({
   province: z.string().trim().optional().or(z.literal("")),
   ward: z.string().trim().optional().or(z.literal("")),
   address: z.string().trim().optional().or(z.literal("")),
+  branchCode: z.enum(["CN1", "CN3"]).optional(),
+  branch_code: z.enum(["CN1", "CN3"]).optional(),
+  branchId: z.union([z.number(), z.string().trim()]).optional(),
   branch: z.string().trim().optional().or(z.literal("")),
   soCCCD: z.string().trim().optional().or(z.literal("")),
   ngayCap: z.string().trim().optional().or(z.literal("")),
+  patientCode: z.string().trim().max(20).optional().or(z.literal("")),
   appointmentDate: z.string().trim().min(1, "Vui lòng chọn ngày khám"),
   appointmentTime: z.string().trim().optional().or(z.literal("")),
   department: z.string().trim().optional().or(z.literal("")),
@@ -28,11 +33,20 @@ const appointmentSchema = z.object({
   ghichu: z.string().trim().optional().or(z.literal("")),
   cf_turnstile_response: z.string().trim().optional().or(z.literal("")),
 }).superRefine((value, ctx) => {
-  if (!value.oldPatientCode && (!value.soCCCD || value.soCCCD.length < 6)) {
+  const oldPatientCode = value.oldPatientCode || value.patientCode;
+  if (!oldPatientCode && (!value.soCCCD || value.soCCCD.length < 6)) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["soCCCD"],
       message: "Vui lòng nhập CCCD/CMND hoặc chọn hồ sơ bệnh nhân cũ.",
+    });
+  }
+
+  if (!normalizePatientBranchCode(value)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["branchCode"],
+      message: "Vui lòng chọn chi nhánh.",
     });
   }
 });
@@ -57,7 +71,16 @@ export async function POST(request: Request) {
       return NextResponse.json({ message: turnstile.message }, { status: 403 });
     }
 
-    const result = await createBookingAppointment(parsed.data);
+    const branchCode = normalizePatientBranchCode(parsed.data);
+    if (!branchCode) {
+      return NextResponse.json({ message: "Vui lòng chọn chi nhánh." }, { status: 400 });
+    }
+
+    const result = await createBookingAppointment({
+      ...parsed.data,
+      oldPatientCode: parsed.data.oldPatientCode || parsed.data.patientCode,
+      branchCode,
+    });
     return NextResponse.json(result, { status: 201 });
   } catch (error) {
     if (isDuplicateAppointmentError(error)) {

@@ -7,6 +7,7 @@ import {
   type ImagingResult,
   type LabResult,
   type MobileSession,
+  type PatientBranchCode,
   type Patient,
   type PatientSummary,
   type Prescription,
@@ -29,7 +30,7 @@ function baseUrl() {
 
   // Keep local Expo Web requests on the local Next server so browser cookies work.
   if (Platform.OS === "web" && typeof window !== "undefined" && /^(localhost|127\.0\.0\.1)$/.test(window.location.hostname)) {
-    return `${window.location.protocol}//${window.location.hostname}:3002`;
+    return `${window.location.protocol}//${window.location.hostname}:3001`;
   }
 
   return extra?.portalApiBaseUrl || fallbackBaseUrl;
@@ -136,6 +137,16 @@ export async function setPassword(password: string) {
   );
 }
 
+export async function updateAccountProfile(fullName: string) {
+  return portalFetch<{
+    data?: { fullName?: string; displayName?: string };
+    error?: string;
+  }>("/api/account/profile", {
+    method: "PATCH",
+    body: JSON.stringify({ fullName }),
+  });
+}
+
 export async function logout() {
   await portalFetch("/api/mobile/logout", { method: "POST" }).catch(
     () => undefined,
@@ -143,16 +154,16 @@ export async function logout() {
   await clearStoredSessionCookie();
 }
 
-export async function selectProfile(mabn: string) {
+export async function selectProfile(mabn: string, branchCode: PatientBranchCode = "CN1") {
   return postPortal<{ ok?: boolean; error?: string }>(
     "/api/account/select-profile",
-    { mabn },
+    { mabn, branchCode },
   );
 }
 
 export async function lookupProfile(
   mabn: string,
-  verifier: { phone?: string; birthDate?: string },
+  verifier: { phone?: string; birthDate?: string; branchCode?: PatientBranchCode },
 ) {
   return postPortal<{
     data?: {
@@ -172,6 +183,7 @@ export async function lookupProfile(
 
 export async function linkProfile(input: {
   mabn: string;
+  branchCode?: PatientBranchCode;
   phone: string;
   birthDate: string;
   relationship: string;
@@ -187,11 +199,14 @@ export async function linkProfile(input: {
   }>("/api/account/link-profile", input);
 }
 
-export async function unlinkProfile(mabn: string) {
+export async function unlinkProfile(mabn: string, branchCode: PatientBranchCode = "CN1") {
   return postPortal<{
-    data?: { currentMabn: string; profiles: MobileSession["profiles"] };
+    data?: { currentMabn: string; currentBranchCode?: PatientBranchCode; profiles: MobileSession["profiles"] };
     error?: string;
-  }>("/api/account/unlink-profile", { mabn });
+  }>(
+    "/api/account/unlink-profile",
+    { mabn, branchCode },
+  );
 }
 
 export async function logoutAllDevices() {

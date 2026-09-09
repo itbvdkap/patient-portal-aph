@@ -1,17 +1,18 @@
 # Tiep tuc du an sau khi mo lai bang Codex IDE
 
-Ngay cap nhat: 2026-08-14
+Ngay cap nhat: 2026-08-29
 
 ## Trang thai hien tai
 
 - Frontend Next.js chay local o `http://localhost:3001`.
 - Backend PatientApi .NET 9 chay local o `http://127.0.0.1:5080`.
+- Mobile Expo web chay local o `http://localhost:8081` khi dung `npm --workspace @anphu/mobile-app run web`.
 - Portal dang dung backend that, khong con demo mode.
 - Kien truc muc tieu moi: portal khong truy van truc tiep DB HIS chinh tu request web/app.
 - Huong moi: PatientApi doc Portal Reporting DB; Sync Worker on-demand dong bo HIS theo `MABN`, `MAVAOVIEN`, `MAQL`.
 - Tai lieu kien truc moi: `docs/PORTAL-DATA-ARCHITECTURE.md`.
 - SQL schema draft: `docs/sql/portal_schema_draft.sql`.
-- Benh nhan test hien tai: HIS patient code `23006552`.
+- Benh nhan test gan nhat: HIS patient code `22021143`.
 - Login hien tai dung xac minh so dien thoai + CCCD/CMND tu Oracle, khong dung OTP.
 - Phone lay tu `DIENTHOAI.DIDONG` / `DIENTHOAI.NHA` / `DIENTHOAI.COQUAN`.
 - CCCD/CMND lay tu `BTDBN.CMND` / `BTDBN.CMND_BN` / `DIENTHOAI.CMND`.
@@ -69,6 +70,23 @@ Mo:
 http://localhost:3001
 ```
 
+## Chay mobile Expo web
+
+Mo terminal khac:
+
+```powershell
+cd E:\HIS\APP_BENHAN
+npm --workspace @anphu/mobile-app run web
+```
+
+Mo:
+
+```text
+http://localhost:8081
+```
+
+Expo web local goi portal API local `http://localhost:3001`, nen can de frontend Next.js tiep tuc chay khi test mobile.
+
 ## Cac module da tich hop Oracle
 
 - Ho so benh nhan: `BTDBN`, `DIENTHOAI`, `BHYT`.
@@ -77,6 +95,8 @@ http://localhost:3001
 - Chi tiet lan kham: `THEODOI_KCB` theo `MAVAOVIEN`, ghep them chi dinh dich vu theo schema thang.
 - Xet nghiem: `XN_PHIEU`, `XN_KETQUA`, `XN_BV_CHITIET`, `XN_TEN`, `XN_DONVI`, `V_GIAVP`.
 - CDHA: `SA_BNCDHA`, `SA_BNCDHA_CT`, `XQ_BNCDHA_CTXQ`, `V_CHIDINH`, `V_GIAVP`, `V_LOAIVP`, `DMBS`.
+- Dang ky/tiep don: `TIEPDON`, `BTDKP_BV`, `DMBS`, `DOITUONG`.
+- Hang doi phong kham hien tai: tinh tam tu `TIEPDON.DONE`, `TIEPDON.STT_KHAM`, `TIEPDON.MAKP` theo ngay/phong.
 
 ## Cac thay doi quan trong gan nhat
 
@@ -94,19 +114,32 @@ http://localhost:3001
   - loi dan bac si
 - `VisitId` cua lab/CDHA uu tien `MAVAOVIEN` de ghep dung voi chi tiet lan kham.
 - Neu `V_CHIDINH` thieu ngay, backend fallback ngay tu prefix ID HIS dang `yyMMdd`.
+- Sua mapping `DOITUONG`: Oracle that dung `MADOITUONG` va `DOITUONG`, khong phai `MA`/`TEN`.
+- `/registrations` da lay duoc STT/phong kham tu `TIEPDON.STT_KHAM`, `TIEPDON.MAKP`, `BTDKP_BV.TENKP`.
+- `/today-visit` tra them `queueStatus` de hien STT phong dang xu ly toi, so luot con truoc va uoc tinh thoi gian.
+- Neu `queueStatus.currentTicketNumber` da vuot `registration.ticketNumber`, UI can hien canh bao nguoi benh lien he quay/phong kham.
+- `BookingHisMatchWorker` uu tien giai ma CCCD/CMND tu `soCCCD_encrypt`, tim MABN trong Oracle, sau do chi match `TIEPDON` dung `ngay_kham`; phong/khoa, STT va MAQL la tin hieu phu.
+- Mobile app da co bottom navigation, dashboard, account/profile switching, booking, registrations, today visit queue status, notification center `Thong bao`, BHYT va cac man ho so y te chinh.
+- Menu duoi mobile hien la `Trang chu`, `Dang ky`, `Thong bao`, `Ho so`, `Tai khoan`; da bo tab rieng `Hom nay`.
+- Man mobile `Thong bao` co 2 tab: `Kham hom nay` hien STT/hang doi trong ngay, va `Thong bao` tong hop tai cho tu API hien co: lich hen 14 ngay toi, BHYT sap het han, xet nghiem bat thuong, CDHA moi. Chua co read/unread hay push notification nen can lam tiep khi co bang notification that.
+- Man mobile `Tai khoan` da bo sung gan voi web `/profile`: sua ten hien thi, thong tin ho so dang xem, cai dat nhan thong bao local, passcode placeholder, thiet bi dang nhap, thong tin phap ly.
 
 ## Lenh kiem tra chat luong
 
 ```powershell
 dotnet build backend/PatientApi/PatientApi.csproj --no-restore --no-incremental
 npm run build
+npm --workspace @anphu/mobile-app run typecheck
+npm --workspace @anphu/patient-domain run typecheck
 ```
 
 Ket qua gan nhat:
 
-- `dotnet build`: pass
-- `npm run build`: pass
-- `http://localhost:3001/visits/260716130829833187`: HTTP 200
+- `dotnet build`: pass sau khi dung backend dang chay de tranh lock `PatientApi.exe`.
+- `npm run build`: pass.
+- `npm --workspace @anphu/mobile-app run typecheck`: pass.
+- `npm --workspace @anphu/patient-domain run typecheck`: pass.
+- `http://localhost:3001/today-visit`: hien STT 21, phong `Pk Nhi 1`, queue status cho benh nhan test `22021143`.
 
 ## File nen doc truoc khi tiep tuc
 
@@ -119,6 +152,12 @@ Ket qua gan nhat:
 - `src/app/(portal)/imaging/page.tsx`
 - `src/lib/data/api-patient-repository.ts`
 - `src/types/patient.ts`
+- `packages/patient-domain/src/patient.ts`
+- `apps/mobile-app/app/notifications.tsx`
+- `apps/mobile-app/app/account.tsx`
+- `apps/mobile-app/app/today.tsx`
+- `apps/mobile-app/app/registrations.tsx`
+- `backend/PatientApi/Sync/BookingHisMatchWorker.cs`
 
 ## Ghi chu van hanh
 

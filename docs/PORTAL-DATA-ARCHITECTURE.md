@@ -246,3 +246,11 @@ Giai doan 4:
 - Tat truy van truc tiep HIS trong PatientApi request path.
 - Chi Sync Worker duoc phep doc HIS.
 - Them monitoring, retry, audit log, va dashboard van hanh sync.
+
+## Mo hinh CN1/CN3
+
+- Web va mobile dung chung mot Supabase.
+- Moi booking bat buoc co `branch_code` (`CN1` hoac `CN3`) va ten chi nhanh duoc suy ra tu danh muc dung chung.
+- CN1 va CN3 chay hai Sync Agent rieng, moi agent ket noi Oracle HIS tai cho va chi claim booking/thong bao dung `PatientPortal:BranchCode`.
+- `portal_patient_branch_mappings` luu anh xa `account/identity + branch_code + his_mabn`; cung mot nguoi co the co MABN khac nhau tai hai chi nhanh.
+- STT, phong kham, ket qua match va payload thong bao deu kem ma/ten chi nhanh.

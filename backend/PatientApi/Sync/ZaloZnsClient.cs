@@ -76,7 +76,7 @@ public sealed class ZaloZnsClient(HttpClient httpClient, IConfiguration configur
     private async Task<Dictionary<string, string>> ReadPortalSettingsAsync(CancellationToken cancellationToken)
     {
         var supabaseUrl = configuration["SUPABASE_URL"]?.TrimEnd('/');
-        var supabaseKey = configuration["SUPABASE_SECRET_KEY"] ?? configuration["SUPABASE_SERVICE_ROLE_KEY"];
+        var supabaseKey = configuration["SUPABASE_SERVICE_ROLE_KEY"] ?? configuration["SUPABASE_SECRET_KEY"];
         if (string.IsNullOrWhiteSpace(supabaseUrl) || string.IsNullOrWhiteSpace(supabaseKey))
         {
             return [];
@@ -84,7 +84,11 @@ public sealed class ZaloZnsClient(HttpClient httpClient, IConfiguration configur
 
         var request = new HttpRequestMessage(HttpMethod.Get, $"{supabaseUrl}/rest/v1/portal_app_settings?select=setting_key,setting_value&setting_group=eq.zalo");
         request.Headers.TryAddWithoutValidation("apikey", supabaseKey);
-        request.Headers.TryAddWithoutValidation("Authorization", $"Bearer {supabaseKey}");
+        request.Headers.TryAddWithoutValidation("User-Agent", "AnPhuPatientPortalSyncAgent/1.0");
+        if (!supabaseKey.StartsWith("sb_secret_", StringComparison.Ordinal))
+        {
+            request.Headers.TryAddWithoutValidation("Authorization", $"Bearer {supabaseKey}");
+        }
 
         try
         {
@@ -171,7 +175,7 @@ public sealed class ZaloZnsClient(HttpClient httpClient, IConfiguration configur
     private async Task PersistTokensAsync(string accessToken, string refreshToken, JsonElement? expiresIn, JsonElement? refreshExpiresIn, CancellationToken cancellationToken)
     {
         var supabaseUrl = configuration["SUPABASE_URL"]?.TrimEnd('/');
-        var supabaseKey = configuration["SUPABASE_SECRET_KEY"] ?? configuration["SUPABASE_SERVICE_ROLE_KEY"];
+        var supabaseKey = configuration["SUPABASE_SERVICE_ROLE_KEY"] ?? configuration["SUPABASE_SECRET_KEY"];
         if (string.IsNullOrWhiteSpace(supabaseUrl) || string.IsNullOrWhiteSpace(supabaseKey))
         {
             return;
@@ -191,7 +195,11 @@ public sealed class ZaloZnsClient(HttpClient httpClient, IConfiguration configur
 
         using var request = new HttpRequestMessage(HttpMethod.Post, $"{supabaseUrl}/rest/v1/portal_app_settings?on_conflict=setting_key");
         request.Headers.TryAddWithoutValidation("apikey", supabaseKey);
-        request.Headers.TryAddWithoutValidation("Authorization", $"Bearer {supabaseKey}");
+        request.Headers.TryAddWithoutValidation("User-Agent", "AnPhuPatientPortalSyncAgent/1.0");
+        if (!supabaseKey.StartsWith("sb_secret_", StringComparison.Ordinal))
+        {
+            request.Headers.TryAddWithoutValidation("Authorization", $"Bearer {supabaseKey}");
+        }
         request.Headers.TryAddWithoutValidation("Prefer", "resolution=merge-duplicates");
         request.Content = JsonContent.Create(rows, options: JsonOptions);
 

@@ -75,7 +75,9 @@ public sealed record RegistrationDto(
     string Reason,
     string Notes,
     string PayerTypeCode,
-    string PayerTypeName);
+    string PayerTypeName,
+    string BranchCode,
+    string BranchName);
 
 public sealed record ActiveServiceDto(
     string Id,
@@ -95,7 +97,21 @@ public sealed record TodayVisitStatusDto(
     string CurrentStep,
     string CurrentStepText,
     RegistrationDto? Registration,
-    IReadOnlyList<ActiveServiceDto> Services);
+    IReadOnlyList<ActiveServiceDto> Services,
+    ClinicQueueStatusDto? QueueStatus = null);
+
+public sealed record ClinicQueueStatusDto(
+    string DepartmentCode,
+    string DepartmentName,
+    string PatientTicketNumber,
+    string CurrentTicketNumber,
+    int WaitingAhead,
+    int? EstimatedMinutes,
+    string EstimatedText,
+    string UpdatedAt,
+    string Source,
+    string BranchCode,
+    string BranchName);
 
 public sealed record PatientSummaryDto(
     int VisitsCount,
@@ -112,11 +128,15 @@ public sealed record PatientLoginVerificationDto(
 
 public sealed record PatientLinkedProfileDto(
     string HisPatientCode,
+    string? BranchCode,
+    string? BranchName,
     string FullName,
     string Relationship);
 
 public sealed record PatientProfileLookupDto(
     string HisPatientCode,
+    string? BranchCode,
+    string? BranchName,
     string PatientCodeMasked,
     string FullName,
     string PhoneMasked,

@@ -1,10 +1,11 @@
-import { CalendarCheck, ExternalLink } from "lucide-react";
+import { CalendarCheck } from "lucide-react";
 import { cookies } from "next/headers";
+import { Suspense } from "react";
 import { BookingForm } from "./booking-form";
 import { getDemoPatientSession } from "@/lib/auth/session";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import type { Patient } from "@/types/patient";
-import { normalizeDisplayText } from "@anphu/patient-domain";
+import { isPatientBranchCode, normalizeDisplayText, type PatientBranchCode } from "@anphu/patient-domain";
 
 type SnapshotRow = {
   payload_json: Patient | null;
@@ -59,11 +60,12 @@ function toVnDate(value?: unknown) {
   return `${String(date.getDate()).padStart(2, "0")}/${String(date.getMonth() + 1).padStart(2, "0")}/${date.getFullYear()}`;
 }
 
-function mapLinkedBookingProfile(mabn: string, fallbackName: string | undefined, patient: Patient | null) {
+function mapLinkedBookingProfile(mabn: string, branchCode: PatientBranchCode, fallbackName: string | undefined, patient: Patient | null) {
   const raw = (patient ?? {}) as Patient & Record<string, unknown>;
 
   return {
     oldPatientCode: mabn,
+    branchCode,
     fullName: normalizeDisplayText(patient?.fullName ?? fallbackName ?? `Mã BN ${mabn}`),
     phone: patient?.phone ?? "",
     birthDate: toVnDate(patient?.birthDate),
@@ -115,16 +117,16 @@ async function getLinkedBookingProfiles() {
   if (!session) return [];
 
   const supabase = createSupabaseServiceClient();
-  const mabnMap = new Map<string, string | undefined>();
+  const profileMap = new Map<string, { mabn: string; branchCode: PatientBranchCode; fallbackName?: string }>();
 
   for (const profile of session.profiles) {
-    mabnMap.set(profile.mabn, profile.fullName);
+    profileMap.set(`${profile.branchCode}:${profile.mabn}`, { mabn: profile.mabn, branchCode: profile.branchCode, fallbackName: profile.fullName });
   }
 
   if (session.accountId || session.accountKey) {
     const query = supabase
       .from("portal_account_profiles")
-      .select("mabn,display_name")
+      .select("mabn,branch_code,display_name")
       .order("is_active", { ascending: false })
       .order("linked_at", { ascending: true });
 
@@ -133,23 +135,29 @@ async function getLinkedBookingProfiles() {
       : await query.eq("account_key", session.accountKey);
 
     for (const profile of data ?? []) {
-      mabnMap.set(profile.mabn, profile.display_name ?? mabnMap.get(profile.mabn));
+      const branchCode = normalizeBranchCode(profile.branch_code);
+      const key = `${branchCode}:${profile.mabn}`;
+      profileMap.set(key, { mabn: profile.mabn, branchCode, fallbackName: profile.display_name ?? profileMap.get(key)?.fallbackName });
     }
   }
 
   const profiles = await Promise.all(
-    Array.from(mabnMap.entries()).map(async ([mabn, fallbackName]) => {
+    Array.from(profileMap.values()).map(async ({ mabn, branchCode, fallbackName }) => {
       const { data } = await supabase
         .from("portal_resource_snapshots")
         .select("payload_json")
-        .eq("cache_key", `${mabn}:patient_profile:_`)
+        .eq("cache_key", `${branchCode}:${mabn}:patient_profile:_`)
         .maybeSingle<SnapshotRow>();
 
-      return mapLinkedBookingProfile(mabn, fallbackName, data?.payload_json ?? null);
+      return mapLinkedBookingProfile(mabn, branchCode, fallbackName, data?.payload_json ?? null);
     }),
   );
 
   return profiles;
+}
+
+function normalizeBranchCode(value: unknown): PatientBranchCode {
+  return isPatientBranchCode(value) ? value : "CN1";
 }
 
 export default async function BookingPage() {
@@ -170,18 +178,11 @@ export default async function BookingPage() {
             </p>
           </div>
         </div>
-        <a
-          href="https://benhvienanphu.vn/dang-ky-kham"
-          target="_blank"
-          rel="noreferrer"
-          className="mt-3 inline-flex min-h-10 items-center gap-2 rounded-xl bg-white/14 px-3 text-sm font-black text-white ring-1 ring-white/25 hover:bg-white/20"
-        >
-          Mở form ngoài
-          <ExternalLink aria-hidden="true" className="h-4 w-4" />
-        </a>
       </header>
 
-      <BookingForm linkedProfiles={linkedProfiles} />
+      <Suspense fallback={null}>
+        <BookingForm linkedProfiles={linkedProfiles} />
+      </Suspense>
     </>
   );
 }

@@ -78,11 +78,19 @@ npm run dev
 
 Mở http://localhost:3000.
 
-Chạy Mobile App Skeleton
+Chạy Mobile App
 
 Sau khi cài workspace dependencies:
 
 npm --workspace @anphu/mobile-app run start
+
+Chạy bản mobile web để test nhanh trên máy dev:
+
+npm --workspace @anphu/mobile-app run web
+
+Metro/Expo thường mở tại:
+
+http://localhost:8081
 
 Mobile app không đọc Oracle/HIS trực tiếp. App gọi Next.js API, dùng session chuẩn qua:
 
@@ -167,7 +175,14 @@ Invoke-RestMethod http://127.0.0.1:5080/health
 
 Booking HIS Auto-Match
 
-Agent có worker `BookingHisMatchWorker` để đối soát đăng ký online với lượt `TIEPDON` trong HIS. Worker đọc các lịch hẹn chưa match trong Supabase booking DB, tìm lượt HIS theo `mabn/ngày khám/phòng khám`, cập nhật `portal.lich_hen_kham`, ghi `portal.booking_his_matches`, rồi tạo bản ghi `portal.notification_outbox`.
+Agent có worker `BookingHisMatchWorker` để đối soát đăng ký online với lượt `TIEPDON` trong HIS. Worker đọc các lịch hẹn chưa match trong Supabase booking DB, ưu tiên giải mã CCCD/CMND để tìm `MABN`, sau đó match lượt HIS đúng `ngay_kham`. Phòng/khoa, STT và MAQL chỉ là tín hiệu bổ sung để tăng độ tin cậy. Khi match thành công, worker cập nhật `portal.lich_hen_kham`, ghi `portal.booking_his_matches`, rồi tạo bản ghi `portal.notification_outbox`.
+
+Nguyên tắc match hiện tại:
+
+- Nếu booking có CCCD/CMND mã hóa, worker dùng `BOOKING_ENCRYPTION_KEY` để giải mã và tra Oracle qua `BTDBN.CMND`, `BTDBN.CMND_BN`, `DIENTHOAI.CMND`.
+- Nếu CCCD tìm được MABN, MABN này được ưu tiên hơn `old_patient_code`/`patient_code`.
+- Nếu booking có `ngay_kham`, chỉ xét các lượt `TIEPDON` đúng ngày khám để tránh ghép nhầm lượt cũ/mới.
+- Điểm match ưu tiên CCCD/CMND + ngày khám; phòng/khoa chỉ là tín hiệu phụ.
 
 Agent cũng có `NotificationOutboxWorker` để đọc `portal.notification_outbox`, gửi Zalo ZNS, cập nhật `sent/retry/failed` và ghi `zalo_confirm_sent_at` vào lịch hẹn khi gửi thành công. Trong lúc template Zalo đang chờ duyệt, nên để `booking.zalo_auto_send_enabled=false`: hệ thống vẫn match HIS và tạo outbox, admin kiểm tra rồi bấm gửi thủ công từng phiếu trong `/admin/bookings`.
 
@@ -184,6 +199,7 @@ PatientPortal__NotificationOutboxIntervalSeconds=30
 PatientPortal__NotificationOutboxBatchSize=20
 PatientPortal__NotificationOutboxRetryMinutes=5
 ConnectionStrings__BookingDatabase=...
+BOOKING_ENCRYPTION_KEY=...
 ZALO_ZNS_ENDPOINT=https://business.openapi.zalo.me/message/template
 ZALO_TOKEN_ENDPOINT=https://oauth.zaloapp.com/v4/oa/access_token
 ZALO_APP_ID=...
@@ -284,6 +300,12 @@ GET /api/me/appointments
 GET /api/me/registrations
 
 GET /api/me/today-visit
+
+`GET /api/me/today-visit` hiện trả thêm `queueStatus` nếu HIS có đủ `MAKP` và `STT_KHAM`. UI dùng trường này để hiển thị phòng đang xử lý tới STT nào, còn bao nhiêu lượt trước bệnh nhân, và thời gian ước tính. Ước tính hiện dựa trên dữ liệu `TIEPDON.DONE/STT_KHAM` cùng phòng trong ngày; nếu số xử lý đã vượt STT của bệnh nhân, UI cảnh báo người bệnh liên hệ quầy/phòng khám.
+
+Mobile app có màn `Thông báo` gồm 2 tab: `Khám hôm nay` để xem STT/hàng đợi trong ngày, và `Thông báo` để tổng hợp nhanh các việc cần chú ý từ API hiện có như lịch hẹn sắp tới, BHYT sắp hết hạn, xét nghiệm bất thường và kết quả CĐHA mới. Đây là notification center trong app; push notification/read-unread sẽ cần bảng notification riêng ở sprint sau.
+
+Màn mobile `Tài khoản` đã được mở rộng gần với web `/profile`: sửa tên hiển thị, xem chi tiết hồ sơ đang xem, đổi mật khẩu, cài đặt nhận thông báo trên thiết bị, passcode placeholder, thiết bị đăng nhập và nhóm thông tin pháp lý.
 
 Auth/account/booking endpoints nằm dưới:
 

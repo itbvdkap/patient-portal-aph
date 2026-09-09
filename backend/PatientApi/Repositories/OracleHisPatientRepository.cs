@@ -7,10 +7,21 @@ using System.Text.RegularExpressions;
 
 namespace PatientApi.Repositories;
 
-public sealed class OracleHisPatientRepository(IConfiguration configuration) : IPatientRepository
+public sealed class OracleHisPatientRepository(IConfiguration configuration, ILogger<OracleHisPatientRepository> logger) : IPatientRepository
 {
     private readonly string _connectionString = configuration.GetConnectionString("OracleHis")
         ?? throw new InvalidOperationException("ConnectionStrings:OracleHis is not configured.");
+    private readonly string _branchCode = configuration["PatientPortal:BranchCode"]?.Trim().ToUpperInvariant() ?? "CN1";
+    private readonly string _branchName = configuration["PatientPortal:BranchName"]?.Trim()
+        ?? (configuration["PatientPortal:BranchCode"]?.Trim().ToUpperInvariant() == "CN3"
+            ? "Phòng khám An Phú - Chi nhánh 3"
+            : "Bệnh viện An Phú - Chi nhánh 1");
+    private readonly string _oracleMasterSchema = NormalizeOracleIdentifier(
+        configuration["PatientPortal:OracleMasterSchema"],
+        "HGSOFT_BV");
+    private readonly string _oracleMonthlySchemaPrefix = NormalizeOracleIdentifier(
+        configuration["PatientPortal:OracleMonthlySchemaPrefix"] ?? configuration["PatientPortal:OracleSchemaPrefix"],
+        NormalizeOracleIdentifier(configuration["PatientPortal:OracleMasterSchema"], "HGSOFT_BV"));
     private static readonly string[] PayerTypeColumnCandidates =
     [
         "MADOITUONG",
@@ -30,15 +41,45 @@ public sealed class OracleHisPatientRepository(IConfiguration configuration) : I
 
     private sealed record VisitClinicalInfo(string DepartmentName, string DoctorName);
 
+    public async Task<string?> FindPatientCodeByCitizenIdAsync(string citizenId, CancellationToken cancellationToken)
+    {
+        var sql = $"""
+            select HisPatientCode
+            from (
+              select b.MABN as HisPatientCode
+              from {_oracleMasterSchema}.BTDBN b
+              left join {_oracleMasterSchema}.DIENTHOAI dt on dt.MABN = b.MABN
+              where regexp_replace(nvl(b.CMND, ''), '[^0-9]', '') = :CitizenId
+                 or regexp_replace(nvl(b.CMND_BN, ''), '[^0-9]', '') = :CitizenId
+                 or regexp_replace(nvl(dt.CMND, ''), '[^0-9]', '') = :CitizenId
+              order by b.MABN desc
+            )
+            where rownum = 1
+            """;
+
+        var normalizedCitizenId = NormalizeDigits(citizenId);
+        if (normalizedCitizenId.Length < 9)
+        {
+            return null;
+        }
+
+        await using var connection = CreateConnection();
+        return await connection.QuerySingleOrDefaultAsync<string?>(new CommandDefinition(
+            sql,
+            new { CitizenId = normalizedCitizenId },
+            cancellationToken: cancellationToken,
+            commandTimeout: 20));
+    }
+
     public async Task<PatientLoginVerificationDto?> VerifyLoginAsync(string phone, string citizenId, CancellationToken cancellationToken)
     {
-        const string sql = """
+        var sql = $"""
             select
               b.MABN as HisPatientCode,
               b.HOTEN as FullName,
               coalesce(dt.DIDONG, dt.NHA, dt.COQUAN) as Phone
-            from BTDBN b
-            inner join DIENTHOAI dt on dt.MABN = b.MABN
+            from {_oracleMasterSchema}.BTDBN b
+            inner join {_oracleMasterSchema}.DIENTHOAI dt on dt.MABN = b.MABN
             where (
                 regexp_replace(nvl(dt.DIDONG, ''), '[^0-9]', '') = :Phone
                 or regexp_replace(nvl(dt.NHA, ''), '[^0-9]', '') = :Phone
@@ -75,6 +116,8 @@ public sealed class OracleHisPatientRepository(IConfiguration configuration) : I
         var profiles = rows
             .Select(row => new PatientLinkedProfileDto(
                 HisPatientCode: Convert.ToString(row.HISPATIENTCODE) ?? string.Empty,
+                BranchCode: _branchCode,
+                BranchName: _branchName,
                 FullName: Convert.ToString(row.FULLNAME) ?? string.Empty,
                 Relationship: "Liên quan"))
             .Where(profile => !string.IsNullOrWhiteSpace(profile.HisPatientCode))
@@ -99,13 +142,13 @@ public sealed class OracleHisPatientRepository(IConfiguration configuration) : I
 
     public async Task<PatientLoginVerificationDto?> VerifyLinkedProfileAsync(string hisPatientCode, string phone, string citizenId, DateOnly birthDate, CancellationToken cancellationToken)
     {
-        const string sql = """
+        var sql = $"""
             select
               b.MABN as HisPatientCode,
               b.HOTEN as FullName,
               coalesce(dt.DIDONG, dt.NHA, dt.COQUAN) as Phone
-            from BTDBN b
-            inner join DIENTHOAI dt on dt.MABN = b.MABN
+            from {_oracleMasterSchema}.BTDBN b
+            inner join {_oracleMasterSchema}.DIENTHOAI dt on dt.MABN = b.MABN
             where b.MABN = :HisPatientCode
               and trunc(b.NGAYSINH) = :BirthDate
               and (
@@ -118,7 +161,7 @@ public sealed class OracleHisPatientRepository(IConfiguration configuration) : I
                 or regexp_replace(nvl(b.CMND_BN, ''), '[^0-9]', '') = :CitizenId
                 or regexp_replace(nvl(dt.CMND, ''), '[^0-9]', '') = :CitizenId
               ))
-            fetch first 1 rows only
+              and rownum = 1
             """;
 
         var normalizedPhone = NormalizeDigits(phone);
@@ -151,6 +194,8 @@ public sealed class OracleHisPatientRepository(IConfiguration configuration) : I
 
         var profile = new PatientLinkedProfileDto(
             HisPatientCode: Convert.ToString(row.HISPATIENTCODE) ?? normalizedMabn,
+            BranchCode: _branchCode,
+            BranchName: _branchName,
             FullName: Convert.ToString(row.FULLNAME) ?? string.Empty,
             Relationship: "Người thân");
 
@@ -163,7 +208,7 @@ public sealed class OracleHisPatientRepository(IConfiguration configuration) : I
 
     public async Task<PatientDto?> GetPatientAsync(string hisPatientCode, CancellationToken cancellationToken)
     {
-        const string sql = """
+        var sql = $"""
             select
               b.MABN as HisPatientCode,
               b.HOTEN as FullName,
@@ -181,13 +226,13 @@ public sealed class OracleHisPatientRepository(IConfiguration configuration) : I
                 cast(dt.CMND as varchar2(50))
               ) as CitizenId,
               cast(null as date) as CitizenIssueDate
-            from BTDBN b
-            left join DIENTHOAI dt on dt.MABN = b.MABN
+            from {_oracleMasterSchema}.BTDBN b
+            left join {_oracleMasterSchema}.DIENTHOAI dt on dt.MABN = b.MABN
             where b.MABN = :HisPatientCode
-            fetch first 1 rows only
+              and rownum = 1
             """;
 
-        const string insuranceSql = """
+        var insuranceSql = $"""
             select
               coalesce(
                 cast(kcb_bh.MA_THE_BHYT as varchar2(50)),
@@ -202,7 +247,7 @@ public sealed class OracleHisPatientRepository(IConfiguration configuration) : I
                 else cast(bh.DENNGAY as varchar2(30))
               end as ValidTo
             from (select :HisPatientCode as MABN from dual) p
-            left join BHYT bh on bh.MABN = p.MABN
+            left join {_oracleMasterSchema}.BHYT bh on bh.MABN = p.MABN
             left join (
               select MABN, MA_THE_BHYT, GT_THE_TU, GT_THE_DEN
               from (
@@ -215,12 +260,12 @@ public sealed class OracleHisPatientRepository(IConfiguration configuration) : I
                     partition by MABN
                     order by NGAY_TIEPDON desc nulls last, MAVAOVIEN desc nulls last
                   ) as rn
-                from THEODOI_KCB
+                from {_oracleMasterSchema}.THEODOI_KCB
                 where MA_THE_BHYT is not null
               )
               where rn = 1
             ) kcb_bh on kcb_bh.MABN = p.MABN
-            fetch first 1 rows only
+            where rownum = 1
             """;
 
         await using var connection = CreateConnection();
@@ -287,18 +332,18 @@ public sealed class OracleHisPatientRepository(IConfiguration configuration) : I
     {
         await using var connection = CreateConnection();
 
-        const string visitsSql = "select count(*) from THEODOI_KCB where MABN = :HisPatientCode";
+        var visitsSql = $"select count(*) from {_oracleMasterSchema}.THEODOI_KCB where MABN = :HisPatientCode";
         var visitsCount = Convert.ToInt32(await connection.ExecuteScalarAsync(visitsSql, new { HisPatientCode = hisPatientCode }));
 
-        const string labSql = """
+        var labSql = $"""
             select count(*)
-            from XN_PHIEU
+            from {_oracleMasterSchema}.XN_PHIEU
             where MABN = :HisPatientCode
             """;
 
-        const string imagingSql = """
+        var imagingSql = $"""
             select count(*)
-            from SA_BNCDHA
+            from {_oracleMasterSchema}.SA_BNCDHA
             where MABN = :HisPatientCode
               and NGAYCDHA is not null
             """;
@@ -318,7 +363,7 @@ public sealed class OracleHisPatientRepository(IConfiguration configuration) : I
 
     public async Task<IReadOnlyList<VisitDto>> GetVisitsAsync(string hisPatientCode, CancellationToken cancellationToken)
     {
-        const string sql = """
+        var sql = $"""
             select
               kcb.MAVAOVIEN as Id,
               kcb.MAVAOVIEN as HisVisitId,
@@ -331,7 +376,7 @@ public sealed class OracleHisPatientRepository(IConfiguration configuration) : I
               kcb.CHANDOAN_CHITIET as DiagnosisDetail,
               kcb.LY_DO_VV as Reason,
               coalesce(kcb.GHI_CHU, kcb.PP_DIEU_TRI, kcb.LY_DO_VNT) as Notes
-            from THEODOI_KCB kcb
+            from {_oracleMasterSchema}.THEODOI_KCB kcb
             where kcb.MABN = :HisPatientCode
             order by kcb.NGAY_TIEPDON desc
             """;
@@ -339,6 +384,11 @@ public sealed class OracleHisPatientRepository(IConfiguration configuration) : I
         await using var connection = CreateConnection();
         var rows = await connection.QueryAsync(sql, new { HisPatientCode = hisPatientCode });
         var materializedRows = rows.ToList();
+        if (materializedRows.Count == 0)
+        {
+            return await GetVisitsFromClinicalOrdersAsync(connection, hisPatientCode, cancellationToken);
+        }
+
         var visitIds = materializedRows
             .Select(row => Convert.ToString(row.ID) ?? string.Empty)
             .Where(id => id.Length > 0)
@@ -366,9 +416,83 @@ public sealed class OracleHisPatientRepository(IConfiguration configuration) : I
             Notes: Convert.ToString(row.NOTES) ?? string.Empty);
         }).ToList();
     }
+
+    private async Task<IReadOnlyList<VisitDto>> GetVisitsFromClinicalOrdersAsync(
+        OracleConnection connection,
+        string hisPatientCode,
+        CancellationToken cancellationToken)
+    {
+        var visits = new List<VisitDto>();
+        var schemas = await GetPatientClinicalMonthlySchemasAsync(connection, hisPatientCode);
+
+        foreach (var schema in schemas)
+        {
+            var performedAtExpression = await BuildPerformedAtExpressionAsync(connection, schema, cancellationToken);
+            if (performedAtExpression == "null")
+            {
+                continue;
+            }
+
+            var sql = $"""
+                select
+                  coalesce(to_char(cd.MAVAOVIEN), to_char(cd.MAQL), to_char(cd.ID)) as Id,
+                  coalesce(to_char(cd.MAVAOVIEN), to_char(cd.MAQL), to_char(cd.ID)) as HisVisitId,
+                  min({performedAtExpression}) as VisitDate,
+                  max(kp.TENKP) as DepartmentName,
+                  max(bs.HOTEN) as DoctorName,
+                  max(coalesce(cd.TENVP_CHITIET, vp.TEN)) as ServiceName
+                from {schema}.V_CHIDINH cd
+                left join {_oracleMasterSchema}.V_GIAVP vp on vp.ID = cd.MAVP
+                left join {_oracleMasterSchema}.BTDKP_BV kp on kp.MAKP = cd.MAKP
+                left join {_oracleMasterSchema}.DMBS bs on bs.MA = cd.MABS
+                where cd.MABN = :HisPatientCode
+                  and {performedAtExpression} is not null
+                group by coalesce(to_char(cd.MAVAOVIEN), to_char(cd.MAQL), to_char(cd.ID))
+                order by min({performedAtExpression}) desc
+                """;
+
+            try
+            {
+                var rows = await connection.QueryAsync(
+                    new CommandDefinition(
+                        sql,
+                        new { HisPatientCode = hisPatientCode },
+                        cancellationToken: cancellationToken,
+                        commandTimeout: 30));
+
+                visits.AddRange(rows.Select(row =>
+                {
+                    var visitId = Convert.ToString(row.ID) ?? string.Empty;
+
+                    return new VisitDto(
+                        visitId,
+                        $"his-{hisPatientCode}",
+                        Convert.ToString(row.HISVISITID) ?? visitId,
+                        ToDateTimeOffsetOrDefault(row.VISITDATE, visitId),
+                        FirstNonEmpty(row.DEPARTMENTNAME, "Cận lâm sàng"),
+                        FirstNonEmpty(row.DOCTORNAME),
+                        "Đã khám",
+                        FirstNonEmpty(row.SERVICENAME, "Có dữ liệu cận lâm sàng"),
+                        string.Empty,
+                        "Lần khám được tổng hợp từ dữ liệu cận lâm sàng HIS.");
+                }));
+            }
+            catch (OracleException exception) when (IsMissingMonthlySchema(exception) || IsMissingColumnOrTable(exception))
+            {
+                continue;
+            }
+        }
+
+        return visits
+            .Where(visit => visit.VisitDate > DateTimeOffset.MinValue)
+            .GroupBy(visit => visit.Id)
+            .Select(group => group.First())
+            .OrderByDescending(visit => visit.VisitDate)
+            .ToList();
+    }
     public async Task<VisitDetailDto?> GetVisitDetailAsync(string hisPatientCode, string visitId, CancellationToken cancellationToken)
     {
-        const string sql = """
+        var sql = $"""
             select
               kcb.MAVAOVIEN as Id,
               kcb.MAVAOVIEN as HisVisitId,
@@ -390,10 +514,10 @@ public sealed class OracleHisPatientRepository(IConfiguration configuration) : I
               kcb.GHI_CHU as Note,
               kcb.NGAY_TAI_KHAM as FollowUpDateText,
               null as PrimaryDiagnosis
-            from THEODOI_KCB kcb
+            from {_oracleMasterSchema}.THEODOI_KCB kcb
             where kcb.MABN = :HisPatientCode
               and to_char(kcb.MAVAOVIEN) = :VisitId
-            fetch first 1 rows only
+              and rownum = 1
             """;
 
         await using var connection = CreateConnection();
@@ -489,13 +613,13 @@ public sealed class OracleHisPatientRepository(IConfiguration configuration) : I
                   kq.KQ_BATTHUONG as Abnormal,
                   kq.KQ_BATTHUONG_THAP_CAO as LowHigh
                 from {schema}.v_chidinh cd
-                inner join BTDBN bn on bn.MABN = cd.MABN
-                left join V_GIAVP vp on vp.ID = cd.MAVP
-                inner join XN_PHIEU p on {procedureIdColumn} = p.ID
-                inner join XN_KETQUA kq on {procedureIdColumn} = kq.ID and cd.ID = kq.IDCHIDINH
-                left join XN_BV_CHITIET xnct on kq.ID_TEN = xnct.ID
-                left join XN_TEN tenxn on tenxn.ID = coalesce(xnct.ID_TEN, kq.ID_TEN)
-                left join XN_DONVI dv on dv.ID = tenxn.DONVI
+                inner join {_oracleMasterSchema}.BTDBN bn on bn.MABN = cd.MABN
+                left join {_oracleMasterSchema}.V_GIAVP vp on vp.ID = cd.MAVP
+                inner join {_oracleMasterSchema}.XN_PHIEU p on {procedureIdColumn} = p.ID
+                inner join {_oracleMasterSchema}.XN_KETQUA kq on {procedureIdColumn} = kq.ID and cd.ID = kq.IDCHIDINH
+                left join {_oracleMasterSchema}.XN_BV_CHITIET xnct on kq.ID_TEN = xnct.ID
+                left join {_oracleMasterSchema}.XN_TEN tenxn on tenxn.ID = coalesce(xnct.ID_TEN, kq.ID_TEN)
+                left join {_oracleMasterSchema}.XN_DONVI dv on dv.ID = tenxn.DONVI
                 where cd.MABN = :HisPatientCode
                   and kq.KETQUA is not null
                   and (:VisitId is null or to_char(cd.MAVAOVIEN) = :VisitId)
@@ -559,12 +683,12 @@ public sealed class OracleHisPatientRepository(IConfiguration configuration) : I
                   xq.KETQUA5 as XqDescription5,
                   xq.KETLUAN as XqConclusion
                 from {schema}.v_chidinh cd
-                inner join V_GIAVP vp on vp.ID = cd.MAVP
-                left join V_LOAIVP loaivp on loaivp.ID = vp.ID_LOAI
-                left join DMBS bs_cls on bs_cls.MA = {performedDoctorColumn}
-                left join SA_BNCDHA sa on sa.COUNT_CDHA = {procedureIdColumn}
-                left join SA_BNCDHA_CT sam on sam.COUNT_CDHA = {procedureIdColumn}
-                left join XQ_BNCDHA_CTXQ xq on xq.COUNT_CDHA = coalesce(sa.COUNT_CDHA, {procedureIdColumn})
+                inner join {_oracleMasterSchema}.V_GIAVP vp on vp.ID = cd.MAVP
+                left join {_oracleMasterSchema}.V_LOAIVP loaivp on loaivp.ID = vp.ID_LOAI
+                left join {_oracleMasterSchema}.DMBS bs_cls on bs_cls.MA = {performedDoctorColumn}
+                left join {_oracleMasterSchema}.SA_BNCDHA sa on sa.COUNT_CDHA = {procedureIdColumn}
+                left join {_oracleMasterSchema}.SA_BNCDHA_CT sam on sam.COUNT_CDHA = {procedureIdColumn}
+                left join {_oracleMasterSchema}.XQ_BNCDHA_CTXQ xq on xq.COUNT_CDHA = coalesce(sa.COUNT_CDHA, {procedureIdColumn})
                 where cd.MABN = :HisPatientCode
                   and loaivp.ID_NHOM in (5, 22)
                   {performedAtFilter}
@@ -622,9 +746,9 @@ public sealed class OracleHisPatientRepository(IConfiguration configuration) : I
                   coalesce(dt.DOITUONG, case coalesce(ct.MADOITUONG, ll.MADOITUONG) when 1 then N'BHYT' when 2 then N'Dịch vụ' end) as PayerType
                 from {schema}.D_THUOCBHYTLL ll
                 inner join {schema}.D_THUOCBHYTCT ct on ct.ID = ll.ID
-                left join D_DMBD bd on bd.ID = ct.MABD
-                left join DMBS bs on bs.MA = ll.MABS
-                left join DOITUONG dt on dt.MADOITUONG = coalesce(ct.MADOITUONG, ll.MADOITUONG)
+                left join {_oracleMasterSchema}.D_DMBD bd on bd.ID = ct.MABD
+                left join {_oracleMasterSchema}.DMBS bs on bs.MA = ll.MABS
+                left join {_oracleMasterSchema}.DOITUONG dt on dt.MADOITUONG = coalesce(ct.MADOITUONG, ll.MADOITUONG)
                 where ll.MABN = :HisPatientCode
                 order by ll.NGAY desc, ll.ID, ct.STT
                 """;
@@ -701,8 +825,8 @@ public sealed class OracleHisPatientRepository(IConfiguration configuration) : I
                   ba.CHANDOAN_CHITIET as DiagnosisDetail
                 from {schema}.BENHANDT ba
                 left join {schema}.HEN h on h.MAQL = ba.HEN_MAQL
-                left join BTDKP_BV kp on kp.MAKP = coalesce(h.MAKP, ba.MAKP)
-                left join DMBS bs on bs.MA = ba.MABS
+                left join {_oracleMasterSchema}.BTDKP_BV kp on kp.MAKP = coalesce(h.MAKP, ba.MAKP)
+                left join {_oracleMasterSchema}.DMBS bs on bs.MA = ba.MABS
                 where ba.MABN = :HisPatientCode
                   and ba.HEN_NGAY is not null
                   and ba.HEN_NGAY > date '1900-01-01'
@@ -743,10 +867,8 @@ public sealed class OracleHisPatientRepository(IConfiguration configuration) : I
     {
         await using var connection = CreateConnection();
         var schemas = await GetPatientVisitMonthlySchemasAsync(connection, hisPatientCode);
-        var upcomingSchemas = Enumerable
-            .Range(0, 4)
-            .Select(offset => $"HGSOFT_BV{DateTime.Now.AddMonths(offset):MMyy}");
-        schemas = upcomingSchemas.Concat(schemas).Distinct().ToList();
+        schemas = schemas.Concat(await GetPatientClinicalMonthlySchemasAsync(connection, hisPatientCode)).Distinct().ToList();
+        schemas = GetRegistrationCandidateSchemas().Concat(schemas).Distinct().ToList();
 
         var registrations = new List<RegistrationDto>();
 
@@ -758,24 +880,41 @@ public sealed class OracleHisPatientRepository(IConfiguration configuration) : I
                 : $"to_char(td.{payerTypeColumn}) as PayerTypeCode, {PayerTypeNameSqlExpression("td", payerTypeColumn, "dt")} as PayerTypeName";
             var payerTypeJoin = string.IsNullOrWhiteSpace(payerTypeColumn)
                 ? string.Empty
-                : $"left join HGSOFT_BV.DOITUONG dt on dt.MA = td.{payerTypeColumn}";
+                : $"left join {_oracleMasterSchema}.DOITUONG dt on dt.MADOITUONG = td.{payerTypeColumn}";
+            var hasDoctorColumn = await SchemaHasColumnAsync(connection, schema, "TIEPDON", "MABS", cancellationToken);
+            var hasReasonColumn = await SchemaHasColumnAsync(connection, schema, "TIEPDON", "LY_DO_VV", cancellationToken);
+            var hasNotesColumn = await SchemaHasColumnAsync(connection, schema, "TIEPDON", "GHICHU", cancellationToken);
+            var hasVisitIdColumn = await SchemaHasColumnAsync(connection, schema, "TIEPDON", "MAVAOVIEN", cancellationToken);
+            var hasTicketColumn = await SchemaHasColumnAsync(connection, schema, "TIEPDON", "STT_KHAM", cancellationToken);
+            var hasDepartmentColumn = await SchemaHasColumnAsync(connection, schema, "TIEPDON", "MAKP", cancellationToken);
+            var hasDoneColumn = await SchemaHasColumnAsync(connection, schema, "TIEPDON", "DONE", cancellationToken);
+            var visitIdSelect = hasVisitIdColumn ? "to_char(td.MAVAOVIEN) as VisitId" : "to_char(td.MAQL) as VisitId";
+            var ticketSelect = hasTicketColumn ? "to_char(td.STT_KHAM) as TicketNumber" : "null as TicketNumber";
+            var departmentCodeSelect = hasDepartmentColumn ? "to_char(td.MAKP) as DepartmentCode" : "null as DepartmentCode";
+            var departmentNameSelect = hasDepartmentColumn ? "kp.TENKP as DepartmentName" : "null as DepartmentName";
+            var departmentJoin = hasDepartmentColumn ? $"left join {_oracleMasterSchema}.BTDKP_BV kp on kp.MAKP = td.MAKP" : string.Empty;
+            var doneSelect = hasDoneColumn ? "td.DONE as DoneStatus" : "null as DoneStatus";
+            var doctorSelect = hasDoctorColumn ? "bs.HOTEN as DoctorName" : "null as DoctorName";
+            var doctorJoin = hasDoctorColumn ? $"left join {_oracleMasterSchema}.DMBS bs on bs.MA = td.MABS" : string.Empty;
+            var reasonSelect = hasReasonColumn ? "td.LY_DO_VV as Reason" : "null as Reason";
+            var notesSelect = hasNotesColumn ? "td.GHICHU as Notes" : "null as Notes";
 
             var sql = $"""
                 select
                   to_char(td.MAQL) as Id,
-                  to_char(td.MAVAOVIEN) as VisitId,
+                  {visitIdSelect},
                   td.NGAY as RegisteredAt,
-                  to_char(td.STT_KHAM) as TicketNumber,
-                  td.MAKP as DepartmentCode,
-                  kp.TENKP as DepartmentName,
-                  bs.HOTEN as DoctorName,
-                  td.DONE as DoneStatus,
-                  td.LY_DO_VV as Reason,
-                  td.GHICHU as Notes,
+                  {ticketSelect},
+                  {departmentCodeSelect},
+                  {departmentNameSelect},
+                  {doctorSelect},
+                  {doneSelect},
+                  {reasonSelect},
+                  {notesSelect},
                   {payerTypeSelect}
                 from {schema}.TIEPDON td
-                left join BTDKP_BV kp on kp.MAKP = td.MAKP
-                left join DMBS bs on bs.MA = td.MABS
+                {departmentJoin}
+                {doctorJoin}
                 {payerTypeJoin}
                 where td.MABN = :HisPatientCode
                 order by td.NGAY desc, td.MAQL desc
@@ -795,9 +934,9 @@ public sealed class OracleHisPatientRepository(IConfiguration configuration) : I
             }
         }
 
-        if (registrations.Count == 0)
+        if (registrations.Count > 0)
         {
-            registrations.AddRange(await GetRegistrationsFromFollowUpAsync(connection, hisPatientCode, cancellationToken));
+            registrations = (await EnrichRegistrationsWithClinicalInfoAsync(connection, schemas, hisPatientCode, registrations, cancellationToken)).ToList();
         }
 
         return registrations
@@ -808,57 +947,59 @@ public sealed class OracleHisPatientRepository(IConfiguration configuration) : I
             .ToList();
     }
 
-    private static async Task<IReadOnlyList<RegistrationDto>> GetRegistrationsFromFollowUpAsync(
+    private async Task<IReadOnlyList<RegistrationDto>> EnrichRegistrationsWithClinicalInfoAsync(
         OracleConnection connection,
+        IReadOnlyList<string> schemas,
         string hisPatientCode,
+        IReadOnlyList<RegistrationDto> registrations,
         CancellationToken cancellationToken)
     {
-        var payerTypeColumn = await FindFirstExistingColumnAsync(connection, "HGSOFT_BV", "THEODOI_KCB", cancellationToken, PayerTypeColumnCandidates);
-        var payerTypeSelect = string.IsNullOrWhiteSpace(payerTypeColumn)
-            ? "null as PayerTypeCode, null as PayerTypeName"
-            : $"to_char(kcb.{payerTypeColumn}) as PayerTypeCode, {PayerTypeNameSqlExpression("kcb", payerTypeColumn, "dt")} as PayerTypeName";
-        var payerTypeJoin = string.IsNullOrWhiteSpace(payerTypeColumn)
-            ? string.Empty
-            : $"left join HGSOFT_BV.DOITUONG dt on dt.MA = kcb.{payerTypeColumn}";
+        var genericRegistrations = registrations
+            .Where(registration => IsGenericRegistrationDepartment(registration.DepartmentName) || string.IsNullOrWhiteSpace(registration.DoctorName))
+            .ToList();
 
-        const string departmentName = "N'Tiếp đón/KCB'";
-        var sql = $"""
-            select
-              to_char(kcb.MAVAOVIEN) as Id,
-              to_char(kcb.MAVAOVIEN) as VisitId,
-              kcb.NGAY_TIEPDON as RegisteredAt,
-              null as TicketNumber,
-              null as DepartmentCode,
-              {departmentName} as DepartmentName,
-              null as DoctorName,
-              case
-                when kcb.NGAY_XUATVIEN is not null or kcb.NGAY_THANHTOAN is not null then 'x'
-                else null
-              end as DoneStatus,
-              kcb.LY_DO_VV as Reason,
-              coalesce(kcb.GHI_CHU, kcb.PP_DIEU_TRI, kcb.LY_DO_VNT) as Notes,
-              {payerTypeSelect}
-            from THEODOI_KCB kcb
-            {payerTypeJoin}
-            where kcb.MABN = :HisPatientCode
-              and kcb.NGAY_TIEPDON is not null
-            order by kcb.NGAY_TIEPDON desc, kcb.MAVAOVIEN desc
-            """;
-
-        var rows = await connection.QueryAsync(
-            new CommandDefinition(
-                sql,
-                new { HisPatientCode = hisPatientCode },
-                cancellationToken: cancellationToken,
-                commandTimeout: 30));
-
-        var registrations = new List<RegistrationDto>();
-        foreach (var row in rows)
+        if (genericRegistrations.Count == 0)
         {
-            registrations.Add(MapRegistration(row, hisPatientCode));
+            return registrations;
         }
 
-        return registrations;
+        var visitIds = genericRegistrations
+            .Select(registration => registration.VisitId)
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct()
+            .ToList();
+        var infoByVisit = await GetVisitClinicalInfoFromOrdersAsync(connection, schemas, hisPatientCode, visitIds, cancellationToken);
+
+        if (infoByVisit.Count == 0)
+        {
+            return registrations;
+        }
+
+        return registrations
+            .Select(registration =>
+            {
+                if (!infoByVisit.TryGetValue(registration.VisitId, out var info))
+                {
+                    return registration;
+                }
+
+                return registration with
+                {
+                    DepartmentName = IsGenericRegistrationDepartment(registration.DepartmentName)
+                        ? FirstNonEmpty(info.DepartmentName, registration.DepartmentName)
+                        : registration.DepartmentName,
+                    DoctorName = FirstNonEmpty(registration.DoctorName, info.DoctorName)
+                };
+            })
+            .ToList();
+    }
+
+    private IReadOnlyList<string> GetRegistrationCandidateSchemas()
+    {
+        return Enumerable
+            .Range(-2, 6)
+            .Select(offset => $"{_oracleMonthlySchemaPrefix}{DateTime.Now.AddMonths(offset):MMyy}")
+            .ToList();
     }
 
     public async Task<TodayVisitStatusDto> GetTodayVisitStatusAsync(string hisPatientCode, CancellationToken cancellationToken)
@@ -866,7 +1007,7 @@ public sealed class OracleHisPatientRepository(IConfiguration configuration) : I
         await using var connection = CreateConnection();
         var today = DateTime.Today;
         var tomorrow = today.AddDays(1);
-        var schema = $"HGSOFT_BV{today:MMyy}";
+        var schema = $"{_oracleMonthlySchemaPrefix}{today:MMyy}";
 
         RegistrationDto? registration = null;
         var services = new List<ActiveServiceDto>();
@@ -876,30 +1017,50 @@ public sealed class OracleHisPatientRepository(IConfiguration configuration) : I
             : $"to_char(td.{registrationPayerTypeColumn}) as PayerTypeCode, {PayerTypeNameSqlExpression("td", registrationPayerTypeColumn, "dt")} as PayerTypeName";
         var registrationPayerTypeJoin = string.IsNullOrWhiteSpace(registrationPayerTypeColumn)
             ? string.Empty
-            : $"left join HGSOFT_BV.DOITUONG dt on dt.MA = td.{registrationPayerTypeColumn}";
+            : $"left join {_oracleMasterSchema}.DOITUONG dt on dt.MADOITUONG = td.{registrationPayerTypeColumn}";
+        var registrationHasDoctorColumn = await SchemaHasColumnAsync(connection, schema, "TIEPDON", "MABS", cancellationToken);
+        var registrationHasReasonColumn = await SchemaHasColumnAsync(connection, schema, "TIEPDON", "LY_DO_VV", cancellationToken);
+        var registrationHasNotesColumn = await SchemaHasColumnAsync(connection, schema, "TIEPDON", "GHICHU", cancellationToken);
+        var registrationHasVisitIdColumn = await SchemaHasColumnAsync(connection, schema, "TIEPDON", "MAVAOVIEN", cancellationToken);
+        var registrationHasTicketColumn = await SchemaHasColumnAsync(connection, schema, "TIEPDON", "STT_KHAM", cancellationToken);
+        var registrationHasDepartmentColumn = await SchemaHasColumnAsync(connection, schema, "TIEPDON", "MAKP", cancellationToken);
+        var registrationHasDoneColumn = await SchemaHasColumnAsync(connection, schema, "TIEPDON", "DONE", cancellationToken);
+        var registrationVisitIdSelect = registrationHasVisitIdColumn ? "to_char(td.MAVAOVIEN) as VisitId" : "to_char(td.MAQL) as VisitId";
+        var registrationTicketSelect = registrationHasTicketColumn ? "to_char(td.STT_KHAM) as TicketNumber" : "null as TicketNumber";
+        var registrationDepartmentCodeSelect = registrationHasDepartmentColumn ? "to_char(td.MAKP) as DepartmentCode" : "null as DepartmentCode";
+        var registrationDepartmentNameSelect = registrationHasDepartmentColumn ? "kp.TENKP as DepartmentName" : "null as DepartmentName";
+        var registrationDepartmentJoin = registrationHasDepartmentColumn ? $"left join {_oracleMasterSchema}.BTDKP_BV kp on kp.MAKP = td.MAKP" : string.Empty;
+        var registrationDoctorSelect = registrationHasDoctorColumn ? "bs.HOTEN as DoctorName" : "null as DoctorName";
+        var registrationDoctorJoin = registrationHasDoctorColumn ? $"left join {_oracleMasterSchema}.DMBS bs on bs.MA = td.MABS" : string.Empty;
+        var registrationDoneSelect = registrationHasDoneColumn ? "td.DONE as DoneStatus" : "null as DoneStatus";
+        var registrationReasonSelect = registrationHasReasonColumn ? "td.LY_DO_VV as Reason" : "null as Reason";
+        var registrationNotesSelect = registrationHasNotesColumn ? "td.GHICHU as Notes" : "null as Notes";
 
         var registrationSql = $"""
-            select
-              to_char(td.MAQL) as Id,
-              to_char(td.MAVAOVIEN) as VisitId,
-              td.NGAY as RegisteredAt,
-              to_char(td.STT_KHAM) as TicketNumber,
-              td.MAKP as DepartmentCode,
-              kp.TENKP as DepartmentName,
-              bs.HOTEN as DoctorName,
-              td.DONE as DoneStatus,
-              td.LY_DO_VV as Reason,
-              td.GHICHU as Notes,
-              {registrationPayerTypeSelect}
-            from {schema}.TIEPDON td
-            left join BTDKP_BV kp on kp.MAKP = td.MAKP
-            left join DMBS bs on bs.MA = td.MABS
-            {registrationPayerTypeJoin}
-            where td.MABN = :HisPatientCode
-              and td.NGAY >= :Today
-              and td.NGAY < :Tomorrow
-            order by td.NGAY desc, td.MAQL desc
-            fetch first 1 rows only
+            select *
+            from (
+              select
+                to_char(td.MAQL) as Id,
+                {registrationVisitIdSelect},
+                td.NGAY as RegisteredAt,
+                {registrationTicketSelect},
+                {registrationDepartmentCodeSelect},
+                {registrationDepartmentNameSelect},
+                {registrationDoctorSelect},
+                {registrationDoneSelect},
+                {registrationReasonSelect},
+                {registrationNotesSelect},
+                {registrationPayerTypeSelect}
+              from {schema}.TIEPDON td
+              {registrationDepartmentJoin}
+              {registrationDoctorJoin}
+              {registrationPayerTypeJoin}
+              where td.MABN = :HisPatientCode
+                and td.NGAY >= :Today
+                and td.NGAY < :Tomorrow
+              order by td.NGAY desc, td.MAQL desc
+            )
+            where rownum = 1
             """;
 
         try
@@ -909,6 +1070,12 @@ public sealed class OracleHisPatientRepository(IConfiguration configuration) : I
         }
         catch (OracleException exception) when (IsMissingMonthlySchema(exception) || IsMissingColumnOrTable(exception))
         {
+            logger.LogWarning(
+                exception,
+                "Skipping today registration from schema {Schema} for patient {HisPatientCode} because Oracle returned ORA-{OracleErrorNumber}.",
+                schema,
+                hisPatientCode,
+                exception.Number);
             registration = null;
         }
 
@@ -918,7 +1085,7 @@ public sealed class OracleHisPatientRepository(IConfiguration configuration) : I
             : $"to_char(cd.{servicePayerTypeColumn}) as PayerTypeCode, {PayerTypeNameSqlExpression("cd", servicePayerTypeColumn, "dt_cls")} as PayerTypeName";
         var servicePayerTypeJoin = string.IsNullOrWhiteSpace(servicePayerTypeColumn)
             ? string.Empty
-            : $"left join HGSOFT_BV.DOITUONG dt_cls on dt_cls.MA = cd.{servicePayerTypeColumn}";
+            : $"left join {_oracleMasterSchema}.DOITUONG dt_cls on dt_cls.MADOITUONG = cd.{servicePayerTypeColumn}";
 
         var servicesSql = $"""
             select
@@ -933,9 +1100,9 @@ public sealed class OracleHisPatientRepository(IConfiguration configuration) : I
               vp.ID_LOAI as ServiceGroupId,
               {servicePayerTypeSelect}
             from {schema}.V_CHIDINH cd
-            left join V_GIAVP vp on vp.ID = cd.MAVP
-            left join V_LOAIVP lvp on lvp.ID = vp.ID_LOAI
-            left join BTDKP_BV kp on kp.MAKP = cd.MAKP
+            left join {_oracleMasterSchema}.V_GIAVP vp on vp.ID = cd.MAVP
+            left join {_oracleMasterSchema}.V_LOAIVP lvp on lvp.ID = vp.ID_LOAI
+            left join {_oracleMasterSchema}.BTDKP_BV kp on kp.MAKP = cd.MAKP
             {servicePayerTypeJoin}
             where cd.MABN = :HisPatientCode
               and cd.NGAYUD >= :Today
@@ -962,16 +1129,107 @@ public sealed class OracleHisPatientRepository(IConfiguration configuration) : I
             registration is not null && (registration.Status != "Đã khám" || services.Any(service => service.Status != "Đã có kết quả"))
             || registration is null && services.Count > 0;
         var currentStep = GetTodayVisitStep(registration, services);
+        var queueStatus = registration is null
+            ? null
+            : await GetClinicQueueStatusAsync(connection, schema, registration, cancellationToken);
 
         return new TodayVisitStatusDto(
             HasActiveVisit: hasActiveVisit,
             CurrentStep: currentStep.Code,
             CurrentStepText: currentStep.Text,
             Registration: registration,
-            Services: services);
+            Services: services,
+            QueueStatus: queueStatus);
     }
 
-    private static async Task<IReadOnlyList<ServiceDto>> GetVisitServicesAsync(OracleConnection connection, IReadOnlyList<string> schemas, string hisPatientCode, string visitId)
+    private async Task<ClinicQueueStatusDto?> GetClinicQueueStatusAsync(
+        OracleConnection connection,
+        string schema,
+        RegistrationDto registration,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(registration.DepartmentCode) ||
+            !int.TryParse(registration.TicketNumber, NumberStyles.Integer, CultureInfo.InvariantCulture, out var patientTicket))
+        {
+            return null;
+        }
+
+        var today = DateTime.Today;
+        var tomorrow = today.AddDays(1);
+        const int minutesPerTicket = 5;
+
+        var sql = $"""
+            select
+              max(case when td.DONE is not null then td.STT_KHAM end) as CurrentTicketNumber,
+              count(case when td.STT_KHAM < :PatientTicket and td.DONE is null then 1 end) as WaitingAhead,
+              max(td.NGAYUD) as UpdatedAt
+            from {schema}.TIEPDON td
+            where td.NGAY >= :Today
+              and td.NGAY < :Tomorrow
+              and td.MAKP = :DepartmentCode
+              and td.STT_KHAM is not null
+            """;
+
+        try
+        {
+            var row = await connection.QuerySingleOrDefaultAsync(
+                new CommandDefinition(
+                    sql,
+                    new
+                    {
+                        Today = today,
+                        Tomorrow = tomorrow,
+                        DepartmentCode = registration.DepartmentCode,
+                        PatientTicket = patientTicket
+                    },
+                    cancellationToken: cancellationToken,
+                    commandTimeout: 30));
+
+            if (row is null)
+            {
+                return null;
+            }
+
+            int? currentTicket = ToNullableInt(row.CURRENTTICKETNUMBER);
+            var waitingAhead = Math.Max(0, ToNullableInt(row.WAITINGAHEAD) ?? 0);
+            int? estimatedMinutes = null;
+            string estimatedText;
+
+            if (currentTicket.HasValue && currentTicket.Value >= patientTicket && registration.Status != "Đã khám")
+            {
+                estimatedText = "Có thể đã qua số, vui lòng liên hệ quầy hoặc phòng khám.";
+            }
+            else if (waitingAhead == 0)
+            {
+                estimatedMinutes = 0;
+                estimatedText = "Sắp tới lượt, anh/chị vui lòng ở gần phòng khám.";
+            }
+            else
+            {
+                estimatedMinutes = waitingAhead * minutesPerTicket;
+                estimatedText = $"Còn khoảng {waitingAhead} lượt, dự kiến {estimatedMinutes} phút.";
+            }
+
+            return new ClinicQueueStatusDto(
+                DepartmentCode: registration.DepartmentCode,
+                DepartmentName: registration.DepartmentName,
+                PatientTicketNumber: registration.TicketNumber,
+                CurrentTicketNumber: currentTicket?.ToString(CultureInfo.InvariantCulture) ?? string.Empty,
+                WaitingAhead: waitingAhead,
+                EstimatedMinutes: estimatedMinutes,
+                EstimatedText: estimatedText,
+                UpdatedAt: ToDateTimeOffsetOrDefault(row.UPDATEDAT, registration.Id).ToString("O", CultureInfo.InvariantCulture),
+                Source: "HIS TIEPDON.DONE/STT_KHAM",
+                BranchCode: _branchCode,
+                BranchName: _branchName);
+        }
+        catch (OracleException exception) when (IsMissingMonthlySchema(exception) || IsMissingColumnOrTable(exception))
+        {
+            return null;
+        }
+    }
+
+    private async Task<IReadOnlyList<ServiceDto>> GetVisitServicesAsync(OracleConnection connection, IReadOnlyList<string> schemas, string hisPatientCode, string visitId)
     {
         var services = new List<ServiceDto>();
 
@@ -989,7 +1247,7 @@ public sealed class OracleHisPatientRepository(IConfiguration configuration) : I
                     else N'Đã chỉ định'
                   end as Status
                 from {schema}.V_CHIDINH cd
-                left join V_GIAVP vp on vp.ID = cd.MAVP
+                left join {_oracleMasterSchema}.V_GIAVP vp on vp.ID = cd.MAVP
                 where cd.MABN = :HisPatientCode
                   and to_char(cd.MAVAOVIEN) = :VisitId
                 order by coalesce(cd.NGAY_KQ, cd.NGAY_TH_YL, cd.NGAY_YL) desc
@@ -1018,7 +1276,7 @@ public sealed class OracleHisPatientRepository(IConfiguration configuration) : I
             .ToList();
     }
 
-    private static async Task<PrescriptionDto?> GetVisitPrescriptionAsync(OracleConnection connection, IReadOnlyList<string> schemas, string hisPatientCode, string visitId, DateTimeOffset fallbackDate, string doctorName)
+    private async Task<PrescriptionDto?> GetVisitPrescriptionAsync(OracleConnection connection, IReadOnlyList<string> schemas, string hisPatientCode, string visitId, DateTimeOffset fallbackDate, string doctorName)
     {
         var items = new List<PrescriptionItemDto>();
         DateTimeOffset? prescribedAt = null;
@@ -1041,9 +1299,9 @@ public sealed class OracleHisPatientRepository(IConfiguration configuration) : I
                   coalesce(dt.DOITUONG, case coalesce(ct.MADOITUONG, ll.MADOITUONG) when 1 then N'BHYT' when 2 then N'Dịch vụ' end) as PayerType
                 from {schema}.D_THUOCBHYTLL ll
                 inner join {schema}.D_THUOCBHYTCT ct on ct.ID = ll.ID
-                left join D_DMBD bd on bd.ID = ct.MABD
-                left join DMBS bs on bs.MA = ll.MABS
-                left join DOITUONG dt on dt.MADOITUONG = coalesce(ct.MADOITUONG, ll.MADOITUONG)
+                left join {_oracleMasterSchema}.D_DMBD bd on bd.ID = ct.MABD
+                left join {_oracleMasterSchema}.DMBS bs on bs.MA = ll.MABS
+                left join {_oracleMasterSchema}.DOITUONG dt on dt.MADOITUONG = coalesce(ct.MADOITUONG, ll.MADOITUONG)
                 where ll.MABN = :HisPatientCode
                   and to_char(ll.MAVAOVIEN) = :VisitId
                 order by ll.NGAY desc, ct.STT
@@ -1095,7 +1353,7 @@ public sealed class OracleHisPatientRepository(IConfiguration configuration) : I
 
     private OracleConnection CreateConnection() => new(_connectionString);
 
-    private static async Task<IReadOnlyDictionary<string, string>> GetVisitDispositionsAsync(OracleConnection connection, IReadOnlyList<string> schemas, string hisPatientCode, IReadOnlyList<string> visitIds)
+    private async Task<IReadOnlyDictionary<string, string>> GetVisitDispositionsAsync(OracleConnection connection, IReadOnlyList<string> schemas, string hisPatientCode, IReadOnlyList<string> visitIds)
     {
         var numericVisitIds = visitIds
             .Select(id => decimal.TryParse(id, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value) ? value : (decimal?)null)
@@ -1122,7 +1380,7 @@ public sealed class OracleHisPatientRepository(IConfiguration configuration) : I
                     dm.TEN as Ten
                   from {schema}.BENHANDT ba
                   join {schema}.XUTRIKBct ct on ct.MAQL = ba.MAQL
-                  join HGSOFT_BV.XUTRIKB dm
+                  join {_oracleMasterSchema}.XUTRIKB dm
                     on regexp_like(
                       ',' || replace(replace(ct.XUTRI, ';', ','), ' ', '') || ',',
                       ',0*' || to_char(dm.MA) || ','
@@ -1161,7 +1419,7 @@ public sealed class OracleHisPatientRepository(IConfiguration configuration) : I
     private static string GetDispositionStatus(IReadOnlyDictionary<string, string> dispositions, string visitId) =>
         dispositions.TryGetValue(visitId, out var status) ? status : "Chưa có xử trí";
 
-    private static async Task<IReadOnlyDictionary<string, VisitClinicalInfo>> GetVisitClinicalInfoAsync(OracleConnection connection, IReadOnlyList<string> schemas, string hisPatientCode, IReadOnlyList<string> visitIds)
+    private async Task<IReadOnlyDictionary<string, VisitClinicalInfo>> GetVisitClinicalInfoAsync(OracleConnection connection, IReadOnlyList<string> schemas, string hisPatientCode, IReadOnlyList<string> visitIds)
     {
         var numericVisitIds = visitIds
             .Select(id => decimal.TryParse(id, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value) ? value : (decimal?)null)
@@ -1191,8 +1449,8 @@ public sealed class OracleHisPatientRepository(IConfiguration configuration) : I
                       order by ba.NGAY desc nulls last, ba.MAQL desc nulls last
                     ) as rn
                   from {schema}.BENHANDT ba
-                  left join BTDKP_BV kp on kp.MAKP = ba.MAKP
-                  left join DMBS bs on bs.MA = ba.MABS
+                  left join {_oracleMasterSchema}.BTDKP_BV kp on kp.MAKP = ba.MAKP
+                  left join {_oracleMasterSchema}.DMBS bs on bs.MA = ba.MABS
                   where ba.MABN = :HisPatientCode
                     and ba.MAVAOVIEN in :VisitIds
                 )
@@ -1226,7 +1484,88 @@ public sealed class OracleHisPatientRepository(IConfiguration configuration) : I
         return infoByVisit;
     }
 
-    private static async Task<IReadOnlyList<string>> GetPatientMonthlySchemasAsync(OracleConnection connection, string tableName, string dateColumn, string hisPatientCode)
+    private async Task<IReadOnlyDictionary<string, VisitClinicalInfo>> GetVisitClinicalInfoFromOrdersAsync(
+        OracleConnection connection,
+        IReadOnlyList<string> schemas,
+        string hisPatientCode,
+        IReadOnlyList<string> visitIds,
+        CancellationToken cancellationToken)
+    {
+        var numericVisitIds = visitIds
+            .Select(id => decimal.TryParse(id, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value) ? value : (decimal?)null)
+            .Where(value => value.HasValue)
+            .Select(value => value!.Value)
+            .Distinct()
+            .ToList();
+
+        if (numericVisitIds.Count == 0)
+        {
+            return new Dictionary<string, VisitClinicalInfo>();
+        }
+
+        var infoByVisit = new Dictionary<string, VisitClinicalInfo>();
+
+        foreach (var schema in schemas)
+        {
+            var performedAtExpression = await BuildPerformedAtExpressionAsync(connection, schema, cancellationToken);
+            if (performedAtExpression == "null")
+            {
+                continue;
+            }
+
+            var sql = $"""
+                select VisitId, DepartmentName, DoctorName
+                from (
+                  select
+                    to_char(coalesce(cd.MAVAOVIEN, cd.MAQL)) as VisitId,
+                    kp.TENKP as DepartmentName,
+                    bs.HOTEN as DoctorName,
+                    row_number() over (
+                      partition by coalesce(cd.MAVAOVIEN, cd.MAQL)
+                      order by {performedAtExpression} asc nulls last, cd.ID asc nulls last
+                    ) as rn
+                  from {schema}.V_CHIDINH cd
+                  left join {_oracleMasterSchema}.BTDKP_BV kp on kp.MAKP = cd.MAKP
+                  left join {_oracleMasterSchema}.DMBS bs on bs.MA = cd.MABS
+                  where cd.MABN = :HisPatientCode
+                    and coalesce(cd.MAVAOVIEN, cd.MAQL) in :VisitIds
+                )
+                where rn = 1
+                """;
+
+            try
+            {
+                var rows = await connection.QueryAsync(
+                    new CommandDefinition(
+                        sql,
+                        new { HisPatientCode = hisPatientCode, VisitIds = numericVisitIds },
+                        cancellationToken: cancellationToken,
+                        commandTimeout: 30));
+
+                foreach (var row in rows)
+                {
+                    string visitId = Convert.ToString(row.VISITID) ?? string.Empty;
+
+                    if (string.IsNullOrWhiteSpace(visitId) || infoByVisit.ContainsKey(visitId))
+                    {
+                        continue;
+                    }
+
+                    infoByVisit[visitId] = new VisitClinicalInfo(
+                        Convert.ToString(row.DEPARTMENTNAME) ?? string.Empty,
+                        Convert.ToString(row.DOCTORNAME) ?? string.Empty);
+                }
+            }
+            catch (OracleException exception) when (IsMissingMonthlySchema(exception) || IsMissingColumnOrTable(exception))
+            {
+                continue;
+            }
+        }
+
+        return infoByVisit;
+    }
+
+    private async Task<IReadOnlyList<string>> GetPatientMonthlySchemasAsync(OracleConnection connection, string tableName, string dateColumn, string hisPatientCode)
     {
         var sql = $"""
             select month_code
@@ -1242,7 +1581,14 @@ public sealed class OracleHisPatientRepository(IConfiguration configuration) : I
             """;
 
         var rows = await connection.QueryAsync<string>(sql, new { HisPatientCode = hisPatientCode });
-        return rows.Select(monthCode => $"HGSOFT_BV{monthCode}").ToList();
+        return rows.Select(monthCode => $"{_oracleMonthlySchemaPrefix}{monthCode}").ToList();
+    }
+
+    private async Task<IReadOnlyList<string>> GetPatientClinicalMonthlySchemasAsync(OracleConnection connection, string hisPatientCode)
+    {
+        var labSchemas = await GetPatientMonthlySchemasAsync(connection, "XN_PHIEU", "NGAY", hisPatientCode);
+        var imagingSchemas = await GetPatientMonthlySchemasAsync(connection, "SA_BNCDHA", "NGAYCDHA", hisPatientCode);
+        return labSchemas.Concat(imagingSchemas).Distinct().ToList();
     }
 
     private static async Task<bool> SchemaHasColumnAsync(OracleConnection connection, string schema, string tableName, string columnName, CancellationToken cancellationToken)
@@ -1301,15 +1647,15 @@ public sealed class OracleHisPatientRepository(IConfiguration configuration) : I
         };
     }
 
-    private static async Task<IReadOnlyList<string>> GetPatientVisitMonthlySchemasAsync(OracleConnection connection, string hisPatientCode)
+    private async Task<IReadOnlyList<string>> GetPatientVisitMonthlySchemasAsync(OracleConnection connection, string hisPatientCode)
     {
-        const string sql = """
+        var sql = $"""
             select month_code
             from (
               select distinct
                 to_char(NGAY_TIEPDON, 'MMYY') as month_code,
                 trunc(NGAY_TIEPDON, 'MM') as month_start
-              from THEODOI_KCB
+              from {_oracleMasterSchema}.THEODOI_KCB
               where MABN = :HisPatientCode
                 and NGAY_TIEPDON is not null
             )
@@ -1317,10 +1663,10 @@ public sealed class OracleHisPatientRepository(IConfiguration configuration) : I
             """;
 
         var rows = await connection.QueryAsync<string>(sql, new { HisPatientCode = hisPatientCode });
-        return rows.Select(monthCode => $"HGSOFT_BV{monthCode}").ToList();
+        return rows.Select(monthCode => $"{_oracleMonthlySchemaPrefix}{monthCode}").ToList();
     }
 
-    private static IReadOnlyList<string> GetMonthlySchemasForPeriod(DateTime startDate, DateTime endDate)
+    private IReadOnlyList<string> GetMonthlySchemasForPeriod(DateTime startDate, DateTime endDate)
     {
         if (endDate < startDate)
         {
@@ -1333,7 +1679,7 @@ public sealed class OracleHisPatientRepository(IConfiguration configuration) : I
 
         while (current <= last)
         {
-            schemas.Add($"HGSOFT_BV{current:MMyy}");
+            schemas.Add($"{_oracleMonthlySchemaPrefix}{current:MMyy}");
             current = current.AddMonths(1);
         }
 
@@ -1413,6 +1759,21 @@ public sealed class OracleHisPatientRepository(IConfiguration configuration) : I
             _ => null,
         };
 
+    private static int? ToNullableInt(object? value)
+    {
+        if (value is null)
+        {
+            return null;
+        }
+
+        if (int.TryParse(Convert.ToString(value), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
+        {
+            return parsed;
+        }
+
+        return null;
+    }
+
     private static DateTimeOffset? ParseFollowUpDate(object? value)
     {
         var text = Convert.ToString(value);
@@ -1472,7 +1833,7 @@ public sealed class OracleHisPatientRepository(IConfiguration configuration) : I
             PrefixText("Chẩn đoán", FirstNonEmpty(row.DIAGNOSIS, row.INITIALDIAGNOSIS, row.DIAGNOSISDETAIL)));
     }
 
-    private static RegistrationDto MapRegistration(dynamic row, string hisPatientCode)
+    private RegistrationDto MapRegistration(dynamic row, string hisPatientCode)
     {
         var id = Convert.ToString(row.ID) ?? string.Empty;
 
@@ -1489,14 +1850,16 @@ public sealed class OracleHisPatientRepository(IConfiguration configuration) : I
             Reason: FirstNonEmpty(row.REASON),
             Notes: FirstNonEmpty(row.NOTES),
             PayerTypeCode: FirstNonEmpty(row.PAYERTYPECODE),
-            PayerTypeName: FirstNonEmpty(row.PAYERTYPENAME));
+            PayerTypeName: FirstNonEmpty(row.PAYERTYPENAME),
+            BranchCode: _branchCode,
+            BranchName: _branchName);
     }
 
     private static string PayerTypeNameSqlExpression(string tableAlias, string payerTypeColumn, string dictionaryAlias)
     {
         return $"""
             coalesce(
-              to_char({dictionaryAlias}.TEN),
+              to_char({dictionaryAlias}.DOITUONG),
               case to_char({tableAlias}.{payerTypeColumn})
                 when '1' then 'BHYT'
                 when '2' then 'Thu Phí'
@@ -1509,6 +1872,16 @@ public sealed class OracleHisPatientRepository(IConfiguration configuration) : I
               end
             )
             """;
+    }
+
+    private static bool IsGenericRegistrationDepartment(string value)
+    {
+        var normalized = NormalizeForComparison(value);
+        return string.IsNullOrWhiteSpace(normalized)
+            || normalized == "tiep don/kcb"
+            || normalized == "tiep don"
+            || normalized == "kcb"
+            || normalized.Contains("chua ghi nhan");
     }
 
     private static ActiveServiceDto MapActiveService(dynamic row)
@@ -1708,6 +2081,38 @@ public sealed class OracleHisPatientRepository(IConfiguration configuration) : I
 
     private static string MergeText(params object?[] values) =>
         string.Join(Environment.NewLine, values.Select(Convert.ToString).Where(value => !string.IsNullOrWhiteSpace(value)));
+
+    private static string NormalizeForComparison(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        var normalized = value.Trim().Normalize(NormalizationForm.FormD);
+        var builder = new StringBuilder(normalized.Length);
+
+        foreach (var character in normalized)
+        {
+            if (CharUnicodeInfo.GetUnicodeCategory(character) != UnicodeCategory.NonSpacingMark)
+            {
+                builder.Append(character);
+            }
+        }
+
+        return builder.ToString().Normalize(NormalizationForm.FormC).ToLowerInvariant();
+    }
+
+    private static string NormalizeOracleIdentifier(string? value, string fallback)
+    {
+        var identifier = string.IsNullOrWhiteSpace(value) ? fallback : value.Trim();
+        if (!Regex.IsMatch(identifier, "^[A-Za-z][A-Za-z0-9_$#]*$"))
+        {
+            throw new InvalidOperationException($"Invalid Oracle schema identifier: {identifier}");
+        }
+
+        return identifier.ToUpperInvariant();
+    }
 
     private static string NormalizeDigits(string value) => Regex.Replace(value.Trim(), "[^0-9]", string.Empty);
 

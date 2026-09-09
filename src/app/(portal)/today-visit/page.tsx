@@ -1,4 +1,4 @@
-import { Activity, CheckCircle2, Clock3 } from "lucide-react";
+import { Activity, CheckCircle2, Clock3, Hourglass, UsersRound } from "lucide-react";
 import { Badge, EmptyState, PageHeader, Panel, SectionHeader } from "@/components/ui";
 import { createPatientRepository } from "@/lib/data";
 import type { ActiveService, Registration, TodayVisitStatus } from "@/types/patient";
@@ -71,7 +71,7 @@ export default async function TodayVisitPage() {
         <Panel className="mb-4 border-amber-200 bg-amber-50/80 shadow-none">
           <p className="text-sm font-bold text-amber-950">Lượt khám hôm nay chưa hoàn tất</p>
           <p className="mt-1 text-sm leading-6 text-amber-900">
-            {registration.departmentName || "Chưa ghi nhận phòng"} · {registration.status || "Chưa ghi nhận trạng thái"}
+            {registration.branchName ? `${registration.branchName} · ` : ""}{registration.departmentName || "Chưa ghi nhận phòng"} · {registration.status || "Chưa ghi nhận trạng thái"}
             {registration.ticketNumber ? ` · STT ${registration.ticketNumber}` : ""}
           </p>
         </Panel>
@@ -100,9 +100,10 @@ export default async function TodayVisitPage() {
                   <Badge tone={statusTone(registration.status)}>{registration.status || "Chưa ghi nhận"}</Badge>
                 </div>
                 <p className="mt-1 text-sm leading-6 text-slate-600">
-                  Đăng ký: {formatDateTime(registration.registeredAt)} · STT: {registration.ticketNumber || "Chưa ghi nhận"}
+                  {registration.branchName ? `${registration.branchName} · ` : ""}Đăng ký: {formatDateTime(registration.registeredAt)} · STT: {registration.ticketNumber || "Chưa ghi nhận"}
                 </p>
                 {registration.reason && <p className="mt-2 text-sm leading-6 text-slate-700">{registration.reason}</p>}
+                {status.queueStatus ? <ClinicQueueCard queue={status.queueStatus} /> : null}
               </div>
             </div>
           ) : (
@@ -143,6 +144,48 @@ export default async function TodayVisitPage() {
         )}
       </Panel>
     </>
+  );
+}
+
+function ClinicQueueCard({ queue }: { queue: NonNullable<TodayVisitStatus["queueStatus"]> }) {
+  const passedTicket = Number(queue.currentTicketNumber) >= Number(queue.patientTicketNumber);
+
+  return (
+    <div className={`mt-3 grid gap-2 rounded-md border p-3 ${passedTicket ? "border-amber-200 bg-amber-50" : "border-primary-100 bg-white"}`}>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="flex items-center gap-2 text-sm font-black text-ink">
+          <UsersRound aria-hidden="true" className="h-4 w-4 text-primary-700" />
+          Hàng đợi phòng khám
+        </p>
+        <span className="clinical-mono rounded-full bg-primary-700 px-2.5 py-1 text-xs font-black text-white">
+          STT của bạn: {queue.patientTicketNumber}
+        </span>
+      </div>
+
+      <div className="grid gap-2 sm:grid-cols-3">
+        <QueueMetric label="Đang xử lý tới" value={queue.currentTicketNumber ? `STT ${queue.currentTicketNumber}` : "Chưa có dữ liệu"} />
+        <QueueMetric label="Còn trước bạn" value={`${queue.waitingAhead} lượt`} />
+        <QueueMetric label="Dự kiến" value={queue.estimatedMinutes === 0 ? "Sắp tới lượt" : queue.estimatedMinutes ? `${queue.estimatedMinutes} phút` : "Cần kiểm tra"} />
+      </div>
+
+      <p className={`flex gap-2 rounded-md px-3 py-2 text-xs font-semibold leading-5 ${passedTicket ? "bg-white text-amber-900" : "bg-primary-50 text-primary-900"}`}>
+        <Hourglass aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />
+        <span>{queue.estimatedText}</span>
+      </p>
+
+      <p className="text-[11px] font-semibold leading-5 text-slate-500">
+        Cập nhật từ HIS: {queue.updatedAt ? formatDateTime(queue.updatedAt) : "Chưa ghi nhận"}. Thời gian chỉ là ước tính, thứ tự thực tế có thể thay đổi theo ưu tiên chuyên môn.
+      </p>
+    </div>
+  );
+}
+
+function QueueMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md border border-slate-100 bg-slate-50 px-3 py-2">
+      <p className="text-xs font-bold uppercase text-slate-500">{label}</p>
+      <p className="clinical-mono mt-1 text-sm font-black text-ink">{value}</p>
+    </div>
   );
 }
 

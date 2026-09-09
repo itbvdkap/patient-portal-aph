@@ -1,6 +1,7 @@
 export type {
   ActiveService,
   Appointment,
+  ClinicQueueStatus,
   Diagnosis,
   Gender,
   ImagingResult,

@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "crypto";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
+import { isPatientBranchCode, type PatientBranchCode } from "@anphu/patient-domain";
 
 export interface LoginVerificationResult {
   hisPatientCode: string;
@@ -10,12 +11,16 @@ export interface LoginVerificationResult {
 
 export interface LoginVerificationProfile {
   hisPatientCode: string;
+  branchCode?: PatientBranchCode;
+  branchName?: string;
   fullName: string;
   relationship?: string;
 }
 
 export interface ProfileLookupResult {
   hisPatientCode: string;
+  branchCode?: PatientBranchCode;
+  branchName?: string;
   patientCodeMasked: string;
   fullName: string;
   phoneMasked: string;
@@ -33,18 +38,19 @@ export function loginLookupHash(phone: string, citizenId: string) {
   return createHash("sha256").update(`${normalizeDigits(phone)}|${normalizeDigits(citizenId)}`).digest("hex");
 }
 
-export function profileLinkLookupHash(mabn: string, phone: string, citizenId: string, birthDate: string) {
+export function profileLinkLookupHash(mabn: string, phone: string, citizenId: string, birthDate: string, branchCode: PatientBranchCode = "CN1") {
   return createHash("sha256")
-    .update(`link|${mabn.trim()}|${normalizeDigits(phone)}|${normalizeDigits(citizenId)}|${birthDate.trim()}`)
+    .update(`link|${branchCode}|${mabn.trim()}|${normalizeDigits(phone)}|${normalizeDigits(citizenId)}|${birthDate.trim()}`)
     .digest("hex");
 }
 
-export function profileLookupHash(mabn: string) {
-  return createHash("sha256").update(`lookup|${mabn.trim()}`).digest("hex");
+export function profileLookupHash(mabn: string, branchCode: PatientBranchCode = "CN1") {
+  return createHash("sha256").update(`lookup|${branchCode}|${mabn.trim()}`).digest("hex");
 }
 
 export async function requestOnDemandLoginSync(phone: string, citizenId: string): Promise<LoginVerificationResult | null> {
   const supabase = createSupabaseServiceClient();
+  const branchCode: PatientBranchCode = "CN1";
   const lookupHash = loginLookupHash(phone, citizenId);
 
   const cached = await supabase
@@ -66,9 +72,15 @@ export async function requestOnDemandLoginSync(phone: string, citizenId: string)
   }
 
   const attemptId = randomUUID();
-  const encryptedPayload = await encryptAuthPayload({ phone: normalizeDigits(phone), citizenId: normalizeDigits(citizenId), attemptId });
+  const encryptedPayload = await encryptAuthPayload({
+    phone: normalizeDigits(phone),
+    citizenId: normalizeDigits(citizenId),
+    branchCode,
+    attemptId,
+  });
   const created = await supabase.from("portal_auth_attempts").insert({
     attempt_id: attemptId,
+    branch_code: branchCode,
     lookup_hash: lookupHash,
     encrypted_payload: encryptedPayload,
     status: "queued",
@@ -109,18 +121,22 @@ export async function requestOnDemandProfileLinkSync({
   phone,
   citizenId,
   birthDate,
+  branchCode = "CN1",
 }: {
   mabn: string;
+  branchCode?: PatientBranchCode;
   phone: string;
   citizenId?: string;
   birthDate: string;
 }): Promise<LoginVerificationResult | null> {
   const supabase = createSupabaseServiceClient();
   const normalizedCitizenId = citizenId ?? "";
-  const lookupHash = profileLinkLookupHash(mabn, phone, normalizedCitizenId, birthDate);
+  const normalizedBranchCode = normalizeBranchCode(branchCode);
+  const lookupHash = profileLinkLookupHash(mabn, phone, normalizedCitizenId, birthDate, normalizedBranchCode);
   const attemptId = randomUUID();
   const encryptedPayload = await encryptAuthPayload({
     mabn: mabn.trim(),
+    branchCode: normalizedBranchCode,
     phone: normalizeDigits(phone),
     citizenId: normalizeDigits(normalizedCitizenId),
     birthDate: birthDate.trim(),
@@ -128,6 +144,7 @@ export async function requestOnDemandProfileLinkSync({
   });
   const created = await supabase.from("portal_auth_attempts").insert({
     attempt_id: attemptId,
+    branch_code: normalizedBranchCode,
     lookup_hash: lookupHash,
     encrypted_payload: encryptedPayload,
     status: "queued",
@@ -163,17 +180,20 @@ export async function requestOnDemandProfileLinkSync({
   return null;
 }
 
-export async function requestOnDemandProfileLookupSync(mabn: string): Promise<ProfileLookupResult | null> {
+export async function requestOnDemandProfileLookupSync(mabn: string, branchCode: PatientBranchCode = "CN1"): Promise<ProfileLookupResult | null> {
   const supabase = createSupabaseServiceClient();
-  const lookupHash = profileLookupHash(mabn);
+  const normalizedBranchCode = normalizeBranchCode(branchCode);
+  const lookupHash = profileLookupHash(mabn, normalizedBranchCode);
   const attemptId = randomUUID();
   const encryptedPayload = await encryptAuthPayload({
     mabn: mabn.trim(),
+    branchCode: normalizedBranchCode,
     lookupOnly: true,
     attemptId,
   });
   const created = await supabase.from("portal_auth_attempts").insert({
     attempt_id: attemptId,
+    branch_code: normalizedBranchCode,
     lookup_hash: lookupHash,
     encrypted_payload: encryptedPayload,
     status: "queued",
@@ -209,10 +229,11 @@ export async function requestOnDemandProfileLookupSync(mabn: string): Promise<Pr
   throw new Error("PROFILE_LOOKUP_TIMEOUT");
 }
 
-export async function enqueuePatientSync(mabn: string, resourceName = "all", resourceId?: string) {
+export async function enqueuePatientSync(mabn: string, resourceName = "all", resourceId?: string, branchCode: PatientBranchCode = "CN1") {
   const supabase = createSupabaseServiceClient();
   const queued = await supabase.rpc("portal_enqueue_sync_job", {
     p_mabn: mabn,
+    p_branch_code: normalizeBranchCode(branchCode),
     p_resource_name: resourceName,
     p_resource_id: resourceId ?? null,
     p_maql: null,
@@ -223,6 +244,10 @@ export async function enqueuePatientSync(mabn: string, resourceName = "all", res
   if (queued.error) {
     throw new Error(`Supabase sync enqueue failed: ${queued.error.message}`);
   }
+}
+
+function normalizeBranchCode(value: unknown): PatientBranchCode {
+  return isPatientBranchCode(value) ? value : "CN1";
 }
 
 async function encryptAuthPayload(payload: unknown) {

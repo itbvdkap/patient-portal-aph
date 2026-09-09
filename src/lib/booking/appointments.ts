@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import { Pool } from "pg";
+import { isPatientBranchCode, patientBranchName, type PatientBranchCode } from "@anphu/patient-domain";
 
 const ACTIVE_APPOINTMENT_STATUSES = ["CHO_DUYET", "CHO_DUYET_LAI", "DA_XAC_NHAN"];
 
@@ -14,7 +15,8 @@ type BookingAppointmentInput = {
   province?: string;
   ward?: string;
   address?: string;
-  branch?: string;
+  branchCode: PatientBranchCode;
+  accountKey?: string;
   soCCCD?: string;
   ngayCap?: string;
   appointmentDate: string;
@@ -34,6 +36,7 @@ type BookingAppointmentRecord = {
   gio_kham: string | null;
   khoa_kham: string | null;
   chi_nhanh: string | null;
+  branch_code: string;
   status: string | null;
   his_match_status: string | null;
 };
@@ -106,33 +109,24 @@ function encrypt(text: string) {
   return `${iv.toString("hex")}:${encrypted}`;
 }
 
-function branchCode(branch: string | null) {
-  const value = branch ?? "";
-  if (value.includes("CN2") || value.includes("CN 2") || value.includes("Chi nhánh 2") || value.includes("VSIP II")) {
-    return "2";
-  }
-  if (value.includes("CN3") || value.includes("CN 3") || value.includes("Chi nhánh 3") || value.includes("Đồng Nai")) {
-    return "3";
-  }
-  return "1";
-}
-
-function makeBookingCode(branch: string | null) {
+function makeBookingCode(branchCode: PatientBranchCode) {
   const now = new Date();
   const yy = String(now.getFullYear()).slice(-2);
   const mm = String(now.getMonth() + 1).padStart(2, "0");
   const rand = Math.floor(1000 + Math.random() * 9000);
-  return `AP${branchCode(branch)}${yy}${mm}${rand}`;
+  return `AP${branchCode.slice(2)}${yy}${mm}${rand}`;
 }
 
 async function assertNoActiveDuplicate({
   cccdHash,
   phone,
   appointmentDate,
+  branchCode,
 }: {
   cccdHash: string;
   phone: string;
   appointmentDate: string;
+  branchCode: PatientBranchCode;
 }) {
   const pool = getBookingPool();
   const normalizedPhone = normalizePhone(phone);
@@ -147,9 +141,10 @@ async function assertNoActiveDuplicate({
       from portal.lich_hen_kham
       where "soCCCD_hash" = $1
         and ngay_kham = $2::date
-        and status = any($3::text[])
+        and branch_code = $3
+        and status = any($4::text[])
     `,
-    [cccdHash, appointmentDate, ACTIVE_APPOINTMENT_STATUSES],
+    [cccdHash, appointmentDate, branchCode, ACTIVE_APPOINTMENT_STATUSES],
   );
 
   const duplicate = rows.find((appointment) => normalizePhone(appointment.so_dien_thoai) === normalizedPhone);
@@ -168,7 +163,11 @@ export async function createBookingAppointment(input: BookingAppointmentInput) {
   const appointmentDate = dateKey(input.appointmentDate);
   const birthDate = dateKey(input.birthDate);
   const issueDate = dateKey(input.ngayCap);
-  const branch = cleanString(input.branch);
+  if (!isPatientBranchCode(input.branchCode)) {
+    throw new Error("Invalid branch code.");
+  }
+  const branchCode = input.branchCode;
+  const branch = patientBranchName(branchCode);
 
   if (!appointmentDate) {
     throw new Error("Missing appointment date.");
@@ -179,6 +178,7 @@ export async function createBookingAppointment(input: BookingAppointmentInput) {
       cccdHash,
       phone: input.phone,
       appointmentDate,
+      branchCode,
     });
   }
 
@@ -202,6 +202,8 @@ export async function createBookingAppointment(input: BookingAppointmentInput) {
     tinh_thanh: cleanString(input.province),
     phuong_xa: cleanString(input.ward),
     chi_nhanh: branch,
+    branch_code: branchCode,
+    account_key: cleanString(input.accountKey),
     ngayCap: issueDate,
     trang_thai: false,
     soCCCD: null,
@@ -214,7 +216,7 @@ export async function createBookingAppointment(input: BookingAppointmentInput) {
   let lastError: unknown = null;
 
   for (let attempt = 0; attempt < 10; attempt += 1) {
-    const maLichHen = makeBookingCode(branch);
+    const maLichHen = makeBookingCode(branchCode);
 
     try {
       const { rows } = await pool.query<BookingAppointmentRecord>(
@@ -239,6 +241,8 @@ export async function createBookingAppointment(input: BookingAppointmentInput) {
             tinh_thanh,
             phuong_xa,
             chi_nhanh,
+            branch_code,
+            account_key,
             "ngayCap",
             trang_thai,
             "soCCCD",
@@ -267,15 +271,17 @@ export async function createBookingAppointment(input: BookingAppointmentInput) {
             $17,
             $18,
             $19,
-            $20::date,
+            $20,
             $21,
-            $22,
+            $22::date,
             $23,
             $24,
             $25,
-            $26
+            $26,
+            $27,
+            $28
           )
-          returning id, ma_lich_hen, ho_ten, ngay_kham::text, gio_kham, khoa_kham, chi_nhanh, status, his_match_status
+          returning id, ma_lich_hen, ho_ten, ngay_kham::text, gio_kham, khoa_kham, chi_nhanh, branch_code, status, his_match_status
         `,
         [
           baseRecord.ho_ten,
@@ -297,6 +303,8 @@ export async function createBookingAppointment(input: BookingAppointmentInput) {
           baseRecord.tinh_thanh,
           baseRecord.phuong_xa,
           baseRecord.chi_nhanh,
+          baseRecord.branch_code,
+          baseRecord.account_key,
           baseRecord.ngayCap,
           baseRecord.trang_thai,
           baseRecord.soCCCD,
@@ -341,6 +349,7 @@ export async function createBookingAppointment(input: BookingAppointmentInput) {
           ho_ten: created.ho_ten,
           ngay_kham: created.ngay_kham,
           chi_nhanh: created.chi_nhanh,
+          branch_code: created.branch_code,
           source: "patient_portal",
           old_patient_code: baseRecord.old_patient_code,
         }),

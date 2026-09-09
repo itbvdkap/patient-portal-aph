@@ -61,7 +61,25 @@ public sealed class SupabaseQueueSyncAgent(
         try
         {
             var payload = Decrypt<AuthPayload>(job.EncryptedPayload);
-            logger.LogInformation("Processing auth attempt {AttemptId}", job.AttemptId);
+            var payloadBranchCode = BranchCode(payload.BranchCode);
+            if (!string.Equals(payloadBranchCode, job.BranchCode, StringComparison.OrdinalIgnoreCase))
+            {
+                await store.CompleteAuthAttemptAsync(
+                    job.AttemptId,
+                    "failed",
+                    null,
+                    null,
+                    $"Chi nhánh trong yêu cầu ({payloadBranchCode}) không khớp hàng đợi ({job.BranchCode}).",
+                    cancellationToken);
+                logger.LogWarning(
+                    "Rejected auth attempt {AttemptId}: payload branch {PayloadBranchCode} does not match queued branch {QueuedBranchCode}.",
+                    job.AttemptId,
+                    payloadBranchCode,
+                    job.BranchCode);
+                return true;
+            }
+
+            logger.LogInformation("Processing auth attempt {AttemptId} for branch {BranchCode}", job.AttemptId, job.BranchCode);
             using var scope = scopeFactory.CreateScope();
             var oracle = scope.ServiceProvider.GetRequiredService<OracleHisPatientRepository>();
 
@@ -76,6 +94,8 @@ public sealed class SupabaseQueueSyncAgent(
 
                 var lookup = new PatientProfileLookupDto(
                     HisPatientCode: patient.HisPatientCode,
+                    BranchCode: job.BranchCode,
+                    BranchName: BranchName(job.BranchCode),
                     PatientCodeMasked: MaskCode(patient.HisPatientCode),
                     FullName: patient.FullName,
                     PhoneMasked: MaskPhone(patient.Phone),
@@ -120,7 +140,7 @@ public sealed class SupabaseQueueSyncAgent(
 
         try
         {
-            logger.LogInformation("Processing sync job {JobId} for {Mabn}/{Resource}/{ResourceId}", job.JobId, job.Mabn, job.ResourceName, job.ResourceId);
+            logger.LogInformation("Processing sync job {JobId} for {BranchCode}/{Mabn}/{Resource}/{ResourceId}", job.JobId, job.BranchCode, job.Mabn, job.ResourceName, job.ResourceId);
             using var scope = scopeFactory.CreateScope();
             var oracle = scope.ServiceProvider.GetRequiredService<OracleHisPatientRepository>();
             await SyncResourceAsync(oracle, job, cancellationToken);
@@ -141,17 +161,17 @@ public sealed class SupabaseQueueSyncAgent(
         var ttl = PatientSyncCoordinator.Ttl(job.ResourceName);
         switch (job.ResourceName)
         {
-            case "patient_profile": await store.PutAsync(job.Mabn, job.ResourceName, null, await source.GetPatientAsync(job.Mabn, ct), ttl, ct); break;
-            case "summary": await store.PutAsync(job.Mabn, job.ResourceName, null, await source.GetSummaryAsync(job.Mabn, ct), ttl, ct); break;
-            case "visits": await store.PutAsync(job.Mabn, job.ResourceName, null, await source.GetVisitsAsync(job.Mabn, ct), ttl, ct); break;
-            case "visit_detail": await store.PutAsync(job.Mabn, job.ResourceName, job.ResourceId, await source.GetVisitDetailAsync(job.Mabn, job.ResourceId!, ct), ttl, ct); break;
-            case "lab_results": await store.PutAsync(job.Mabn, job.ResourceName, job.ResourceId, await source.GetLabResultsAsync(job.Mabn, ct, job.ResourceId), ttl, ct); break;
-            case "imaging_results": await store.PutAsync(job.Mabn, job.ResourceName, null, await source.GetImagingResultsAsync(job.Mabn, ct), ttl, ct); break;
-            case "prescriptions": await store.PutAsync(job.Mabn, job.ResourceName, null, await source.GetPrescriptionsAsync(job.Mabn, ct), ttl, ct); break;
-            case "insurance": await store.PutAsync(job.Mabn, job.ResourceName, null, await source.GetInsuranceAsync(job.Mabn, ct), ttl, ct); break;
-            case "appointments": await store.PutAsync(job.Mabn, job.ResourceName, null, await source.GetAppointmentsAsync(job.Mabn, ct), ttl, ct); break;
-            case "today_visit": await store.PutAsync(job.Mabn, job.ResourceName, null, await source.GetTodayVisitStatusAsync(job.Mabn, ct), ttl, ct); break;
-            case "registrations": await store.PutAsync(job.Mabn, job.ResourceName, null, await source.GetRegistrationsAsync(job.Mabn, ct), ttl, ct); break;
+            case "patient_profile": await store.PutAsync(job.Mabn, job.BranchCode, job.ResourceName, null, await source.GetPatientAsync(job.Mabn, ct), ttl, ct); break;
+            case "summary": await store.PutAsync(job.Mabn, job.BranchCode, job.ResourceName, null, await source.GetSummaryAsync(job.Mabn, ct), ttl, ct); break;
+            case "visits": await store.PutAsync(job.Mabn, job.BranchCode, job.ResourceName, null, await source.GetVisitsAsync(job.Mabn, ct), ttl, ct); break;
+            case "visit_detail": await store.PutAsync(job.Mabn, job.BranchCode, job.ResourceName, job.ResourceId, await source.GetVisitDetailAsync(job.Mabn, job.ResourceId!, ct), ttl, ct); break;
+            case "lab_results": await store.PutAsync(job.Mabn, job.BranchCode, job.ResourceName, job.ResourceId, await source.GetLabResultsAsync(job.Mabn, ct, job.ResourceId), ttl, ct); break;
+            case "imaging_results": await store.PutAsync(job.Mabn, job.BranchCode, job.ResourceName, null, await source.GetImagingResultsAsync(job.Mabn, ct), ttl, ct); break;
+            case "prescriptions": await store.PutAsync(job.Mabn, job.BranchCode, job.ResourceName, null, await source.GetPrescriptionsAsync(job.Mabn, ct), ttl, ct); break;
+            case "insurance": await store.PutAsync(job.Mabn, job.BranchCode, job.ResourceName, null, await source.GetInsuranceAsync(job.Mabn, ct), ttl, ct); break;
+            case "appointments": await store.PutAsync(job.Mabn, job.BranchCode, job.ResourceName, null, await source.GetAppointmentsAsync(job.Mabn, ct), ttl, ct); break;
+            case "today_visit": await store.PutAsync(job.Mabn, job.BranchCode, job.ResourceName, null, await source.GetTodayVisitStatusAsync(job.Mabn, ct), ttl, ct); break;
+            case "registrations": await store.PutAsync(job.Mabn, job.BranchCode, job.ResourceName, null, await source.GetRegistrationsAsync(job.Mabn, ct), ttl, ct); break;
             case "all":
                 foreach (var resource in new[] { "patient_profile", "summary", "visits", "lab_results", "imaging_results", "prescriptions", "insurance", "appointments", "today_visit", "registrations" })
                 {
@@ -206,5 +226,17 @@ public sealed class SupabaseQueueSyncAgent(
 
     private static string MaskBirthDate(DateOnly value) => $"**/**/{value.Year:0000}";
 
-    private sealed record AuthPayload(string? Phone, string? CitizenId, string AttemptId, string? Mabn, DateOnly? BirthDate, bool LookupOnly);
+    private static string BranchCode(string? value)
+    {
+        var code = value?.Trim().ToUpperInvariant();
+        return code is "CN1" or "CN3" ? code : "CN1";
+    }
+
+    private static string BranchName(string? value) => BranchCode(value) switch
+    {
+        "CN3" => "Phòng khám An Phú - Chi nhánh 3",
+        _ => "Bệnh viện An Phú - Chi nhánh 1"
+    };
+
+    private sealed record AuthPayload(string? Phone, string? CitizenId, string AttemptId, string? Mabn, string? BranchCode, DateOnly? BirthDate, bool LookupOnly);
 }

@@ -11,9 +11,13 @@ public sealed class SupabaseRestPortalStore(HttpClient httpClient, IConfiguratio
         ?? Environment.GetEnvironmentVariable("SUPABASE_URL")
         ?? throw new InvalidOperationException("SUPABASE_URL is not configured.");
     private readonly string _secretKey = configuration["Supabase:SecretKey"]
-        ?? Environment.GetEnvironmentVariable("SUPABASE_SECRET_KEY")
         ?? Environment.GetEnvironmentVariable("SUPABASE_SERVICE_ROLE_KEY")
-        ?? throw new InvalidOperationException("SUPABASE_SECRET_KEY is not configured.");
+        ?? Environment.GetEnvironmentVariable("SUPABASE_SECRET_KEY")
+        ?? throw new InvalidOperationException("SUPABASE_SERVICE_ROLE_KEY is not configured.");
+    private readonly string _branchCode = NormalizeBranchCode(configuration["PatientPortal:BranchCode"])
+        ?? throw new InvalidOperationException("PatientPortal:BranchCode must be CN1 or CN3.");
+    private readonly string _branchName = configuration["PatientPortal:BranchName"]?.Trim()
+        ?? "Bệnh viện An Phú - Chi nhánh 1";
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     public async Task<AuthAttemptJob?> TryClaimAuthAttemptAsync(string workerId, TimeSpan lockFor, CancellationToken cancellationToken)
@@ -21,7 +25,8 @@ public sealed class SupabaseRestPortalStore(HttpClient httpClient, IConfiguratio
         var rows = await RpcAsync<List<AuthAttemptJob>>("portal_claim_auth_attempt", new
         {
             p_worker_id = workerId,
-            p_lock_seconds = (int)lockFor.TotalSeconds
+            p_lock_seconds = (int)lockFor.TotalSeconds,
+            p_branch_code = _branchCode
         }, cancellationToken);
         return rows.FirstOrDefault();
     }
@@ -43,7 +48,8 @@ public sealed class SupabaseRestPortalStore(HttpClient httpClient, IConfiguratio
         var rows = await RpcAsync<List<SyncJob>>("portal_claim_sync_job", new
         {
             p_worker_id = workerId,
-            p_lock_seconds = (int)lockFor.TotalSeconds
+            p_lock_seconds = (int)lockFor.TotalSeconds,
+            p_branch_code = _branchCode
         }, cancellationToken);
         return rows.FirstOrDefault();
     }
@@ -58,7 +64,8 @@ public sealed class SupabaseRestPortalStore(HttpClient httpClient, IConfiguratio
             p_maql = job.Maql,
             p_status = status,
             p_error = error,
-            p_next_sync_after = nextSync
+            p_next_sync_after = nextSync,
+            p_branch_code = job.BranchCode
         }, cancellationToken);
 
     public Task PutLoginAsync<T>(string phone, string citizenId, string mabn, T data, CancellationToken cancellationToken)
@@ -92,6 +99,8 @@ public sealed class SupabaseRestPortalStore(HttpClient httpClient, IConfiguratio
         {
             account_key = accountKey,
             mabn = profile.HisPatientCode,
+            branch_code = _branchCode,
+            branch_name = _branchName,
             display_name = profile.FullName,
             relationship = index == 0 ? "Bản thân" : profile.Relationship,
             is_default = index == 0,
@@ -100,19 +109,21 @@ public sealed class SupabaseRestPortalStore(HttpClient httpClient, IConfiguratio
 
         if (rows.Length > 0)
         {
-            await UpsertAsync("portal_account_profiles?on_conflict=account_key,mabn", rows, cancellationToken);
+            await UpsertAsync("portal_account_profiles?on_conflict=account_key,branch_code,mabn", rows, cancellationToken);
         }
     }
 
-    public Task PutAsync<T>(string mabn, string resource, string? resourceId, T data, TimeSpan ttl, CancellationToken cancellationToken)
+    public Task PutAsync<T>(string mabn, string branchCode, string resource, string? resourceId, T data, TimeSpan ttl, CancellationToken cancellationToken)
     {
         var now = DateTimeOffset.UtcNow;
+        var normalizedBranchCode = NormalizeBranchCode(branchCode) ?? _branchCode;
         return UpsertAsync("portal_resource_snapshots?on_conflict=cache_key", new[]
         {
             new
             {
-                cache_key = $"{mabn}:{resource}:{resourceId ?? "_"}",
+                cache_key = $"{normalizedBranchCode}:{mabn}:{resource}:{resourceId ?? "_"}",
                 mabn,
+                branch_code = normalizedBranchCode,
                 resource_name = resource,
                 resource_id = resourceId,
                 payload_json = data,
@@ -177,6 +188,12 @@ public sealed class SupabaseRestPortalStore(HttpClient httpClient, IConfiguratio
     {
         var digits = new string(phone.Where(char.IsDigit).ToArray());
         return digits.Length <= 6 ? digits : $"{digits[..3]}****{digits[^3..]}";
+    }
+
+    private static string? NormalizeBranchCode(string? value)
+    {
+        var code = value?.Trim().ToUpperInvariant();
+        return code is "CN1" or "CN3" ? code : null;
     }
 }
 

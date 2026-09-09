@@ -64,6 +64,16 @@ export default async function AdminProfileDetailPage({ params }: { params: Promi
         </div>
       </DetailSection>
 
+      <DetailSection title="Ánh xạ mã bệnh nhân theo chi nhánh" count={data.branchMappings.length}>
+        <SimpleRows
+          rows={data.branchMappings}
+          primary="branch_code"
+          secondary={["patient_name", "his_mabn", "source"]}
+          date="last_seen_at"
+          fallback="Chưa có ánh xạ MABN theo chi nhánh. Ánh xạ sẽ được tạo sau khi booking khớp HIS."
+        />
+      </DetailSection>
+
       <DetailSection title="Snapshot đã đồng bộ" count={data.snapshots.length}>
         <SimpleRows
           rows={data.snapshots}

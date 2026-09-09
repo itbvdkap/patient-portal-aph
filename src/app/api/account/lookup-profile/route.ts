@@ -6,6 +6,7 @@ import { requestOnDemandProfileLookupSync } from "@/lib/supabase/portal-sync";
 
 const lookupProfileSchema = z.object({
   mabn: z.string().trim().min(1).max(20),
+  branchCode: z.enum(["CN1", "CN3"]).optional().default("CN1"),
 });
 
 export async function POST(request: Request) {
@@ -21,7 +22,7 @@ export async function POST(request: Request) {
 
   let profile;
   try {
-    profile = await requestOnDemandProfileLookupSync(parsed.data.mabn);
+    profile = await requestOnDemandProfileLookupSync(parsed.data.mabn, parsed.data.branchCode);
   } catch (error) {
     console.error("Profile lookup failed", error);
     const message = error instanceof Error && error.message === "PROFILE_LOOKUP_TIMEOUT"
@@ -34,5 +35,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Không tìm thấy hồ sơ với mã bệnh nhân đã nhập." }, { status: 404 });
   }
 
-  return NextResponse.json({ data: profile });
+  return NextResponse.json({
+    data: {
+      ...profile,
+      oldPatientCode: profile.hisPatientCode,
+    },
+  });
 }

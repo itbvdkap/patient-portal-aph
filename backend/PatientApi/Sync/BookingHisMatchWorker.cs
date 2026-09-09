@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Dapper;
@@ -31,14 +32,21 @@ public sealed class BookingHisMatchWorker(
             return;
         }
 
+        var branchCode = NormalizeBranchCode(configuration["PatientPortal:BranchCode"]);
+        if (branchCode is null)
+        {
+            logger.LogError("Booking HIS match worker requires PatientPortal:BranchCode=CN1 or CN3. Worker stopped to prevent cross-branch matching.");
+            return;
+        }
+
         var intervalSeconds = Math.Clamp(configuration.GetValue("PatientPortal:BookingHisMatchIntervalSeconds", 60), 10, 600);
-        logger.LogInformation("Booking HIS match worker started with interval {IntervalSeconds}s.", intervalSeconds);
+        logger.LogInformation("Booking HIS match worker started for branch {BranchCode} with interval {IntervalSeconds}s.", branchCode, intervalSeconds);
 
         while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
-                var didWork = await ProcessBatchAsync(connectionString, stoppingToken);
+                var didWork = await ProcessBatchAsync(connectionString, branchCode, stoppingToken);
                 await Task.Delay(TimeSpan.FromSeconds(didWork ? 2 : intervalSeconds), stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -61,7 +69,7 @@ public sealed class BookingHisMatchWorker(
         return NormalizePostgresConnectionString(configured);
     }
 
-    private async Task<bool> ProcessBatchAsync(string connectionString, CancellationToken cancellationToken)
+    private async Task<bool> ProcessBatchAsync(string connectionString, string branchCode, CancellationToken cancellationToken)
     {
         var batchSize = Math.Clamp(configuration.GetValue("PatientPortal:BookingHisMatchBatchSize", 25), 1, 100);
         List<PendingBooking> bookings;
@@ -77,18 +85,23 @@ public sealed class BookingHisMatchWorker(
               ngay_kham as "AppointmentDate",
               gio_kham as "AppointmentTime",
               khoa_kham as "DepartmentName",
+              "soCCCD_encrypt" as "CitizenIdEncrypted",
               old_patient_code as "OldPatientCode",
               patient_code as "PatientCode",
+              branch_code as "BranchCode",
+              account_key as "AccountKey",
+              "soCCCD_hash" as "IdentityHash",
               status as "Status"
             from portal.lich_hen_kham
             where coalesce(his_match_status, 'PENDING') in ('PENDING', 'RETRY')
               and coalesce(his_match_next_check_at, now() - interval '1 second') <= now()
               and ngay_kham >= current_date - interval '1 day'
               and ngay_kham <= current_date + interval '14 days'
+              and branch_code = @BranchCode
             order by ngay_kham, id
             limit @Limit;
             """,
-            new { Limit = batchSize },
+            new { Limit = batchSize, BranchCode = branchCode },
             cancellationToken: cancellationToken))).ToList();
         }
 
@@ -111,18 +124,22 @@ public sealed class BookingHisMatchWorker(
         PendingBooking booking,
         CancellationToken cancellationToken)
     {
-        var mabn = FirstNonEmpty(booking.OldPatientCode, booking.PatientCode);
+        var citizenId = DecryptBookingSecret(booking.CitizenIdEncrypted, configuration);
+        var citizenMatchedMabn = string.IsNullOrWhiteSpace(citizenId)
+            ? null
+            : await oracle.FindPatientCodeByCitizenIdAsync(citizenId, cancellationToken);
+        var mabn = FirstNonEmpty(citizenMatchedMabn, booking.OldPatientCode, booking.PatientCode);
         if (string.IsNullOrWhiteSpace(mabn))
         {
             await using var connection = new NpgsqlConnection(connectionString);
-            await MarkNeedsReviewAsync(connection, booking.Id, "Booking chưa có mã BN cũ nên không tự động đối soát HIS.", cancellationToken);
+            await MarkNeedsReviewAsync(connection, booking.Id, "Booking chưa có mã BN cũ hoặc CCCD/CMND hợp lệ nên không tự động đối soát HIS.", cancellationToken);
             return;
         }
 
         try
         {
             var registrations = await oracle.GetRegistrationsAsync(mabn, cancellationToken);
-            var match = FindBestMatch(booking, registrations);
+            var match = FindBestMatch(booking, mabn, registrations, citizenMatchedMabn);
 
             if (match is null || match.Confidence < 70)
             {
@@ -145,40 +162,53 @@ public sealed class BookingHisMatchWorker(
         }
     }
 
-    private static BookingMatch? FindBestMatch(PendingBooking booking, IReadOnlyList<RegistrationDto> registrations)
+    private static BookingMatch? FindBestMatch(PendingBooking booking, string mabn, IReadOnlyList<RegistrationDto> registrations, string? citizenMatchedMabn)
     {
         BookingMatch? best = null;
         foreach (var registration in registrations)
         {
             var score = 0m;
             var reasons = new List<string>();
+            var hasAppointmentDate = booking.AppointmentDate is not null;
+            var dateMatches = hasAppointmentDate && registration.RegisteredAt.Date == booking.AppointmentDate!.Value.Date;
 
-            if (booking.AppointmentDate is not null && registration.RegisteredAt.Date == booking.AppointmentDate.Value.Date)
+            if (hasAppointmentDate && !dateMatches)
             {
-                score += 55;
+                continue;
+            }
+
+            if (!string.IsNullOrWhiteSpace(citizenMatchedMabn))
+            {
+                score += 45;
+                reasons.Add("khớp CCCD/CMND");
+            }
+
+            if (dateMatches)
+            {
+                score += 45;
                 reasons.Add("trùng ngày khám");
             }
 
             if (!string.IsNullOrWhiteSpace(booking.DepartmentName) &&
                 TextContains(registration.DepartmentName, booking.DepartmentName))
             {
-                score += 25;
+                score += 10;
                 reasons.Add("khớp phòng/khoa");
             }
 
             if (!string.IsNullOrWhiteSpace(registration.TicketNumber))
             {
-                score += 10;
+                score += 5;
                 reasons.Add("có STT khám");
             }
 
             if (!string.IsNullOrWhiteSpace(registration.Id))
             {
-                score += 10;
+                score += 5;
                 reasons.Add("có MAQL");
             }
 
-            var candidate = new BookingMatch(registration, Math.Min(score, 100), string.Join(", ", reasons));
+            var candidate = new BookingMatch(registration, mabn, Math.Min(score, 100), string.Join(", ", reasons));
             if (best is null || candidate.Confidence > best.Confidence)
             {
                 best = candidate;
@@ -208,6 +238,41 @@ public sealed class BookingHisMatchWorker(
         }
 
         return builder.ToString().Normalize(NormalizationForm.FormC);
+    }
+
+    private static string? DecryptBookingSecret(string? encryptedValue, IConfiguration configuration)
+    {
+        if (string.IsNullOrWhiteSpace(encryptedValue) || !encryptedValue.Contains(':', StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        var pieces = encryptedValue.Split(':', 2);
+        try
+        {
+            var secret = configuration["BOOKING_ENCRYPTION_KEY"]
+                ?? configuration["ENCRYPTION_KEY"]
+                ?? configuration["JWT_SECRET"]
+                ?? "fallback-secure-encryption-key-32b";
+            var key = SHA256.HashData(Encoding.UTF8.GetBytes(secret));
+            var iv = Convert.FromHexString(pieces[0]);
+            var cipherText = Convert.FromHexString(pieces[1]);
+
+            using var aes = Aes.Create();
+            aes.Key = key;
+            aes.IV = iv;
+            aes.Mode = CipherMode.CBC;
+            aes.Padding = PaddingMode.PKCS7;
+
+            using var decryptor = aes.CreateDecryptor();
+            var clearBytes = decryptor.TransformFinalBlock(cipherText, 0, cipherText.Length);
+            var digits = new string(Encoding.UTF8.GetString(clearBytes).Where(char.IsDigit).ToArray());
+            return string.IsNullOrWhiteSpace(digits) ? null : digits;
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private async Task MarkNeedsReviewAsync(NpgsqlConnection connection, Guid bookingId, string reason, CancellationToken cancellationToken)
@@ -250,6 +315,8 @@ public sealed class BookingHisMatchWorker(
         var registration = match.Registration;
         var payload = new
         {
+            branch_code = booking.BranchCode,
+            branch_name = BranchName(booking.BranchCode),
             booking_code = booking.BookingCode,
             full_name = booking.FullName,
             appointment_date = booking.AppointmentDate?.ToString("yyyy-MM-dd"),
@@ -257,7 +324,7 @@ public sealed class BookingHisMatchWorker(
             department_name = registration.DepartmentName,
             doctor_name = registration.DoctorName,
             ticket_number = registration.TicketNumber,
-            mabn = FirstNonEmpty(booking.OldPatientCode, booking.PatientCode),
+            mabn = match.HisMabn,
             mavaovien = registration.VisitId,
             maql = registration.Id,
             registered_at = ToUtcDateTime(registration.RegisteredAt)
@@ -284,13 +351,13 @@ public sealed class BookingHisMatchWorker(
             where id=@AppointmentId;
 
             insert into portal.booking_his_matches (
-              appointment_id, online_booking_code, online_patient_code,
+              appointment_id, online_booking_code, online_patient_code, branch_code,
               his_mabn, his_mavaovien, his_maql, his_stt_kham, his_makp,
               his_department_name, his_doctor_name, his_registered_at,
               match_status, match_confidence, match_reason, raw_his_json
             )
             values (
-              @AppointmentId, @BookingCode, @OnlinePatientCode,
+              @AppointmentId, @BookingCode, @OnlinePatientCode, @BranchCode,
               @HisMabn, @HisMavaovien, @HisMaql, @HisSttKham, @HisMakp,
               @HisDepartmentName, @HisDoctorName, @HisRegisteredAt,
               'MATCHED', @MatchConfidence, @MatchReason, cast(@RawHisJson as jsonb)
@@ -298,6 +365,7 @@ public sealed class BookingHisMatchWorker(
             on conflict (appointment_id) do update set
               online_booking_code=excluded.online_booking_code,
               online_patient_code=excluded.online_patient_code,
+              branch_code=excluded.branch_code,
               his_mabn=excluded.his_mabn,
               his_mavaovien=excluded.his_mavaovien,
               his_maql=excluded.his_maql,
@@ -320,10 +388,10 @@ public sealed class BookingHisMatchWorker(
             );
 
             insert into portal.notification_outbox (
-              channel, recipient_phone, template_key, appointment_id, payload_json, status
+              channel, recipient_phone, template_key, appointment_id, branch_code, payload_json, status
             )
             select
-              'zalo', @RecipientPhone, 'booking_his_confirmed', @AppointmentId, cast(@PayloadJson as jsonb), 'pending'
+              'zalo', @RecipientPhone, 'booking_his_confirmed', @AppointmentId, @BranchCode, cast(@PayloadJson as jsonb), 'pending'
             where nullif(@RecipientPhone, '') is not null
             on conflict (appointment_id, channel, template_key)
             where appointment_id is not null
@@ -349,6 +417,25 @@ public sealed class BookingHisMatchWorker(
                 else null
               end,
               updated_at=now();
+
+            insert into portal_patient_branch_mappings (
+              account_key, identity_hash, branch_code, his_mabn, patient_name,
+              source, verified_at, last_seen_at, updated_at
+            )
+            select
+              nullif(@AccountKey, ''), nullif(@IdentityHash, ''), @BranchCode, @HisMabn, @PatientName,
+              'booking_his_match', now(), now(), now()
+            where nullif(@AccountKey, '') is not null or nullif(@IdentityHash, '') is not null
+            on conflict (
+              (coalesce(account_key, '')),
+              (coalesce(identity_hash, '')),
+              branch_code,
+              his_mabn
+            ) do update set
+              patient_name=coalesce(excluded.patient_name, portal_patient_branch_mappings.patient_name),
+              verified_at=excluded.verified_at,
+              last_seen_at=excluded.last_seen_at,
+              updated_at=now();
             """;
 
         await connection.ExecuteAsync(new CommandDefinition(sql, new
@@ -356,10 +443,14 @@ public sealed class BookingHisMatchWorker(
             AppointmentId = booking.Id,
             BookingCode = booking.BookingCode,
             OnlinePatientCode = FirstNonEmpty(booking.OldPatientCode, booking.PatientCode),
+            BranchCode = booking.BranchCode,
+            AccountKey = booking.AccountKey ?? string.Empty,
+            IdentityHash = booking.IdentityHash ?? string.Empty,
+            PatientName = booking.FullName ?? string.Empty,
             OldStatus = booking.Status,
             WorkerId = _workerId,
             RecipientPhone = booking.Phone ?? string.Empty,
-            HisMabn = FirstNonEmpty(booking.OldPatientCode, booking.PatientCode),
+            HisMabn = match.HisMabn,
             HisMavaovien = registration.VisitId,
             HisMaql = registration.Id,
             HisSttKham = registration.TicketNumber,
@@ -453,6 +544,18 @@ public sealed class BookingHisMatchWorker(
         return value[..maxLength];
     }
 
+    private static string? NormalizeBranchCode(string? value)
+    {
+        var code = value?.Trim().ToUpperInvariant();
+        return code is "CN1" or "CN3" ? code : null;
+    }
+
+    private static string BranchName(string branchCode) => branchCode switch
+    {
+        "CN3" => "Phòng khám An Phú - Chi nhánh 3",
+        _ => "Bệnh viện An Phú - Chi nhánh 1"
+    };
+
     private sealed record PendingBooking(
         Guid Id,
         string? BookingCode,
@@ -461,9 +564,13 @@ public sealed class BookingHisMatchWorker(
         DateTime? AppointmentDate,
         string? AppointmentTime,
         string? DepartmentName,
+        string? CitizenIdEncrypted,
         string? OldPatientCode,
         string? PatientCode,
+        string BranchCode,
+        string? AccountKey,
+        string? IdentityHash,
         string? Status);
 
-    private sealed record BookingMatch(RegistrationDto Registration, decimal Confidence, string Reason);
+    private sealed record BookingMatch(RegistrationDto Registration, string HisMabn, decimal Confidence, string Reason);
 }

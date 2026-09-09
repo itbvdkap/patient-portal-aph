@@ -8,6 +8,7 @@ import { requestOnDemandProfileLinkSync } from "@/lib/supabase/portal-sync";
 
 const linkProfileSchema = z.object({
   mabn: z.string().trim().min(1).max(20),
+  branchCode: z.enum(["CN1", "CN3"]).optional().default("CN1"),
   phone: z.string().trim().min(9).max(20),
   citizenId: z.string().trim().max(20).optional().default(""),
   birthDate: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/),
@@ -48,6 +49,7 @@ export async function POST(request: Request) {
 
   const profiles = await linkAccountProfile(session, {
     mabn,
+    branchCode: parsed.data.branchCode,
     fullName,
     relationship: parsed.data.relationship || relationship || "Người thân",
   });
@@ -57,7 +59,7 @@ export async function POST(request: Request) {
   }
 
   const maxAge = 60 * 60 * 8;
-  const response = NextResponse.json({ data: { mabn, fullName, profiles } });
+  const response = NextResponse.json({ data: { mabn, branchCode: parsed.data.branchCode, fullName, profiles } });
   response.cookies.set(
     demoSessionCookie,
       createPatientSessionCookie(mabn, maxAge, {
@@ -65,6 +67,7 @@ export async function POST(request: Request) {
         accountId: session.accountId,
         accountKey: session.accountKey,
         phone: session.phone,
+        branchCode: parsed.data.branchCode,
         profiles,
       }),
     {

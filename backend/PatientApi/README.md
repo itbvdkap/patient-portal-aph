@@ -38,10 +38,26 @@ dotnet restore
 dotnet run --project backend/PatientApi/PatientApi.csproj
 ```
 
+## Booking HIS match
+
+Khi bật `PatientPortal:EnableBookingHisMatchWorker`, agent đối soát lịch đăng ký online trong booking DB với `TIEPDON` trong HIS.
+
+Trong mô hình CN1/CN3 dùng hai Oracle server riêng, mỗi agent phải có `PatientPortal:BranchCode` và `PatientPortal:BranchName`. Booking và thông báo được lọc cứng theo `branch_code`; agent sẽ không khởi động các worker này nếu thiếu mã chi nhánh hợp lệ.
+
+Luồng match hiện tại ưu tiên:
+
+- giải mã CCCD/CMND từ `portal.lich_hen_kham."soCCCD_encrypt"` bằng `BOOKING_ENCRYPTION_KEY`;
+- tìm `MABN` trong Oracle qua `BTDBN.CMND`, `BTDBN.CMND_BN`, `DIENTHOAI.CMND`;
+- chỉ match các lượt `TIEPDON` đúng `ngay_kham` của booking;
+- dùng phòng/khoa, STT khám và MAQL làm tín hiệu phụ.
+
+Nếu thay đổi worker này, cần publish lại Windows sync agent.
+
 ## Nguyên tắc bảo mật
 
 - Browser không gọi Oracle trực tiếp.
 - API không nhận route `/patients/{mabn}` từ bệnh nhân.
 - Patient được xác định từ token/session.
+- Booking worker không log CCCD/CMND đã giải mã.
 - Không log OTP, access token, refresh token, Oracle password.
 - Query phải có điều kiện patient scope theo `MABN` đã xác thực.

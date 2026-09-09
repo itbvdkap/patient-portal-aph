@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from "react";
-import { Pressable, RefreshControl, ScrollView, Text, View } from "react-native";
+import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
+import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { formatDate, formatDateTime, normalizeDisplayText } from "@anphu/patient-domain";
 import type {
   Appointment,
@@ -18,6 +19,7 @@ import {
   getVisits,
 } from "@/lib/portal-api";
 import {
+  Badge,
   Body,
   Card,
   EmptyState,
@@ -27,13 +29,15 @@ import {
   Screen,
   SecondaryButton,
 } from "@/ui/components";
+import { colors } from "@/ui/theme";
 
 type MedicalType =
-  "visits" | "labs" | "imaging" | "prescriptions" | "appointments";
+  "health" | "visits" | "labs" | "imaging" | "prescriptions" | "appointments";
 type MedicalItem =
   Visit | LabResult | ImagingResult | Prescription | Appointment;
 
 const titles: Record<MedicalType, string> = {
+  health: "Hồ sơ sức khỏe",
   visits: "Lịch sử khám",
   labs: "Xét nghiệm",
   imaging: "Chẩn đoán hình ảnh",
@@ -88,9 +92,9 @@ export default function MedicalListScreen() {
           <RefreshControl refreshing={loading} onRefresh={load} />
         }
       >
-        <View style={{ gap: 6 }}>
+        <View style={styles.heading}>
           <H1>{title}</H1>
-          <Body>Dữ liệu lấy từ portal API sau khi chọn hồ sơ đang xem.</Body>
+          <Body>{type === "health" ? "Trung tâm hồ sơ y tế: khám, xét nghiệm, CĐHA, thuốc, BHYT và theo dõi." : "Dữ liệu lấy từ portal API theo hồ sơ đang xem."}</Body>
         </View>
 
         {message ? (
@@ -99,7 +103,9 @@ export default function MedicalListScreen() {
           </Card>
         ) : null}
 
-        {groupedItems.length ? (
+        {type === "health" ? (
+          <HealthHub />
+        ) : groupedItems.length ? (
           type === "prescriptions" ? (
             <PrescriptionSections items={groupedItems as Prescription[]} />
           ) : type === "labs" ? (
@@ -129,10 +135,15 @@ function MedicalCard({ item, type }: { item: MedicalItem; type: MedicalType }) {
   if (type === "visits") {
     const visit = item as Visit;
     return <Pressable onPress={() => router.push(`/medical/visit/${visit.id}`)}><Card>
+        <View style={styles.cardHeader}>
+          <IconBox name="hospital-building" color={colors.teal} background={colors.tealSoft} />
+          <View style={{ flex: 1 }}>
         <H2>{formatDate(visit.visitDate)}</H2>
         <Mono>{normalizeDisplayText(visit.departmentName) || "Chưa ghi nhận phòng"}</Mono>
+          </View>
+        </View>
         <Body>{normalizeDisplayText(visit.primaryDiagnosis) || "Chưa ghi nhận chẩn đoán"}</Body>
-        <Text style={styles.openLink}>Xem chi tiết →</Text>
+        <Text style={styles.openLink}>Xem chi tiết</Text>
       </Card></Pressable>;
   }
 
@@ -140,8 +151,13 @@ function MedicalCard({ item, type }: { item: MedicalItem; type: MedicalType }) {
     const imaging = item as ImagingResult;
     return (
       <Card>
-        <H2>{normalizeDisplayText(imaging.techniqueName)}</H2>
-        <Mono>{formatDate(imaging.date)}</Mono>
+        <View style={styles.cardHeader}>
+          <IconBox name="image-search-outline" color={colors.blue} background={colors.blueSoft} />
+          <View style={{ flex: 1 }}>
+            <H2>{normalizeDisplayText(imaging.techniqueName)}</H2>
+            <Mono>{formatDate(imaging.date)}</Mono>
+          </View>
+        </View>
         <Body>{normalizeDisplayText(imaging.conclusion) || "Chưa ghi nhận kết luận"}</Body>
       </Card>
     );
@@ -151,8 +167,13 @@ function MedicalCard({ item, type }: { item: MedicalItem; type: MedicalType }) {
     const prescription = item as Prescription;
     return (
       <Card>
-        <H2>{formatDate(prescription.prescribedAt)}</H2>
-        <Mono>{normalizeDisplayText(prescription.doctorName) || "Chưa ghi nhận bác sĩ"}</Mono>
+        <View style={styles.cardHeader}>
+          <IconBox name="pill" color={colors.rose} background={colors.roseSoft} />
+          <View style={{ flex: 1 }}>
+            <H2>{formatDate(prescription.prescribedAt)}</H2>
+            <Mono>{normalizeDisplayText(prescription.doctorName) || "Chưa ghi nhận bác sĩ"}</Mono>
+          </View>
+        </View>
         <Body>{prescription.items.length} thuốc</Body>
       </Card>
     );
@@ -161,12 +182,70 @@ function MedicalCard({ item, type }: { item: MedicalItem; type: MedicalType }) {
   const appointment = item as Appointment;
   return (
     <Card>
-      <H2>{formatDateTime(appointment.appointmentDate)}</H2>
-      <Mono>{normalizeDisplayText(appointment.departmentName) || "Chưa ghi nhận khoa"}</Mono>
+      <View style={styles.cardHeader}>
+        <IconBox name="calendar-clock" color={colors.rose} background={colors.roseSoft} />
+        <View style={{ flex: 1 }}>
+          <H2>{formatDateTime(appointment.appointmentDate)}</H2>
+          <Mono>{normalizeDisplayText(appointment.departmentName) || "Chưa ghi nhận khoa"}</Mono>
+        </View>
+      </View>
       <Body>
         {normalizeDisplayText(appointment.content || appointment.doctorName) || "Lịch hẹn khám"}
       </Body>
     </Card>
+  );
+}
+
+function HealthHub() {
+  const cards = [
+    { label: "Lịch sử khám", meta: "Chẩn đoán, phòng khám", target: "/medical/visits", icon: "clipboard-pulse-outline", color: colors.teal, bg: colors.tealSoft },
+    { label: "Xét nghiệm", meta: "4 cột, bất thường", target: "/medical/labs", icon: "heart-pulse", color: colors.violet, bg: colors.violetSoft },
+    { label: "CĐHA", meta: "Siêu âm, X-quang", target: "/medical/imaging", icon: "image-search-outline", color: colors.blue, bg: colors.blueSoft },
+    { label: "Đơn thuốc", meta: "BHYT và dịch vụ", target: "/medical/prescriptions", icon: "pill", color: colors.rose, bg: colors.roseSoft },
+    { label: "BHYT điện tử", meta: "Thẻ và hiệu lực", target: "/insurance", icon: "shield-check-outline", color: colors.teal, bg: colors.tealSoft },
+    { label: "Lịch hẹn", meta: "Nhắc tái khám", target: "/medical/appointments", icon: "calendar-clock", color: colors.rose, bg: colors.roseSoft },
+    { label: "Lịch sử đăng ký", meta: "STT, phòng khám", target: "/registrations", icon: "calendar-plus", color: colors.amber, bg: colors.amberSoft },
+    { label: "Theo dõi sức khỏe", meta: "Xu hướng chỉ số", target: "/medical/labs", icon: "chart-line", color: colors.lime, bg: colors.limeSoft },
+  ];
+
+  return (
+    <View style={styles.hubWrap}>
+      <View style={styles.hubHero}>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.hubEyebrow}>HỒ SƠ Y TẾ</Text>
+          <Text style={styles.hubHeroTitle}>Theo dõi sức khỏe</Text>
+          <Text style={styles.hubHeroText}>Chọn nhanh nhóm dữ liệu cần xem.</Text>
+        </View>
+        <MaterialCommunityIcons name="heart-pulse" size={38} color={colors.cream} />
+      </View>
+      <View style={styles.hubGrid}>
+        {cards.map((item) => (
+          <Pressable key={item.target} onPress={() => router.push(item.target)} style={styles.hubCard}>
+            <View style={[styles.tileIcon, { backgroundColor: item.bg }]}>
+              <MaterialCommunityIcons name={item.icon as keyof typeof MaterialCommunityIcons.glyphMap} size={24} color={item.color} />
+            </View>
+            <Text style={styles.hubTitle}>{item.label}</Text>
+            <Text style={styles.hubMeta}>{item.meta}</Text>
+          </Pressable>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+function IconBox({
+  name,
+  color,
+  background,
+}: {
+  name: keyof typeof MaterialCommunityIcons.glyphMap;
+  color: string;
+  background: string;
+}) {
+  return (
+    <View style={[styles.tileIcon, { backgroundColor: background }]}>
+      <MaterialCommunityIcons name={name} size={22} color={color} />
+    </View>
   );
 }
 
@@ -237,6 +316,7 @@ function PrescriptionSection({
 }
 
 async function fetchByType(type: MedicalType): Promise<MedicalItem[]> {
+  if (type === "health") return [];
   if (type === "visits") return getVisits();
   if (type === "labs") return getLabResults();
   if (type === "imaging") return getImagingResults();
@@ -246,6 +326,7 @@ async function fetchByType(type: MedicalType): Promise<MedicalItem[]> {
 
 function normalizeType(value: string | undefined): MedicalType {
   if (
+    value === "health" ||
     value === "labs" ||
     value === "imaging" ||
     value === "prescriptions" ||
@@ -261,9 +342,11 @@ function itemKey(item: MedicalItem, index: number) {
   return "id" in item && item.id ? item.id : String(index);
 }
 
-const styles = {
+const styles = StyleSheet.create({
+  heading: { gap: 6 },
+  cardHeader: { alignItems: "center", flexDirection: "row", gap: 10, marginBottom: 8 },
   labHeader: {
-    flexDirection: "row" as const,
+    flexDirection: "row",
     gap: 6,
     borderBottomWidth: 1,
     borderBottomColor: "#eadcc8",
@@ -273,15 +356,15 @@ const styles = {
     flex: 1,
     color: "#64748b",
     fontSize: 10,
-    fontWeight: "900" as const,
-    textTransform: "uppercase" as const,
+    fontWeight: "900",
+    textTransform: "uppercase",
   },
-  labRow: { flexDirection: "row" as const, gap: 6, paddingVertical: 10 },
+  labRow: { flexDirection: "row", gap: 6, paddingVertical: 10 },
   labName: {
     flex: 1.5,
     color: "#17312f",
     fontSize: 12,
-    fontWeight: "800" as const,
+    fontWeight: "800",
   },
   labValue: {
     flex: 1,
@@ -293,7 +376,7 @@ const styles = {
     flex: 0.8,
     color: "#be123c",
     fontSize: 11,
-    fontWeight: "900" as const,
+    fontWeight: "900",
   },
   normal: { color: "#005b55" },
   prescription: {
@@ -302,6 +385,25 @@ const styles = {
     marginTop: 8,
     paddingTop: 8,
   },
-  labSummary: { alignItems: "center" as const, flexDirection: "row" as const, gap: 8 },
-  openLink: { color: "#005b55", fontSize: 12, fontWeight: "900" as const, marginTop: 6 },
-};
+  labSummary: { alignItems: "center", flexDirection: "row", gap: 8 },
+  openLink: { color: colors.teal, fontSize: 12, fontWeight: "900", marginTop: 6 },
+  hubWrap: { gap: 12 },
+  hubHero: { alignItems: "center", backgroundColor: colors.teal, borderRadius: 20, flexDirection: "row", gap: 10, padding: 16 },
+  hubEyebrow: { color: colors.tealSoft, fontSize: 11, fontWeight: "900" },
+  hubHeroTitle: { color: colors.cream, fontSize: 23, fontWeight: "900", marginTop: 2 },
+  hubHeroText: { color: colors.cream, fontSize: 13, fontWeight: "700", marginTop: 4 },
+  hubGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
+  hubCard: {
+    width: "48%",
+    minHeight: 108,
+    justifyContent: "space-between",
+    borderWidth: 1,
+    borderColor: colors.creamBorder,
+    borderRadius: 14,
+    backgroundColor: colors.white,
+    padding: 12,
+  },
+  tileIcon: { alignItems: "center", borderRadius: 13, height: 44, justifyContent: "center", width: 44 },
+  hubTitle: { color: colors.ink, fontSize: 15, fontWeight: "900" },
+  hubMeta: { color: colors.muted, fontSize: 12, fontWeight: "700", lineHeight: 18 },
+});

@@ -1,16 +1,40 @@
 import type { ReactNode } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { router, usePathname } from "expo-router";
+import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { colors, radius } from "@/ui/theme";
 
 export function Screen({ children, nav = false }: { children: ReactNode; nav?: boolean }) {
-  return <View style={styles.screen}><View style={styles.screenBody}>{children}</View>{nav ? <MobileNav /> : null}</View>;
+  return <SafeAreaView edges={["top", "left", "right", "bottom"]} style={styles.screen}><View style={styles.screenBody}>{children}</View>{nav ? <MobileNav /> : null}</SafeAreaView>;
 }
 
 function MobileNav() {
   const pathname = usePathname();
-  const tabs = [["Trang chủ", "/dashboard"], ["Hôm nay", "/today"], ["Lịch sử", "/medical/visits"], ["Xét nghiệm", "/medical/labs"], ["CĐHA", "/medical/imaging"]] as const;
-  return <View style={styles.nav}>{tabs.map(([label, target]) => { const active = pathname === target || pathname.startsWith(target + "/"); return <Pressable key={target} onPress={() => router.push(target)} style={styles.navItem}><Text style={[styles.navDot, active && styles.navDotActive]}>●</Text><Text style={[styles.navLabel, active && styles.navLabelActive]}>{label}</Text></Pressable>; })}</View>;
+  const tabs = [
+    { label: "Trang chủ", target: "/dashboard", icon: "home-outline", active: pathname === "/dashboard" },
+    { label: "Đăng ký", target: "/booking", icon: "calendar-plus", active: pathname === "/booking" || pathname === "/registrations" },
+    { label: "Thông báo", target: "/notifications", icon: "bell-outline", active: pathname === "/notifications" || pathname === "/today" },
+    { label: "Hồ sơ", target: "/medical/health", icon: "heart-pulse", active: pathname.startsWith("/medical") || pathname === "/insurance" },
+    { label: "Tài khoản", target: "/account", icon: "account-outline", active: pathname === "/account" || pathname === "/profiles" },
+  ] as const;
+
+  return (
+    <View style={styles.nav}>
+      {tabs.map((item) => (
+        <Pressable
+          key={item.target}
+          accessibilityRole="button"
+          accessibilityLabel={item.label}
+          onPress={() => router.push(item.target)}
+          style={[styles.navItem, item.active && styles.navItemActive]}
+        >
+          <MaterialCommunityIcons name={item.icon} size={22} color={item.active ? colors.teal : colors.muted} />
+          <Text style={[styles.navLabel, item.active && styles.navLabelActive]}>{item.label}</Text>
+        </Pressable>
+      ))}
+    </View>
+  );
 }
 
 export function Card({ children, tone = "plain" }: { children: ReactNode; tone?: "plain" | "teal" | "soft" }) {
@@ -66,16 +90,23 @@ export function EmptyState({ text }: { text: string }) {
   );
 }
 
+export function Badge({ children, tone = "neutral" }: { children: ReactNode; tone?: "neutral" | "teal" | "amber" | "red" }) {
+  return (
+    <View style={[styles.badge, tone === "teal" && styles.badgeTeal, tone === "amber" && styles.badgeAmber, tone === "red" && styles.badgeRed]}>
+      <Text style={[styles.badgeText, tone === "teal" && styles.badgeTextTeal, tone === "amber" && styles.badgeTextAmber, tone === "red" && styles.badgeTextRed]}>{children}</Text>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
     backgroundColor: colors.cream,
   },
   screenBody: { flex: 1 },
-  nav: { backgroundColor: colors.white, borderTopColor: colors.creamBorder, borderTopWidth: 1, flexDirection: "row", paddingBottom: 7, paddingTop: 8 },
-  navItem: { alignItems: "center", flex: 1, gap: 3 },
-  navDot: { color: colors.muted, fontSize: 11 },
-  navDotActive: { color: colors.teal },
+  nav: { backgroundColor: colors.white, borderTopColor: colors.creamBorder, borderTopWidth: 1, flexDirection: "row", paddingBottom: 8, paddingHorizontal: 6, paddingTop: 6 },
+  navItem: { alignItems: "center", borderRadius: 10, flex: 1, gap: 3, minHeight: 50, justifyContent: "center" },
+  navItemActive: { backgroundColor: colors.tealSoft },
   navLabel: { color: colors.muted, fontSize: 10, fontWeight: "700" },
   navLabelActive: { color: colors.teal, fontWeight: "900" },
   card: {
@@ -95,7 +126,7 @@ const styles = StyleSheet.create({
   },
   h1: {
     color: colors.ink,
-    fontSize: 26,
+    fontSize: 25,
     fontWeight: "900",
   },
   h2: {
@@ -115,7 +146,7 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   button: {
-    minHeight: 48,
+    minHeight: 46,
     alignItems: "center",
     justifyContent: "center",
     borderRadius: radius.sm,
@@ -130,7 +161,7 @@ const styles = StyleSheet.create({
     fontWeight: "900",
   },
   secondaryButton: {
-    minHeight: 46,
+    minHeight: 44,
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 1,
@@ -172,4 +203,18 @@ const styles = StyleSheet.create({
     textAlign: "center",
     fontWeight: "700",
   },
+  badge: {
+    alignSelf: "flex-start",
+    borderRadius: 999,
+    backgroundColor: "#f8efe0",
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+  },
+  badgeTeal: { backgroundColor: colors.tealSoft },
+  badgeAmber: { backgroundColor: "#fff2c2" },
+  badgeRed: { backgroundColor: "#ffe4e6" },
+  badgeText: { color: colors.muted, fontSize: 11, fontWeight: "900" },
+  badgeTextTeal: { color: colors.teal },
+  badgeTextAmber: { color: "#92400e" },
+  badgeTextRed: { color: colors.red },
 });

@@ -1,17 +1,19 @@
 import { cookies } from "next/headers";
+import Link from "next/link";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
-import { Bell, ChevronDown, FileText, KeyRound, LockKeyhole, LogOut, Smartphone, UserRound, UsersRound } from "lucide-react";
+import { BadgeCheck, Bell, Building2, CalendarDays, ChevronDown, FileText, IdCard, KeyRound, LockKeyhole, LogOut, Phone, ShieldCheck, Smartphone, UserRound, UsersRound } from "lucide-react";
 import { BrandLogo } from "@/components/brand-logo";
-import { Field, SectionHeader } from "@/components/ui";
-import { DeviceSessions, LinkProfileForm, ProfileSwitcher } from "@/app/(portal)/profile/account-actions";
+import { SectionHeader } from "@/components/ui";
+import { AccountIdentityForm, ChangePasswordForm, DeviceSessions, LinkProfileForm, ProfileSwitcher } from "@/app/(portal)/profile/account-actions";
 import { NotificationPreferences } from "@/app/(portal)/profile/notification-preferences";
 import { getAccountOverview } from "@/lib/account/portal-account";
 import { maskPhone } from "@/lib/auth/phone";
 import { getDemoPatientSession } from "@/lib/auth/session";
 import { createPatientRepository } from "@/lib/data";
+import { PATIENT_BRANCHES } from "@anphu/patient-domain";
 import type { Patient } from "@/types/patient";
 import { formatDate } from "@/utils/format";
 
@@ -31,6 +33,8 @@ export default async function ProfilePage() {
 
   const displayPhone = account.identity?.phone || session?.phone || "";
   const accountName = account.identity?.fullName || account.identity?.displayName || "Tài khoản An Phú Care";
+  const hasPassword = Boolean(account.identity?.hasPassword || account.identity?.passwordSetAt);
+  const passwordStatus = account.identity?.passwordSetAt ? `Đã thiết lập ${formatDate(account.identity.passwordSetAt)}` : hasPassword ? "Đã thiết lập" : "Chưa thiết lập";
 
   return (
     <div className="-mx-3 -mt-3 bg-slate-50/35 pb-4 sm:-mx-5 lg:mx-0 lg:mt-0 lg:bg-transparent">
@@ -39,14 +43,15 @@ export default async function ProfilePage() {
       <div className="mx-auto grid max-w-3xl gap-4 px-3 pt-4 sm:px-5 lg:px-0">
         <AccountMenuSection title="Tài khoản">
           <AccountMenuDetails icon={UserRound} title="Thông tin cá nhân" meta={account.identity?.phoneMasked || (displayPhone ? maskPhone(displayPhone) : undefined)}>
-            <dl className="grid gap-3 sm:grid-cols-2">
-              <Field label="Tên tài khoản" value={accountName} />
-              <Field label="Số điện thoại" value={account.identity?.phoneMasked || (displayPhone ? maskPhone(displayPhone) : "Chưa ghi nhận")} />
-              <Field label="Trạng thái" value={account.identity?.status === "active" ? "Đang hoạt động" : account.identity?.status || "Đang hoạt động"} />
-              <Field label="Xác minh SĐT" value={account.identity?.phoneVerifiedAt ? formatDate(account.identity.phoneVerifiedAt) : "Chưa ghi nhận"} />
-              <Field label="Mật khẩu" value={account.identity?.passwordSetAt ? `Đã thiết lập ${formatDate(account.identity.passwordSetAt)}` : "Chưa thiết lập"} />
-              <Field label="Đăng nhập gần nhất" value={account.identity?.lastLoginAt ? formatDate(account.identity.lastLoginAt) : "Chưa ghi nhận"} />
-            </dl>
+            <AccountSummary
+              name={accountName}
+              phone={account.identity?.phoneMasked || (displayPhone ? maskPhone(displayPhone) : "Chưa ghi nhận")}
+              status={account.identity?.status === "active" ? "Đang hoạt động" : account.identity?.status || "Đang hoạt động"}
+              phoneVerifiedAt={account.identity?.phoneVerifiedAt ? formatDate(account.identity.phoneVerifiedAt) : "Chưa ghi nhận"}
+              passwordStatus={passwordStatus}
+              lastLoginAt={account.identity?.lastLoginAt ? formatDate(account.identity.lastLoginAt) : "Chưa ghi nhận"}
+            />
+            <AccountIdentityForm identity={account.identity} accountName={accountName} phone={displayPhone} />
           </AccountMenuDetails>
 
           <AccountMenuDetails icon={UsersRound} title="Hồ sơ y tế người thân" meta={`${account.profiles.length} hồ sơ`}>
@@ -56,23 +61,10 @@ export default async function ProfilePage() {
             </p>
           ) : null}
           {patient ? (
-            <section className="mb-4 rounded-2xl border border-primary-100 bg-primary-50/70 p-3">
-              <SectionHeader title="Hồ sơ đang xem" meta={patient.hisPatientCode} />
-              <dl className="grid gap-3 sm:grid-cols-2">
-                <Field label="Mã bệnh nhân" value={patient.hisPatientCode} />
-                <Field label="Họ tên" value={patient.fullName} />
-                <Field label="Ngày sinh" value={formatDate(patient.birthDate)} />
-                <Field label="Giới tính" value={patient.gender} />
-                <Field label="Điện thoại" value={patient.phone || "Chưa ghi nhận"} />
-                <Field label="Địa chỉ" value={patient.address || "Chưa ghi nhận"} />
-                <Field label="Số thẻ BHYT" value={patient.insurance.cardNumber || "Chưa ghi nhận"} />
-                <Field label="Từ ngày" value={formatDate(patient.insurance.validFrom)} />
-                <Field label="Đến ngày" value={formatDate(patient.insurance.validTo)} />
-              </dl>
-            </section>
+            <MedicalProfileCard patient={patient} />
           ) : (
             <p className="mb-4 rounded-md border border-dashed border-cream-200 bg-white/70 p-3 text-sm leading-6 text-slate-600">
-              Tài khoản đã đăng nhập bằng số điện thoại. Vui lòng thêm hồ sơ bằng mã bệnh nhân để xem kết quả khám, BHYT, đơn thuốc và lịch hẹn.
+              Dữ liệu y tế đang được cập nhật. Anh/chị vui lòng quay lại sau ít phút.
             </p>
           )}
       <div className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
@@ -87,10 +79,12 @@ export default async function ProfilePage() {
           </div>
           </AccountMenuDetails>
 
+          <AccountMenuDetails icon={Building2} title="Đăng ký theo chi nhánh" meta="CN1 / CN3">
+            <BranchBookingLinks />
+          </AccountMenuDetails>
+
           <AccountMenuDetails icon={KeyRound} title="Thay đổi mật khẩu">
-            <p className="text-sm font-semibold leading-6 text-slate-600">
-              Mật khẩu hiện được thiết lập trong luồng đăng ký/khôi phục mật khẩu. Khi cần đổi mật khẩu, chọn “Quên mật khẩu” ở màn hình đăng nhập để nhận OTP Zalo và đặt mật khẩu mới.
-            </p>
+            <ChangePasswordForm hasPassword={hasPassword} />
           </AccountMenuDetails>
 
           <AccountMenuDetails icon={LockKeyhole} title="Passcode">
@@ -138,6 +132,122 @@ async function getCurrentPatientSafe(): Promise<{ patient: Patient | null; syncP
 
     throw error;
   }
+}
+
+function BranchBookingLinks() {
+  return (
+    <div className="grid gap-2 sm:grid-cols-2">
+      {PATIENT_BRANCHES.map((branch) => (
+        <Link
+          key={branch.code}
+          href={`/booking?branch=${branch.code}`}
+          className="rounded-md border border-cream-200 bg-white px-3 py-3 text-sm font-black text-ink transition hover:border-primary-200 hover:bg-primary-50"
+        >
+          <span className="block text-primary-800">{branch.shortName}</span>
+          <span className="mt-1 block text-xs font-semibold leading-5 text-slate-600">{branch.name}</span>
+        </Link>
+      ))}
+    </div>
+  );
+}
+
+function AccountSummary({
+  name,
+  phone,
+  status,
+  phoneVerifiedAt,
+  passwordStatus,
+  lastLoginAt,
+}: {
+  name: string;
+  phone: string;
+  status: string;
+  phoneVerifiedAt: string;
+  passwordStatus: string;
+  lastLoginAt: string;
+}) {
+  return (
+    <section className="rounded-md border border-primary-100 bg-white">
+      <div className="flex items-start gap-3 border-b border-slate-100 p-3">
+        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-primary-50 text-primary-700">
+          <UserRound aria-hidden="true" className="h-5 w-5" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="font-serif text-lg font-black leading-6 text-ink">{name}</p>
+          <p className="clinical-mono mt-1 text-sm font-bold text-slate-600">{phone}</p>
+        </div>
+        <StatusPill>{status}</StatusPill>
+      </div>
+      <dl className="grid divide-y divide-slate-100 sm:grid-cols-2 sm:divide-x sm:divide-y-0">
+        <CompactInfo icon={BadgeCheck} label="Xác minh SĐT" value={phoneVerifiedAt} />
+        <CompactInfo icon={KeyRound} label="Mật khẩu" value={passwordStatus} />
+        <CompactInfo icon={Smartphone} label="Đăng nhập gần nhất" value={lastLoginAt} />
+        <CompactInfo icon={ShieldCheck} label="Bảo vệ tài khoản" value="Phiên đăng nhập an toàn" />
+      </dl>
+    </section>
+  );
+}
+
+function MedicalProfileCard({ patient }: { patient: Patient }) {
+  return (
+    <section className="mb-4 rounded-md border border-primary-100 bg-white">
+      <div className="border-b border-slate-100 bg-primary-50/70 p-3">
+        <div className="flex items-start gap-3">
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white text-primary-700 shadow-sm">
+            <IdCard aria-hidden="true" className="h-5 w-5" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-black uppercase text-slate-500">Hồ sơ đang xem</p>
+            <h3 className="mt-0.5 font-serif text-lg font-black leading-6 text-ink">{patient.fullName}</h3>
+            <p className="clinical-mono mt-1 text-sm font-bold text-slate-600">BN {patient.hisPatientCode}</p>
+          </div>
+        </div>
+      </div>
+      <dl className="grid divide-y divide-slate-100 sm:grid-cols-2 sm:divide-x sm:divide-y-0">
+        <CompactInfo icon={CalendarDays} label="Ngày sinh" value={formatDate(patient.birthDate)} />
+        <CompactInfo icon={UserRound} label="Giới tính" value={patient.gender || "Chưa ghi nhận"} />
+        <CompactInfo icon={Phone} label="Điện thoại" value={patient.phone || "Chưa ghi nhận"} />
+        <CompactInfo icon={ShieldCheck} label="BHYT" value={patient.insurance.cardNumber || "Chưa ghi nhận"} />
+      </dl>
+      <div className="border-t border-slate-100 p-3">
+        <p className="text-xs font-bold uppercase text-slate-500">Địa chỉ</p>
+        <p className="mt-1 text-sm font-semibold leading-6 text-ink">{patient.address || "Chưa ghi nhận"}</p>
+        <div className="mt-3 grid gap-2 sm:grid-cols-2">
+          <MiniInfo label="BHYT từ ngày" value={formatDate(patient.insurance.validFrom)} />
+          <MiniInfo label="BHYT đến ngày" value={formatDate(patient.insurance.validTo)} />
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function CompactInfo({ icon: Icon, label, value }: { icon: LucideIcon; label: string; value: string }) {
+  return (
+    <div className="flex min-h-16 items-start gap-3 p-3">
+      <Icon aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-primary-700" />
+      <div className="min-w-0">
+        <dt className="text-xs font-bold uppercase text-slate-500">{label}</dt>
+        <dd className="clinical-mono mt-0.5 break-words text-sm font-bold leading-5 text-ink">{value}</dd>
+      </div>
+    </div>
+  );
+}
+
+function MiniInfo({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md bg-cream-50 px-3 py-2">
+      <p className="text-xs font-bold uppercase text-slate-500">{label}</p>
+      <p className="clinical-mono mt-0.5 text-sm font-bold text-ink">{value}</p>
+    </div>
+  );
+}
+
+function StatusPill({ children }: { children: ReactNode }) {
+  return (
+    <span className="inline-flex shrink-0 rounded-full bg-primary-700 px-2.5 py-1 text-[11px] font-bold leading-4 text-white">
+      {children}
+    </span>
+  );
 }
 
 function AccountHero({ phone, accountReady }: { phone: string; accountReady: boolean }) {

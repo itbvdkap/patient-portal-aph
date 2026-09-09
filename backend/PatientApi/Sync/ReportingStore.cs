@@ -11,6 +11,8 @@ public sealed class ReportingStore(IConfiguration configuration)
 {
     private readonly string _connectionString = configuration.GetConnectionString("PortalReporting")
         ?? throw new InvalidOperationException("ConnectionStrings:PortalReporting is not configured.");
+    private readonly string _branchCode = NormalizeBranchCode(configuration["PatientPortal:BranchCode"])
+        ?? throw new InvalidOperationException("PatientPortal:BranchCode must be CN1 or CN3.");
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     public async Task EnsureSchemaAsync(CancellationToken cancellationToken)
@@ -28,12 +30,12 @@ public sealed class ReportingStore(IConfiguration configuration)
               lookup_hash char(64) primary key, mabn varchar(20) not null,
               payload_json jsonb not null, synced_at timestamptz not null, expires_at timestamptz not null);
             create table if not exists portal_auth_attempts (
-              attempt_id uuid primary key, lookup_hash char(64) not null, encrypted_payload text not null,
+              attempt_id uuid primary key, branch_code text not null default 'CN1', lookup_hash char(64) not null, encrypted_payload text not null,
               status varchar(30) not null default 'queued', mabn varchar(20), result_json jsonb, error_message text,
               locked_by varchar(100), locked_until timestamptz, expires_at timestamptz not null default now() + interval '10 minutes',
               created_at timestamptz not null default now(), updated_at timestamptz not null default now());
             create index if not exists idx_portal_auth_attempts_pickup
-              on portal_auth_attempts (status, created_at) where status in ('queued', 'running');
+              on portal_auth_attempts (branch_code, status, created_at) where status in ('queued', 'running');
             create table if not exists portal_sync_state (
               id bigserial primary key, mabn varchar(20) not null, resource_name varchar(80) not null,
               mavaovien varchar(100), maql varchar(30), status varchar(30) not null, last_synced_at timestamptz,
@@ -67,17 +69,18 @@ public sealed class ReportingStore(IConfiguration configuration)
             set status='running', locked_by=@WorkerId, locked_until=@LockedUntil, updated_at=now()
             where attempt_id = (
               select attempt_id from portal_auth_attempts
-              where status='queued' and expires_at > now()
+              where branch_code=@BranchCode and status='queued' and expires_at > now()
               order by created_at
               for update skip locked
               limit 1
             )
-            returning attempt_id as AttemptId, lookup_hash as LookupHash, encrypted_payload as EncryptedPayload;
+            returning attempt_id as AttemptId, branch_code as BranchCode, lookup_hash as LookupHash, encrypted_payload as EncryptedPayload;
             """;
         await using var connection = new NpgsqlConnection(_connectionString);
         return await connection.QuerySingleOrDefaultAsync<AuthAttemptJob>(new CommandDefinition(sql, new
         {
             WorkerId = workerId,
+            BranchCode = _branchCode,
             LockedUntil = DateTimeOffset.UtcNow.Add(lockFor)
         }, cancellationToken: cancellationToken));
     }
@@ -114,7 +117,7 @@ public sealed class ReportingStore(IConfiguration configuration)
               for update skip locked
               limit 1
             )
-            returning job_id as JobId, mabn as Mabn, resource_name as ResourceName, resource_id as ResourceId, maql as Maql;
+            returning job_id as JobId, mabn as Mabn, coalesce(branch_code, 'CN1') as BranchCode, resource_name as ResourceName, resource_id as ResourceId, maql as Maql;
             """;
         await using var connection = new NpgsqlConnection(_connectionString);
         return await connection.QuerySingleOrDefaultAsync<SyncJob>(new CommandDefinition(sql, new
@@ -233,18 +236,26 @@ public sealed class ReportingStore(IConfiguration configuration)
     private static string LoginHash(string phone, string citizenId) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes($"{Digits(phone)}|{Digits(citizenId)}"))).ToLowerInvariant();
     private static string Digits(string value) => new(value.Where(char.IsDigit).ToArray());
 
+    private static string? NormalizeBranchCode(string? value)
+    {
+        var code = value?.Trim().ToUpperInvariant();
+        return code is "CN1" or "CN3" ? code : null;
+    }
+
     private sealed record SnapshotRow(string PayloadJson, DateTimeOffset SyncedAt, DateTimeOffset ExpiresAt);
     private sealed record StatusRow(string ResourceName, string? ResourceId, string Status, DateTimeOffset? LastSyncedAt, DateTimeOffset? NextSyncAfter, string? ErrorMessage);
 }
 
 public sealed record AuthAttemptJob(
     [property: JsonPropertyName("attempt_id")] Guid AttemptId,
+    [property: JsonPropertyName("branch_code")] string BranchCode,
     [property: JsonPropertyName("lookup_hash")] string LookupHash,
     [property: JsonPropertyName("encrypted_payload")] string EncryptedPayload);
 
 public sealed record SyncJob(
     [property: JsonPropertyName("job_id")] long JobId,
     [property: JsonPropertyName("mabn")] string Mabn,
+    [property: JsonPropertyName("branch_code")] string BranchCode,
     [property: JsonPropertyName("resource_name")] string ResourceName,
     [property: JsonPropertyName("resource_id")] string? ResourceId,
     [property: JsonPropertyName("maql")] string? Maql);

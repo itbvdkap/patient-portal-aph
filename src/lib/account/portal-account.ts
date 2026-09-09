@@ -4,11 +4,14 @@ import { accountIdFromPhone } from "@/lib/auth/otp";
 import { hashPassword, verifyPassword } from "@/lib/auth/password";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { enqueuePatientSync } from "@/lib/supabase/portal-sync";
+import { isPatientBranchCode, patientBranchName, type PatientBranchCode } from "@anphu/patient-domain";
 import type { Patient } from "@/types/patient";
 
 export interface AccountPatientProfile {
   mabn: string;
   patientId: string;
+  branchCode: PatientBranchCode;
+  branchName: string;
   fullName: string;
   phone?: string;
   relationship?: string;
@@ -20,6 +23,8 @@ export interface AccountPatientProfile {
 export interface AccountDeviceSession {
   sessionId: string;
   mabn: string;
+  branchCode: PatientBranchCode;
+  branchName: string;
   deviceLabel: string;
   userAgent?: string;
   ipAddress?: string;
@@ -37,6 +42,7 @@ export interface AccountIdentity {
   phoneMasked?: string;
   status?: string;
   phoneVerifiedAt?: string;
+  hasPassword?: boolean;
   passwordSetAt?: string;
   lastLoginAt?: string;
 }
@@ -50,6 +56,8 @@ export interface AccountOverview {
 
 export interface LinkedAccountProfile {
   mabn: string;
+  branchCode: PatientBranchCode;
+  branchName: string;
   fullName?: string;
   relationship?: string;
   isActive?: boolean;
@@ -168,6 +176,31 @@ export async function setPortalAccountPassword(accountId: string, password: stri
   );
 }
 
+export async function changePortalAccountPassword(accountId: string, input: { currentPassword?: string; newPassword: string }) {
+  const supabase = createSupabaseServiceClient();
+  const { data, error } = await supabase
+    .from("portal_accounts")
+    .select("id,password_hash,status,deleted_at")
+    .eq("id", accountId)
+    .maybeSingle();
+
+  if (error || !data) {
+    return { ok: false, status: 404, error: "Không tìm thấy tài khoản." };
+  }
+
+  const accessError = portalAccountAccessError({ status: data.status ?? "active", deletedAt: data.deleted_at ?? undefined });
+  if (accessError) {
+    return { ok: false, status: 403, error: accessError };
+  }
+
+  if (data.password_hash && !verifyPassword(input.currentPassword ?? "", data.password_hash)) {
+    return { ok: false, status: 401, error: "Mật khẩu hiện tại không đúng." };
+  }
+
+  await setPortalAccountPassword(data.id ?? accountId, input.newPassword);
+  return { ok: true, status: 200, error: "" };
+}
+
 export async function verifyPortalAccountPassword(phone: string, password: string) {
   const supabase = createSupabaseServiceClient();
   const { data, error } = await supabase
@@ -207,16 +240,18 @@ export async function recordPortalPasswordLogin({
   const profiles = await getLinkedProfilesForAccount(accountId);
   const currentProfile = profiles.find((profile) => profile.isActive) ?? profiles[0];
   const mabn = currentProfile?.mabn ?? "";
+  const branchCode = currentProfile?.branchCode ?? "CN1";
   const { sessionId, accountKey } = await recordPortalOtpLogin({
     accountId,
     phone,
     mabn,
+    branchCode,
     request,
     maxAgeSeconds,
     eventType,
   });
 
-  return { sessionId, accountKey, mabn, profiles };
+  return { sessionId, accountKey, mabn, branchCode, profiles };
 }
 
 export async function recordPortalLoginSession({
@@ -224,6 +259,7 @@ export async function recordPortalLoginSession({
   accountKey,
   sessionId,
   mabn,
+  branchCode = "CN1",
   fullName,
   phone,
   profiles,
@@ -236,7 +272,8 @@ export async function recordPortalLoginSession({
   mabn: string;
   fullName: string;
   phone: string;
-  profiles?: Array<{ mabn: string; fullName?: string; relationship?: string }>;
+  branchCode?: PatientBranchCode;
+  profiles?: Array<{ mabn: string; branchCode?: string; branchName?: string; fullName?: string; relationship?: string }>;
   request: Request;
   maxAgeSeconds: number;
 }) {
@@ -244,6 +281,7 @@ export async function recordPortalLoginSession({
   const now = new Date();
   const expiresAt = new Date(now.getTime() + maxAgeSeconds * 1000).toISOString();
   const normalizedAccountKey = accountKeyFromSession(accountId, accountKey);
+  const normalizedBranchCode = normalizeBranchCode(branchCode);
 
   await throwOnError(
     supabase.from("portal_accounts").upsert({
@@ -258,7 +296,7 @@ export async function recordPortalLoginSession({
     "upsert portal account",
   );
 
-  const linkedProfiles = normalizeLinkedProfiles(profiles, mabn, fullName);
+  const linkedProfiles = normalizeLinkedProfiles(profiles, mabn, fullName, normalizedBranchCode);
   if (linkedProfiles.length) {
     await throwOnError(
       supabase.from("portal_account_profiles").upsert(
@@ -266,13 +304,15 @@ export async function recordPortalLoginSession({
           account_key: normalizedAccountKey,
           account_id: accountId,
           mabn: profile.mabn,
+          branch_code: profile.branchCode,
+          branch_name: profile.branchName,
           display_name: profile.fullName,
           patient_name: profile.fullName,
           relationship: index === 0 ? "Bản thân" : profile.relationship ?? "Liên quan",
           is_default: index === 0,
-          is_active: profile.mabn === mabn,
+          is_active: profile.mabn === mabn && profile.branchCode === normalizedBranchCode,
           verified_at: now.toISOString(),
-          last_selected_at: profile.mabn === mabn ? now.toISOString() : null,
+          last_selected_at: profile.mabn === mabn && profile.branchCode === normalizedBranchCode ? now.toISOString() : null,
         })),
       ),
       "upsert account profiles",
@@ -286,6 +326,7 @@ export async function recordPortalLoginSession({
       account_id: accountId,
       mabn,
       current_mabn: mabn,
+      current_branch_code: normalizedBranchCode,
       device_label: deviceLabel(request.headers.get("user-agent")),
       user_agent: request.headers.get("user-agent"),
       ip_address: clientIp(request.headers),
@@ -312,6 +353,7 @@ export async function recordPortalOtpLogin({
   accountId,
   phone,
   mabn = "",
+  branchCode = "CN1",
   request,
   maxAgeSeconds,
   eventType = "otp_login",
@@ -319,6 +361,7 @@ export async function recordPortalOtpLogin({
   accountId: string;
   phone: string;
   mabn?: string;
+  branchCode?: PatientBranchCode;
   request: Request;
   maxAgeSeconds: number;
   eventType?: string;
@@ -328,6 +371,7 @@ export async function recordPortalOtpLogin({
   const expiresAt = new Date(now.getTime() + maxAgeSeconds * 1000).toISOString();
   const supabase = createSupabaseServiceClient();
   const accountKey = accountKeyFromSession(accountId);
+  const normalizedBranchCode = normalizeBranchCode(branchCode);
 
   await throwOnError(
     supabase.from("portal_accounts").upsert({
@@ -335,6 +379,7 @@ export async function recordPortalOtpLogin({
       id: accountId,
       phone,
       phone_masked: maskPhone(phone),
+      phone_verified_at: now.toISOString(),
       last_login_at: now.toISOString(),
       updated_at: now.toISOString(),
     }),
@@ -348,6 +393,7 @@ export async function recordPortalOtpLogin({
       account_id: accountId,
       mabn,
       current_mabn: mabn || null,
+      current_branch_code: mabn ? normalizedBranchCode : null,
       device_label: deviceLabel(request.headers.get("user-agent")),
       user_agent: request.headers.get("user-agent"),
       ip_address: clientIp(request.headers),
@@ -376,7 +422,7 @@ export async function getLinkedProfilesForAccount(accountId: string): Promise<Li
   const supabase = createSupabaseServiceClient();
   const { data, error } = await supabase
     .from("portal_account_profiles")
-    .select("mabn,display_name,patient_name,relationship,is_active,last_selected_at")
+    .select("mabn,branch_code,branch_name,display_name,patient_name,relationship,is_active,last_selected_at")
     .eq("account_id", accountId)
     .order("is_active", { ascending: false })
     .order("last_selected_at", { ascending: false, nullsFirst: false })
@@ -386,6 +432,8 @@ export async function getLinkedProfilesForAccount(accountId: string): Promise<Li
 
   return data.map((row) => ({
     mabn: row.mabn,
+    branchCode: normalizeBranchCode(row.branch_code),
+    branchName: row.branch_name ?? patientBranchName(normalizeBranchCode(row.branch_code)),
     fullName: row.display_name ?? row.patient_name ?? undefined,
     relationship: row.relationship ?? undefined,
     isActive: Boolean(row.is_active),
@@ -398,14 +446,17 @@ export async function getAccountOverview(session: AuthenticatedPatientSession, c
   const fallbackProfiles = session.profiles.map((profile) => ({
     mabn: profile.mabn,
     patientId: profile.patientId,
+    branchCode: profile.branchCode,
+    branchName: profile.branchName,
     fullName: profile.fullName || (profile.mabn === currentMabn && currentPatient ? currentPatient.fullName : `Mã BN ${profile.mabn}`),
     phone: profile.mabn === currentMabn && currentPatient ? currentPatient.phone : undefined,
     relationship: profile.mabn === currentMabn ? "Bản thân" : undefined,
-    isCurrent: profile.mabn === session.mabn,
-    isDefault: profile.mabn === currentMabn,
+    isCurrent: profile.mabn === session.mabn && profile.branchCode === session.branchCode,
+    isDefault: profile.mabn === currentMabn && profile.branchCode === session.branchCode,
   }));
 
   const accountFilter = accountQuery(session);
+  const portalFilter = portalAccountQuery(session);
   const fallbackIdentity: AccountIdentity | undefined = session.phone
     ? {
         phone: session.phone,
@@ -422,18 +473,18 @@ export async function getAccountOverview(session: AuthenticatedPatientSession, c
     const [accountRow, profileRows, sessionRows] = await Promise.all([
       supabase
         .from("portal_accounts")
-        .select("full_name,display_name,phone,phone_masked,status,phone_verified_at,password_set_at,last_login_at")
-        .match(accountFilter)
+        .select("full_name,display_name,phone,phone_masked,status,phone_verified_at,password_hash,password_set_at,last_login_at")
+        .match(portalFilter ?? {})
         .maybeSingle(),
       supabase
         .from("portal_account_profiles")
-        .select("mabn,display_name,relationship,is_default,last_selected_at")
+        .select("mabn,branch_code,branch_name,display_name,relationship,is_default,last_selected_at")
         .match(accountFilter)
         .order("is_default", { ascending: false })
         .order("linked_at", { ascending: true }),
       supabase
         .from("portal_account_sessions")
-        .select("session_id,mabn,current_mabn,device_label,user_agent,ip_address,signed_in_at,last_seen_at,expires_at,revoked_at")
+        .select("session_id,mabn,current_mabn,current_branch_code,device_label,user_agent,ip_address,signed_in_at,last_seen_at,expires_at,revoked_at")
         .match(accountFilter)
         .order("signed_in_at", { ascending: false })
         .limit(20),
@@ -451,6 +502,7 @@ export async function getAccountOverview(session: AuthenticatedPatientSession, c
           phoneMasked: accountRow.data.phone_masked ?? (accountRow.data.phone ? maskPhone(accountRow.data.phone) : fallbackIdentity?.phoneMasked),
           status: accountRow.data.status ?? undefined,
           phoneVerifiedAt: accountRow.data.phone_verified_at ?? undefined,
+          hasPassword: Boolean(accountRow.data.password_hash),
           passwordSetAt: accountRow.data.password_set_at ?? undefined,
           lastLoginAt: accountRow.data.last_login_at ?? undefined,
         }
@@ -459,11 +511,13 @@ export async function getAccountOverview(session: AuthenticatedPatientSession, c
     const profiles =
       profileRows.data?.map((row) => ({
         mabn: row.mabn,
-        patientId: `his-${row.mabn}`,
+        branchCode: normalizeBranchCode(row.branch_code),
+        branchName: row.branch_name ?? patientBranchName(normalizeBranchCode(row.branch_code)),
+        patientId: branchPatientId(normalizeBranchCode(row.branch_code), row.mabn),
         fullName: row.display_name || (row.mabn === currentMabn && currentPatient ? currentPatient.fullName : `Mã BN ${row.mabn}`),
         phone: row.mabn === currentMabn && currentPatient ? currentPatient.phone : undefined,
         relationship: row.relationship,
-        isCurrent: row.mabn === session.mabn,
+        isCurrent: row.mabn === session.mabn && normalizeBranchCode(row.branch_code) === session.branchCode,
         isDefault: Boolean(row.is_default),
         lastSelectedAt: row.last_selected_at,
       })) ?? fallbackProfiles;
@@ -472,6 +526,8 @@ export async function getAccountOverview(session: AuthenticatedPatientSession, c
       sessionRows.data?.map((row) => ({
         sessionId: row.session_id,
         mabn: row.current_mabn || row.mabn,
+        branchCode: normalizeBranchCode(row.current_branch_code),
+        branchName: patientBranchName(normalizeBranchCode(row.current_branch_code)),
         deviceLabel: row.device_label || deviceLabel(row.user_agent),
         userAgent: row.user_agent ?? undefined,
         ipAddress: row.ip_address ?? undefined,
@@ -488,17 +544,53 @@ export async function getAccountOverview(session: AuthenticatedPatientSession, c
   }
 }
 
-export async function selectAccountProfile(session: AuthenticatedPatientSession, mabn: string) {
-  const accountFilter = accountQuery(session);
+export async function updatePortalAccountIdentity(
+  session: AuthenticatedPatientSession,
+  input: { fullName: string },
+) {
+  const accountFilter = portalAccountQuery(session);
 
   if (!accountFilter) {
-    return session.profiles.some((profile) => profile.mabn === mabn) ? session.profiles : null;
+    return null;
+  }
+
+  const fullName = input.fullName.trim().replace(/\s+/g, " ");
+
+  if (fullName.length < 2 || fullName.length > 120) {
+    return null;
   }
 
   const supabase = createSupabaseServiceClient();
-    const { data, error } = await supabase.from("portal_account_profiles").select("mabn,display_name,relationship").match(accountFilter);
+  const now = new Date().toISOString();
+  const updatePayload: Record<string, string | null> = {
+    full_name: fullName,
+    display_name: fullName,
+    updated_at: now,
+  };
 
-  if (error || !data?.some((profile) => profile.mabn === mabn)) {
+  const updateResult = await supabase.from("portal_accounts").update(updatePayload).match(accountFilter);
+  if (updateResult.error) {
+    throw new Error(updateResult.error.message);
+  }
+
+  return {
+    fullName,
+  };
+}
+
+export async function selectAccountProfile(session: AuthenticatedPatientSession, input: { mabn: string; branchCode?: string }) {
+  const accountFilter = accountQuery(session);
+  const mabn = input.mabn.trim();
+  const branchCode = normalizeBranchCode(input.branchCode ?? session.branchCode);
+
+  if (!accountFilter) {
+    return session.profiles.some((profile) => profile.mabn === mabn && profile.branchCode === branchCode) ? session.profiles : null;
+  }
+
+  const supabase = createSupabaseServiceClient();
+  const { data, error } = await supabase.from("portal_account_profiles").select("mabn,branch_code,branch_name,display_name,relationship").match(accountFilter);
+
+  if (error || !data?.some((profile) => profile.mabn === mabn && normalizeBranchCode(profile.branch_code) === branchCode)) {
     return null;
   }
 
@@ -511,21 +603,30 @@ export async function selectAccountProfile(session: AuthenticatedPatientSession,
     .from("portal_account_profiles")
     .update({ is_active: true, last_selected_at: new Date().toISOString() })
     .match(accountFilter)
-    .eq("mabn", mabn);
+    .eq("mabn", mabn)
+    .eq("branch_code", branchCode);
 
   if (session.sessionId) {
     await supabase
       .from("portal_account_sessions")
-      .update({ current_mabn: mabn, last_seen_at: new Date().toISOString() })
+      .update({ current_mabn: mabn, current_branch_code: branchCode, last_seen_at: new Date().toISOString() })
       .eq("session_id", session.sessionId);
   }
 
-  void enqueuePatientSync(mabn, "all").catch(() => undefined);
-  return data.map((profile) => ({ mabn: profile.mabn, fullName: profile.display_name ?? undefined, relationship: profile.relationship ?? undefined }));
+  void enqueuePatientSync(mabn, "all", undefined, branchCode).catch(() => undefined);
+  return data.map((profile) => ({
+    mabn: profile.mabn,
+    branchCode: normalizeBranchCode(profile.branch_code),
+    branchName: profile.branch_name ?? patientBranchName(normalizeBranchCode(profile.branch_code)),
+    fullName: profile.display_name ?? undefined,
+    relationship: profile.relationship ?? undefined,
+  }));
 }
 
-export async function unlinkAccountProfile(session: AuthenticatedPatientSession, mabn: string) {
+export async function unlinkAccountProfile(session: AuthenticatedPatientSession, input: { mabn: string; branchCode?: string }) {
   const accountFilter = accountQuery(session);
+  const mabn = input.mabn.trim();
+  const branchCode = normalizeBranchCode(input.branchCode ?? session.branchCode);
 
   if (!accountFilter) {
     return null;
@@ -534,13 +635,13 @@ export async function unlinkAccountProfile(session: AuthenticatedPatientSession,
   const supabase = createSupabaseServiceClient();
   const { data, error } = await supabase
     .from("portal_account_profiles")
-    .select("mabn,display_name,is_active,is_default,linked_at,last_selected_at")
+    .select("mabn,branch_code,branch_name,display_name,is_active,is_default,linked_at,last_selected_at")
     .match(accountFilter)
     .order("is_default", { ascending: false })
     .order("last_selected_at", { ascending: false, nullsFirst: false })
     .order("linked_at", { ascending: true });
 
-  if (error || !data?.length || !data.some((profile) => profile.mabn === mabn)) {
+  if (error || !data?.length || !data.some((profile) => profile.mabn === mabn && normalizeBranchCode(profile.branch_code) === branchCode)) {
     return null;
   }
 
@@ -548,14 +649,14 @@ export async function unlinkAccountProfile(session: AuthenticatedPatientSession,
     throw new Error("cannot_remove_last_profile");
   }
 
-  const deletingCurrent = data.some((profile) => profile.mabn === mabn && profile.is_active);
-  const nextProfile = data.find((profile) => profile.mabn !== mabn);
+  const deletingCurrent = data.some((profile) => profile.mabn === mabn && normalizeBranchCode(profile.branch_code) === branchCode && profile.is_active);
+  const nextProfile = data.find((profile) => profile.mabn !== mabn || normalizeBranchCode(profile.branch_code) !== branchCode);
   if (!nextProfile) {
     throw new Error("cannot_remove_last_profile");
   }
 
   await throwOnError(
-    supabase.from("portal_account_profiles").delete().match(accountFilter).eq("mabn", mabn),
+    supabase.from("portal_account_profiles").delete().match(accountFilter).eq("mabn", mabn).eq("branch_code", branchCode),
     "unlink account profile",
   );
 
@@ -565,19 +666,20 @@ export async function unlinkAccountProfile(session: AuthenticatedPatientSession,
       .from("portal_account_profiles")
       .update({ is_active: true, last_selected_at: new Date().toISOString() })
       .match(accountFilter)
-      .eq("mabn", nextProfile.mabn);
+      .eq("mabn", nextProfile.mabn)
+      .eq("branch_code", normalizeBranchCode(nextProfile.branch_code));
 
     if (session.sessionId) {
       await supabase
         .from("portal_account_sessions")
-        .update({ current_mabn: nextProfile.mabn, last_seen_at: new Date().toISOString() })
+        .update({ current_mabn: nextProfile.mabn, current_branch_code: normalizeBranchCode(nextProfile.branch_code), last_seen_at: new Date().toISOString() })
         .eq("session_id", session.sessionId);
     }
   }
 
   const { data: remaining, error: remainingError } = await supabase
     .from("portal_account_profiles")
-    .select("mabn,display_name,relationship,is_active")
+    .select("mabn,branch_code,branch_name,display_name,relationship,is_active")
     .match(accountFilter)
     .order("is_default", { ascending: false })
     .order("linked_at", { ascending: true });
@@ -589,13 +691,20 @@ export async function unlinkAccountProfile(session: AuthenticatedPatientSession,
   const currentMabn = deletingCurrent ? nextProfile.mabn : session.mabn;
   return {
     currentMabn,
-    profiles: remaining.map((row) => ({ mabn: row.mabn, fullName: row.display_name ?? undefined, relationship: row.relationship ?? undefined })),
+    currentBranchCode: deletingCurrent ? normalizeBranchCode(nextProfile.branch_code) : session.branchCode,
+    profiles: remaining.map((row) => ({
+      mabn: row.mabn,
+      branchCode: normalizeBranchCode(row.branch_code),
+      branchName: row.branch_name ?? patientBranchName(normalizeBranchCode(row.branch_code)),
+      fullName: row.display_name ?? undefined,
+      relationship: row.relationship ?? undefined,
+    })),
   };
 }
 
 export async function linkAccountProfile(
   session: AuthenticatedPatientSession,
-  profile: { mabn: string; fullName: string; relationship?: string },
+  profile: { mabn: string; branchCode?: string; fullName: string; relationship?: string },
 ) {
   const accountFilter = accountQuery(session);
 
@@ -605,11 +714,17 @@ export async function linkAccountProfile(
 
   const supabase = createSupabaseServiceClient();
   const now = new Date().toISOString();
+  const branchCode = normalizeBranchCode(profile.branchCode ?? session.branchCode);
+  const branchName = patientBranchName(branchCode);
+  await supabase.from("portal_account_profiles").update({ is_active: false }).match(accountFilter);
+
   await throwOnError(
     supabase.from("portal_account_profiles").upsert({
       account_key: accountKeyFromSession(session.accountId, session.accountKey),
       account_id: session.accountId,
       mabn: profile.mabn,
+      branch_code: branchCode,
+      branch_name: branchName,
       display_name: profile.fullName,
       patient_name: profile.fullName,
       relationship: profile.relationship ?? "Người thân",
@@ -621,11 +736,16 @@ export async function linkAccountProfile(
     "link account profile",
   );
 
-  await supabase.from("portal_account_profiles").update({ is_active: false }).match(accountFilter).neq("mabn", profile.mabn);
+  if (session.sessionId) {
+    await supabase
+      .from("portal_account_sessions")
+      .update({ current_mabn: profile.mabn, current_branch_code: branchCode, last_seen_at: now })
+      .eq("session_id", session.sessionId);
+  }
 
   const { data, error } = await supabase
     .from("portal_account_profiles")
-    .select("mabn,display_name,relationship")
+    .select("mabn,branch_code,branch_name,display_name,relationship")
     .match(accountFilter)
     .order("is_default", { ascending: false })
     .order("linked_at", { ascending: true });
@@ -634,8 +754,14 @@ export async function linkAccountProfile(
     return null;
   }
 
-  void enqueuePatientSync(profile.mabn, "all").catch(() => undefined);
-  return data.map((row) => ({ mabn: row.mabn, fullName: row.display_name ?? undefined, relationship: row.relationship ?? undefined }));
+  void enqueuePatientSync(profile.mabn, "all", undefined, branchCode).catch(() => undefined);
+  return data.map((row) => ({
+    mabn: row.mabn,
+    branchCode: normalizeBranchCode(row.branch_code),
+    branchName: row.branch_name ?? patientBranchName(normalizeBranchCode(row.branch_code)),
+    fullName: row.display_name ?? undefined,
+    relationship: row.relationship ?? undefined,
+  }));
 }
 
 export async function revokeAllAccountSessions(session: AuthenticatedPatientSession) {
@@ -702,6 +828,12 @@ function accountQuery(session: AuthenticatedPatientSession) {
   return null;
 }
 
+function portalAccountQuery(session: AuthenticatedPatientSession) {
+  if (session.accountId) return { id: session.accountId };
+  if (session.accountKey) return { account_key: session.accountKey };
+  return null;
+}
+
 function deviceLabel(userAgent: string | null) {
   const ua = userAgent ?? "";
   if (/iPhone|iPad/i.test(ua)) return "iPhone/iPad";
@@ -712,26 +844,39 @@ function deviceLabel(userAgent: string | null) {
 }
 
 function normalizeLinkedProfiles(
-  profiles: Array<{ mabn: string; fullName?: string; relationship?: string }> | undefined,
+  profiles: Array<{ mabn: string; branchCode?: string; branchName?: string; fullName?: string; relationship?: string }> | undefined,
   primaryMabn: string,
   primaryFullName: string,
+  primaryBranchCode: PatientBranchCode = "CN1",
 ) {
-  const source = profiles?.length ? profiles : [{ mabn: primaryMabn, fullName: primaryFullName, relationship: "Bản thân" }];
+  const source = profiles?.length ? profiles : [{ mabn: primaryMabn, branchCode: primaryBranchCode, fullName: primaryFullName, relationship: "Bản thân" }];
   const seen = new Set<string>();
-  const normalized: Array<{ mabn: string; fullName: string; relationship?: string }> = [];
+  const normalized: Array<{ mabn: string; branchCode: PatientBranchCode; branchName: string; fullName: string; relationship?: string }> = [];
 
-  for (const profile of [{ mabn: primaryMabn, fullName: primaryFullName, relationship: "Bản thân" }, ...source]) {
+  for (const profile of [{ mabn: primaryMabn, branchCode: primaryBranchCode, fullName: primaryFullName, relationship: "Bản thân" }, ...source]) {
     const mabn = profile.mabn?.trim();
-    if (!mabn || seen.has(mabn)) continue;
-    seen.add(mabn);
+    const branchCode = normalizeBranchCode(profile.branchCode);
+    const key = `${branchCode}:${mabn}`;
+    if (!mabn || seen.has(key)) continue;
+    seen.add(key);
     normalized.push({
       mabn,
+      branchCode,
+      branchName: profile.branchName?.trim() || patientBranchName(branchCode),
       fullName: profile.fullName || (mabn === primaryMabn ? primaryFullName : `Mã BN ${mabn}`),
       relationship: profile.relationship,
     });
   }
 
   return normalized;
+}
+
+function normalizeBranchCode(value: unknown): PatientBranchCode {
+  return isPatientBranchCode(value) ? value : "CN1";
+}
+
+function branchPatientId(branchCode: PatientBranchCode, mabn: string) {
+  return `his-${branchCode}-${mabn}`;
 }
 
 async function throwOnError(promise: PromiseLike<{ error: { message: string } | null }>, action: string) {

@@ -12,8 +12,10 @@ import {
 import { router, useFocusEffect } from "expo-router";
 import type {
   MobileSession,
+  PatientBranchCode,
   PatientSessionProfile,
 } from "@anphu/patient-domain";
+import { PATIENT_BRANCHES } from "@anphu/patient-domain";
 import {
   getCurrentSession,
   linkProfile,
@@ -58,6 +60,7 @@ export default function ProfilesScreen() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [mabn, setMabn] = useState("");
+  const [branchCode, setBranchCode] = useState<PatientBranchCode>("CN1");
   const [verifyPhone, setVerifyPhone] = useState("");
   const [verifyBirthDate, setVerifyBirthDate] = useState("");
   const [relationship, setRelationship] = useState("Con");
@@ -78,7 +81,7 @@ export default function ProfilesScreen() {
 
   async function choose(profile: PatientSessionProfile) {
     try {
-      await selectProfile(profile.mabn);
+      await selectProfile(profile.mabn, profile.branchCode as PatientBranchCode);
       await load();
     } catch {
       setMessage("Chưa chọn được hồ sơ này.");
@@ -91,6 +94,7 @@ export default function ProfilesScreen() {
     setLookup(null);
     try {
       const result = await lookupProfile(mabn, {
+        branchCode,
         phone: verifyPhone,
         birthDate: verifyBirthDate,
       });
@@ -112,6 +116,7 @@ export default function ProfilesScreen() {
     try {
       await linkProfile({
         mabn: lookup.oldPatientCode,
+        branchCode,
         phone: verifyPhone,
         birthDate: toIsoDate(verifyBirthDate || lookup.birthDate || ""),
         relationship,
@@ -142,7 +147,7 @@ export default function ProfilesScreen() {
           style: "destructive",
           onPress: async () => {
             try {
-              await unlinkProfile(profile.mabn);
+              await unlinkProfile(profile.mabn, profile.branchCode as PatientBranchCode);
               await load();
             } catch (error) {
               setMessage(
@@ -188,9 +193,9 @@ export default function ProfilesScreen() {
           {session?.profiles?.length ? (
             session.profiles.map((profile) => (
               <ProfileRow
-                key={profile.mabn}
+                key={`${profile.branchCode}:${profile.mabn}`}
                 profile={profile}
-                current={profile.mabn === session.currentMabn}
+                current={profile.mabn === session.currentMabn && profile.branchCode === session.currentBranchCode}
                 onChoose={() => choose(profile)}
                 onRemove={() => remove(profile)}
               />
@@ -206,6 +211,33 @@ export default function ProfilesScreen() {
             Nhập mã BN và thêm số điện thoại hoặc ngày sinh để xác thực quyền
             liên kết.
           </Body>
+          <Text style={styles.label}>Chi nhánh</Text>
+          <View style={styles.relationships}>
+            {PATIENT_BRANCHES.map((branch) => (
+              <Pressable
+                key={branch.code}
+                onPress={() => {
+                  setBranchCode(branch.code);
+                  setLookup(null);
+                  setMessage("");
+                }}
+                style={[
+                  styles.relationship,
+                  branchCode === branch.code && styles.relationshipActive,
+                ]}
+              >
+                <Text
+                  style={
+                    branchCode === branch.code
+                      ? styles.relationshipTextActive
+                      : styles.relationshipText
+                  }
+                >
+                  {branch.shortName}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
           <Field
             label="Mã bệnh nhân"
             value={mabn}
@@ -234,7 +266,7 @@ export default function ProfilesScreen() {
           {lookup ? (
             <View style={styles.preview}>
               <Text style={styles.name}>{lookup.fullName}</Text>
-              <Mono>Mã BN: {lookup.oldPatientCode}</Mono>
+              <Mono>{branchCode} · Mã BN: {lookup.oldPatientCode}</Mono>
               {lookup.phone ? <Mono>SĐT: {lookup.phone}</Mono> : null}
               <Text style={styles.label}>Quan hệ</Text>
               <View style={styles.relationships}>
@@ -292,7 +324,8 @@ function ProfileRow({
     <View style={styles.profile}>
       <View style={{ flex: 1 }}>
         <Text style={styles.name}>{profile.fullName || "Hồ sơ bệnh nhân"}</Text>
-        <Mono>Mã BN: {profile.mabn}</Mono>
+        <Text style={styles.branchLabel}>{profile.branchName || profile.branchCode}</Text>
+        <Mono>{profile.branchCode || "CN1"} · Mã BN: {profile.mabn}</Mono>
         <Text style={styles.relationshipLabel}>
           {profile.relationship || "Hồ sơ y tế"}
         </Text>
@@ -306,7 +339,7 @@ function ProfileRow({
       )}
       <Pressable
         onPress={onRemove}
-        accessibilityLabel={`Gỡ hồ sơ ${profile.mabn}`}
+        accessibilityLabel={`Gỡ hồ sơ ${profile.branchCode || "CN1"} ${profile.mabn}`}
       >
         <Text style={styles.remove}>Gỡ</Text>
       </Pressable>
@@ -365,6 +398,7 @@ const styles = StyleSheet.create({
   },
   name: { color: colors.ink, fontSize: 17, fontWeight: "900" },
   relationshipLabel: { color: colors.muted, fontWeight: "700", marginTop: 3 },
+  branchLabel: { color: colors.teal, fontWeight: "900", marginTop: 3 },
   current: { color: colors.teal, fontWeight: "900" },
   action: { color: colors.teal, fontWeight: "900" },
   remove: { color: colors.red, fontWeight: "800" },

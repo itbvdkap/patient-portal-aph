@@ -64,6 +64,11 @@ if (builder.Configuration.GetValue("PatientPortal:EnableBookingHisMatchWorker", 
     builder.Services.AddHostedService<BookingHisMatchWorker>();
 }
 
+if (builder.Configuration.GetValue("PatientPortal:EnableBookingHisOnlineSyncWorker", false))
+{
+    builder.Services.AddHostedService<BookingHisOnlineSyncWorker>();
+}
+
 if (builder.Configuration.GetValue("PatientPortal:EnableNotificationOutboxWorker", false))
 {
     builder.Services.AddHttpClient<NotificationOutboxWorker>();

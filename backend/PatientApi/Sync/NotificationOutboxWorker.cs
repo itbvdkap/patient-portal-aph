@@ -1,5 +1,6 @@
 using Dapper;
 using Npgsql;
+using Oracle.ManagedDataAccess.Client;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -29,14 +30,21 @@ public sealed class NotificationOutboxWorker(
             return;
         }
 
+        var branchCode = NormalizeBranchCode(configuration["PatientPortal:BranchCode"]);
+        if (branchCode is null)
+        {
+            logger.LogError("Notification outbox worker requires PatientPortal:BranchCode=CN1 or CN3. Worker stopped to prevent cross-branch delivery.");
+            return;
+        }
+
         var intervalSeconds = Math.Clamp(configuration.GetValue("PatientPortal:NotificationOutboxIntervalSeconds", 30), 10, 600);
-        logger.LogInformation("Notification outbox worker started with interval {IntervalSeconds}s.", intervalSeconds);
+        logger.LogInformation("Notification outbox worker started for branch {BranchCode} with interval {IntervalSeconds}s.", branchCode, intervalSeconds);
 
         while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
-                var didWork = await ProcessBatchAsync(connectionString, stoppingToken);
+                var didWork = await ProcessBatchAsync(connectionString, branchCode, stoppingToken);
                 await Task.Delay(TimeSpan.FromSeconds(didWork ? 2 : intervalSeconds), stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -59,7 +67,7 @@ public sealed class NotificationOutboxWorker(
         return NormalizePostgresConnectionString(configured);
     }
 
-    private async Task<bool> ProcessBatchAsync(string connectionString, CancellationToken cancellationToken)
+    private async Task<bool> ProcessBatchAsync(string connectionString, string branchCode, CancellationToken cancellationToken)
     {
         var batchSize = Math.Clamp(configuration.GetValue("PatientPortal:NotificationOutboxBatchSize", 20), 1, 100);
         var autoSendEnabled = await IsAutoSendEnabledAsync(cancellationToken);
@@ -79,6 +87,7 @@ public sealed class NotificationOutboxWorker(
                   from portal.notification_outbox
                   where channel='zalo'
                     and status in ('pending', 'retry')
+                    and branch_code=@BranchCode
                     and run_after <= now()
                     and (locked_until is null or locked_until < now())
                     and (
@@ -99,7 +108,7 @@ public sealed class NotificationOutboxWorker(
                   attempt_count as "AttemptCount",
                   max_attempts as "MaxAttempts";
                 """,
-                new { WorkerId = _workerId, Limit = batchSize, AutoSendEnabled = autoSendEnabled },
+                new { WorkerId = _workerId, Limit = batchSize, AutoSendEnabled = autoSendEnabled, BranchCode = branchCode },
                 cancellationToken: cancellationToken))).ToList();
         }
 
@@ -133,7 +142,7 @@ public sealed class NotificationOutboxWorker(
     private async Task<Dictionary<string, string>> ReadPortalSettingsAsync(CancellationToken cancellationToken)
     {
         var supabaseUrl = configuration["SUPABASE_URL"]?.TrimEnd('/');
-        var supabaseKey = configuration["SUPABASE_SECRET_KEY"] ?? configuration["SUPABASE_SERVICE_ROLE_KEY"];
+        var supabaseKey = configuration["SUPABASE_SERVICE_ROLE_KEY"] ?? configuration["SUPABASE_SECRET_KEY"];
         if (string.IsNullOrWhiteSpace(supabaseUrl) || string.IsNullOrWhiteSpace(supabaseKey))
         {
             return [];
@@ -141,7 +150,11 @@ public sealed class NotificationOutboxWorker(
 
         using var request = new HttpRequestMessage(HttpMethod.Get, $"{supabaseUrl}/rest/v1/portal_app_settings?select=setting_key,setting_value&setting_key=in.(booking.zalo_auto_send_enabled)");
         request.Headers.TryAddWithoutValidation("apikey", supabaseKey);
-        request.Headers.TryAddWithoutValidation("Authorization", $"Bearer {supabaseKey}");
+        request.Headers.TryAddWithoutValidation("User-Agent", "AnPhuPatientPortalSyncAgent/1.0");
+        if (!supabaseKey.StartsWith("sb_secret_", StringComparison.Ordinal))
+        {
+            request.Headers.TryAddWithoutValidation("Authorization", $"Bearer {supabaseKey}");
+        }
 
         try
         {
@@ -167,6 +180,12 @@ public sealed class NotificationOutboxWorker(
             string.Equals(value, "on", StringComparison.OrdinalIgnoreCase);
     }
 
+    private static string? NormalizeBranchCode(string? value)
+    {
+        var code = value?.Trim().ToUpperInvariant();
+        return code is "CN1" or "CN3" ? code : null;
+    }
+
     private async Task ProcessOneAsync(string connectionString, NotificationOutboxItem item, CancellationToken cancellationToken)
     {
         try
@@ -177,18 +196,90 @@ public sealed class NotificationOutboxWorker(
             if (result.Success)
             {
                 await MarkSentAsync(connection, item, result.RawResponse, cancellationToken);
+                await TryUpdateHisOnlineZaloStatusAsync(connectionString, item.AppointmentId, "DA_GUI", null, cancellationToken);
                 logger.LogInformation("Sent notification outbox {OutboxId} template {TemplateKey} to {Phone}.", item.Id, item.TemplateKey, MaskPhone(item.RecipientPhone));
                 return;
             }
 
             await MarkFailedOrRetryAsync(connection, item, result.ErrorMessage ?? "Zalo ZNS send failed.", result.RawResponse, cancellationToken);
+            await TryUpdateHisOnlineZaloStatusAsync(connectionString, item.AppointmentId, NextOracleZaloStatus(item), result.ErrorMessage, cancellationToken);
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Notification outbox {OutboxId} failed.", item.Id);
             await using var connection = new NpgsqlConnection(connectionString);
             await MarkFailedOrRetryAsync(connection, item, ex.Message, null, cancellationToken);
+            await TryUpdateHisOnlineZaloStatusAsync(connectionString, item.AppointmentId, NextOracleZaloStatus(item), ex.Message, cancellationToken);
         }
+    }
+
+    private async Task TryUpdateHisOnlineZaloStatusAsync(
+        string bookingConnectionString,
+        Guid appointmentId,
+        string status,
+        string? error,
+        CancellationToken cancellationToken)
+    {
+        if (appointmentId == Guid.Empty)
+        {
+            return;
+        }
+
+        var oracleConnectionString = configuration.GetConnectionString("OracleHis");
+        if (string.IsNullOrWhiteSpace(oracleConnectionString))
+        {
+            return;
+        }
+
+        try
+        {
+            long? hisOnlineBookingId;
+            await using (var bookingConnection = new NpgsqlConnection(bookingConnectionString))
+            {
+                hisOnlineBookingId = await bookingConnection.ExecuteScalarAsync<long?>(new CommandDefinition(
+                    """
+                    select his_online_booking_id
+                    from portal.lich_hen_kham
+                    where id = @AppointmentId
+                    """,
+                    new { AppointmentId = appointmentId },
+                    cancellationToken: cancellationToken));
+            }
+
+            if (hisOnlineBookingId is null or <= 0)
+            {
+                return;
+            }
+
+            await using var oracle = new OracleConnection(oracleConnectionString);
+            await oracle.OpenAsync(cancellationToken);
+            await oracle.ExecuteAsync(new CommandDefinition(
+                """
+                update hgsoft_soyba.dangkykham
+                set trangthai_zalo = :Status,
+                    ngaygui_zalo = case when :Status = 'DA_GUI' then sysdate else ngaygui_zalo end,
+                    loi_zalo = :Error,
+                    ngaycapnhat = sysdate
+                where id = :HisOnlineBookingId
+                """,
+                new
+                {
+                    Status = status,
+                    Error = Truncate(error ?? string.Empty, 1000),
+                    HisOnlineBookingId = hisOnlineBookingId.Value
+                },
+                cancellationToken: cancellationToken));
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Could not update HGSOFT_SOYBA.DANGKYKHAM Zalo status for appointment {AppointmentId}.", appointmentId);
+        }
+    }
+
+    private static string NextOracleZaloStatus(NotificationOutboxItem item)
+    {
+        var nextAttempt = item.AttemptCount + 1;
+        return nextAttempt >= item.MaxAttempts ? "LOI" : "CHO_GUI";
     }
 
     private static async Task MarkSentAsync(NpgsqlConnection connection, NotificationOutboxItem item, string? rawResponse, CancellationToken cancellationToken)

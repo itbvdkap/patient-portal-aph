@@ -9,6 +9,7 @@ import {
   View,
 } from "react-native";
 import { router, useFocusEffect } from "expo-router";
+import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import type {
   MobileSession,
   Patient,
@@ -20,17 +21,13 @@ import {
   getCurrentSession,
   getPatientSummary,
   getTodayVisit,
-  logout,
 } from "@/lib/portal-api";
 import {
+  Badge,
   Body,
   Card,
-  H1,
-  H2,
   Mono,
-  PrimaryButton,
   Screen,
-  SecondaryButton,
 } from "@/ui/components";
 import { colors } from "@/ui/theme";
 
@@ -73,13 +70,8 @@ export default function DashboardScreen() {
     }, []),
   );
 
-  async function signOut() {
-    await logout();
-    router.replace("/login");
-  }
-
   return (
-    <Screen>
+    <Screen nav>
       <View style={styles.screenBody}>
         <ScrollView
           contentContainerStyle={styles.container}
@@ -88,105 +80,104 @@ export default function DashboardScreen() {
           <View style={styles.header}>
             <View style={styles.logo}><Image source={{ uri: "https://anphucare.benhvienanphu.vn/logo-an-phu.jpg" }} style={styles.logoImage} /></View>
             <View style={styles.brand}><Text style={styles.brandName}>Bệnh viện Đa khoa An Phú</Text><Text style={styles.brandSub}>Cổng thông tin bệnh nhân</Text></View>
-            <Pressable onPress={() => router.push("/account")} accessibilityLabel="Mở tài khoản"><Text style={styles.avatar}>{(patient?.fullName || "A").charAt(0)}</Text></Pressable>
+            <Pressable onPress={() => router.push("/account")} accessibilityLabel="Mở tài khoản" style={styles.avatar}>
+              <MaterialCommunityIcons name="account-outline" size={22} color={colors.teal} />
+            </Pressable>
           </View>
 
-          <View style={styles.greeting}><Text style={styles.eyebrow}>XIN CHÀO</Text><Text style={styles.heroTitle}>{patient?.fullName || "An Phú Care"}</Text><Mono>Mã BN: {session?.currentMabn ?? "Chưa chọn"}</Mono></View>
-
-          <Card tone={today?.hasActiveVisit ? "soft" : "plain"}>
-            <View style={styles.cardHeading}><H2>Hôm nay</H2><Text style={styles.cardIcon}>+</Text></View>
-            <Body>{today?.hasActiveVisit ? today.currentStepText : "Chưa ghi nhận lượt khám đang chờ hoặc đang khám hôm nay."}</Body>
-            {today?.registration?.departmentName ? <Mono>{today.registration.departmentName}</Mono> : null}
-            <View style={styles.actionRow}><PrimaryButton onPress={() => router.push("/today")}>Khám hôm nay</PrimaryButton><SecondaryButton onPress={() => router.push("/booking")}>Đăng ký khám</SecondaryButton></View>
+          <Card tone="soft">
+            <View style={styles.profileHeader}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.profileEyebrow}>HỒ SƠ ĐANG XEM</Text>
+                <Text style={styles.profileName}>{patient?.fullName || "Chưa chọn hồ sơ"}</Text>
+                <Mono>BN {session?.currentMabn ?? "Chưa chọn"}</Mono>
+              </View>
+              <Pressable onPress={() => router.push("/profiles")} style={styles.switchProfile}>
+                <Text style={styles.switchProfileText}>Đổi hồ sơ</Text>
+                <MaterialCommunityIcons name="chevron-right" size={18} color={colors.teal} />
+              </Pressable>
+            </View>
           </Card>
 
-          {patient?.insurance ? <Pressable onPress={() => router.push("/insurance")}><Card tone="teal"><Text style={styles.eyebrow}>THẺ BHYT ĐIỆN TỬ</Text><Text style={styles.walletTitle}>Bảo hiểm y tế</Text><Mono>{patient.insurance.cardNumber}</Mono><View style={styles.walletDates}><View><Text style={styles.walletLabel}>TỪ NGÀY</Text><Mono>{patient.insurance.validFrom}</Mono></View><View><Text style={styles.walletLabel}>ĐẾN NGÀY</Text><Mono>{patient.insurance.validTo}</Mono></View></View></Card></Pressable> : null}
+          <Card tone={today?.hasActiveVisit ? "soft" : "plain"}>
+            <View style={styles.todayHeading}>
+              <View style={styles.todayIcon}><MaterialCommunityIcons name="stethoscope" size={22} color={colors.teal} /></View>
+              <View style={styles.todayCopy}><Text style={styles.todayTitle}>Hôm nay</Text><Body>{today?.hasActiveVisit ? today.currentStepText : "Chưa có lượt khám đang chờ hoặc đang khám."}</Body></View>
+            </View>
+            {today?.registration?.departmentName ? <Mono>{today.registration.departmentName}</Mono> : null}
+            <Pressable onPress={() => router.push(today?.hasActiveVisit ? "/notifications" : "/booking")} style={styles.todayAction}>
+              <Text style={styles.todayActionText}>{today?.hasActiveVisit ? "Xem trong thông báo" : "Đăng ký khám"}</Text>
+              <MaterialCommunityIcons name="arrow-right" size={18} color={colors.white} />
+            </Pressable>
+          </Card>
+
+          {patient?.insurance ? <Pressable onPress={() => router.push("/insurance")}><Card tone="teal"><View style={styles.walletCompact}><View style={styles.walletIcon}><MaterialCommunityIcons name="shield-check-outline" size={20} color={colors.cream} /></View><View style={{ flex: 1 }}><Text style={styles.eyebrow}>VÍ SỨC KHỎE</Text><Text style={styles.walletTitle}>Thẻ BHYT điện tử</Text></View><Badge tone={patient.insurance.status === "Còn hiệu lực" ? "teal" : "amber"}>{patient.insurance.status}</Badge><MaterialCommunityIcons name="chevron-right" size={20} color={colors.cream} /></View></Card></Pressable> : null}
 
           <View style={styles.shortcuts}>
-            <Shortcut label="Đăng ký khám" target="/booking" />
-            <Shortcut label="Lịch sử khám" count={summary?.visitsCount} target="/medical/visits" />
-            <Shortcut label="Xét nghiệm" count={summary?.labResultsCount} target="/medical/labs" />
-            <Shortcut label="Chẩn đoán hình ảnh" count={summary?.imagingResultsCount} target="/medical/imaging" />
-            <Shortcut label="Đơn thuốc" count={summary?.prescriptionsCount} target="/medical/prescriptions" />
-            <Shortcut label="Lịch hẹn" count={summary?.appointmentsCount} target="/medical/appointments" />
+            <Shortcut label="Đăng ký khám" meta="Đặt lịch nhanh" target="/booking" icon="calendar-plus" tone="amber" />
+            <Shortcut label="Lịch sử khám" meta="Lần khám" count={summary?.visitsCount} target="/medical/visits" icon="clipboard-text-outline" tone="teal" />
+            <Shortcut label="Xét nghiệm" meta="Phiếu kết quả" count={summary?.labResultsCount} target="/medical/labs" icon="heart-pulse" tone="violet" />
+            <Shortcut label="CĐHA" meta="Kết quả" count={summary?.imagingResultsCount} target="/medical/imaging" icon="file-document-outline" tone="blue" />
+            <Shortcut label="Đơn thuốc" meta="Đơn thuốc" count={summary?.prescriptionsCount} target="/medical/prescriptions" icon="pill" tone="rose" />
+            <Shortcut label="Lịch hẹn" meta="Lịch sắp tới" count={summary?.appointmentsCount} target="/medical/appointments" icon="calendar-clock" tone="rose" />
+            <Shortcut label="Thông báo" meta="Việc cần chú ý" target="/notifications" icon="bell-outline" tone="amber" />
+            <Shortcut label="Theo dõi" meta="Sức khỏe" target="/medical/health" icon="chart-line" tone="lime" />
+            <Shortcut label="Lịch sử đăng ký" meta="Lượt tiếp đón" target="/registrations" icon="clipboard-clock-outline" tone="teal" />
           </View>
-          <PrimaryButton onPress={() => router.push("/profiles")}>Chọn hồ sơ đang xem</PrimaryButton>
-          <SecondaryButton onPress={signOut}>Đăng xuất</SecondaryButton>
         </ScrollView>
-        <TabBar />
       </View>
     </Screen>
   );
 }
 
-function Shortcut({ label, target, count }: { label: string; target: string; count?: number }) {
+type ShortcutTone = "teal" | "amber" | "blue" | "violet" | "rose" | "lime";
+
+function Shortcut({ label, meta, target, count, icon, tone }: { label: string; meta: string; target: string; count?: number; icon: React.ComponentProps<typeof MaterialCommunityIcons>["name"]; tone: ShortcutTone }) {
   return (
-    <Pressable onPress={() => router.push(target)} style={styles.shortcut}>
-      <Text style={styles.shortcutIcon}>{label === "Đăng ký khám" ? "+" : "•"}</Text><Text style={styles.shortcutText}>{label}</Text>{typeof count === "number" ? <Text style={styles.shortcutCount}>{count}</Text> : null}
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`${label}${typeof count === "number" ? `, ${count} ${meta.toLowerCase()}` : ""}`}
+      onPress={() => router.push(target)}
+      style={({ pressed }) => [styles.shortcut, pressed && styles.shortcutPressed]}
+    >
+      <View style={styles.shortcutTop}>
+        <View style={[styles.shortcutIcon, styles[`shortcutIcon_${tone}`]]}><MaterialCommunityIcons name={icon} size={21} color={shortcutColors[tone]} /></View>
+        {typeof count === "number" ? <View style={styles.countBadge}><Text style={styles.countBadgeText}>{count}</Text></View> : null}
+      </View>
+      <Text style={styles.shortcutText}>{label}</Text>
+      <Text style={styles.shortcutMeta}>{typeof count === "number" ? `${count} ${meta.toLowerCase()}` : meta}</Text>
     </Pressable>
   );
 }
 
-function TabBar() {
-  return <View style={styles.tabBar}><Tab label="Trang chủ" target="/dashboard" active /><Tab label="Hôm nay" target="/today" /><Tab label="Lịch sử" target="/medical/visits" /><Tab label="Xét nghiệm" target="/medical/labs" /><Tab label="CĐHA" target="/medical/imaging" /></View>;
-}
-
-function Tab({ label, target, active = false }: { label: string; target: string; active?: boolean }) {
-  return <Pressable onPress={() => router.push(target)} style={styles.tab}><Text style={[styles.tabDot, active && styles.tabDotActive]}>●</Text><Text style={[styles.tabText, active && styles.tabTextActive]}>{label}</Text></Pressable>;
-}
-
-function Progress({ current }: { current: string }) {
-  const steps = [
-    "Đăng ký",
-    "Chờ khám",
-    "Đang khám",
-    "Cận lâm sàng",
-    "Hoàn tất",
-  ];
-  const index = Math.max(
-    0,
-    steps.findIndex((step) =>
-      current.toLowerCase().includes(step.toLowerCase()),
-    ),
-  );
-  return (
-    <View style={styles.progress}>
-      {steps.map((step, itemIndex) => (
-        <View key={step} style={styles.progressItem}>
-          <View
-            style={[
-              styles.progressDot,
-              itemIndex <= index && styles.progressDotActive,
-            ]}
-          />
-          <Text
-            style={[
-              styles.progressLabel,
-              itemIndex === index && styles.progressLabelActive,
-            ]}
-          >
-            {step}
-          </Text>
-        </View>
-      ))}
-    </View>
-  );
-}
+const shortcutColors: Record<ShortcutTone, string> = {
+  teal: colors.teal,
+  amber: "#b85c00",
+  blue: colors.blue,
+  violet: colors.violet,
+  rose: colors.rose,
+  lime: colors.lime,
+};
 
 const styles = StyleSheet.create({
   container: {
-    gap: 14,
-    padding: 16,
+    gap: 12,
+    padding: 14,
     paddingBottom: 28,
   },
   screenBody: { flex: 1 },
-  header: { alignItems: "center", borderBottomColor: colors.creamBorder, borderBottomWidth: 1, flexDirection: "row", gap: 10, paddingBottom: 12 },
-  logo: { alignItems: "center", backgroundColor: colors.teal, borderRadius: 12, height: 42, justifyContent: "center", width: 42 },
-  logoImage: { borderRadius: 10, height: 36, width: 36 },
+  header: { alignItems: "center", flexDirection: "row", gap: 10, minHeight: 54 },
+  logo: { alignItems: "center", borderColor: colors.creamBorder, borderRadius: 12, borderWidth: 1, height: 42, justifyContent: "center", width: 42 },
+  logoImage: { borderRadius: 9, height: 36, width: 36 },
   brand: { flex: 1 },
   brandName: { color: colors.ink, fontSize: 15, fontWeight: "900" },
   brandSub: { color: colors.muted, fontSize: 11, marginTop: 2 },
-  avatar: { alignItems: "center", backgroundColor: colors.tealSoft, borderRadius: 18, color: colors.teal, fontSize: 17, fontWeight: "900", padding: 8 },
+  avatar: { alignItems: "center", backgroundColor: colors.tealSoft, borderRadius: 18, height: 38, justifyContent: "center", width: 38 },
+  profileHeader: { alignItems: "center", flexDirection: "row", gap: 10 },
+  profileEyebrow: { color: colors.teal, fontSize: 11, fontWeight: "900" },
+  profileName: { color: colors.ink, fontSize: 20, fontWeight: "900", marginVertical: 4 },
+  switchProfile: { alignItems: "center", borderColor: "#cae6e1", borderRadius: 10, borderWidth: 1, backgroundColor: colors.white, flexDirection: "row", paddingHorizontal: 10, paddingVertical: 9 },
+  switchProfileText: { color: colors.teal, fontSize: 12, fontWeight: "900" },
   greeting: { gap: 4, paddingVertical: 2 },
   eyebrow: {
     color: "#d9f4ef",
@@ -206,10 +197,15 @@ const styles = StyleSheet.create({
     fontFamily: "monospace",
     fontWeight: "800",
   },
-  cardHeading: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },
-  cardIcon: { alignItems: "center", backgroundColor: colors.tealSoft, borderRadius: 18, color: colors.teal, fontSize: 22, fontWeight: "900", height: 32, textAlign: "center", width: 32 },
-  actionRow: { flexDirection: "row", gap: 8, marginTop: 12 },
-  walletTitle: { color: colors.cream, fontSize: 20, fontWeight: "900", marginVertical: 10 },
+  todayHeading: { alignItems: "flex-start", flexDirection: "row", gap: 10 },
+  todayIcon: { alignItems: "center", backgroundColor: colors.tealSoft, borderRadius: 12, height: 42, justifyContent: "center", width: 42 },
+  todayCopy: { flex: 1, gap: 2 },
+  todayTitle: { color: colors.ink, fontSize: 18, fontWeight: "900" },
+  todayAction: { alignItems: "center", backgroundColor: colors.teal, borderRadius: 10, flexDirection: "row", justifyContent: "center", gap: 8, marginTop: 12, minHeight: 42 },
+  todayActionText: { color: colors.white, fontSize: 14, fontWeight: "900" },
+  walletCompact: { alignItems: "center", flexDirection: "row", gap: 10 },
+  walletIcon: { alignItems: "center", borderColor: "rgba(255,255,255,0.25)", borderRadius: 10, borderWidth: 1, height: 36, justifyContent: "center", width: 36 },
+  walletTitle: { color: colors.cream, fontSize: 18, fontWeight: "900", marginTop: 4 },
   walletDates: { flexDirection: "row", gap: 30, marginTop: 16 },
   walletLabel: { color: colors.tealSoft, fontSize: 10, fontWeight: "900", marginBottom: 4 },
   shortcuts: {
@@ -218,46 +214,31 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   shortcut: {
-    minHeight: 92,
-    width: "48%",
-    justifyContent: "space-between",
+    flexBasis: "47%",
+    flexGrow: 1,
+    minHeight: 112,
     borderWidth: 1,
     borderColor: colors.creamBorder,
     borderRadius: 14,
     backgroundColor: colors.white,
-    padding: 11,
+    padding: 12,
   },
-  shortcutIcon: { color: colors.teal, fontSize: 22, fontWeight: "900" },
+  shortcutPressed: { opacity: 0.72 },
+  shortcutTop: { alignItems: "flex-start", flexDirection: "row", justifyContent: "space-between" },
+  shortcutIcon: { alignItems: "center", borderRadius: 10, height: 38, justifyContent: "center", width: 38 },
+  shortcutIcon_teal: { backgroundColor: colors.tealSoft },
+  shortcutIcon_amber: { backgroundColor: colors.amberSoft },
+  shortcutIcon_blue: { backgroundColor: colors.blueSoft },
+  shortcutIcon_violet: { backgroundColor: colors.violetSoft },
+  shortcutIcon_rose: { backgroundColor: colors.roseSoft },
+  shortcutIcon_lime: { backgroundColor: colors.limeSoft },
   shortcutText: {
     color: colors.ink,
+    fontSize: 14,
     fontWeight: "900",
+    marginTop: 10,
   },
-  shortcutCount: { color: colors.teal, fontFamily: "monospace", fontSize: 20, fontWeight: "900" },
-  tabBar: { backgroundColor: colors.white, borderTopColor: colors.creamBorder, borderTopWidth: 1, flexDirection: "row", paddingBottom: 7, paddingTop: 8 },
-  tab: { alignItems: "center", flex: 1, gap: 3 },
-  tabDot: { color: colors.muted, fontSize: 11 },
-  tabDotActive: { color: colors.teal },
-  tabText: { color: colors.muted, fontSize: 10, fontWeight: "700" },
-  tabTextActive: { color: colors.teal, fontWeight: "900" },
-  progress: {
-    marginTop: 14,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    gap: 4,
-  },
-  progressItem: { flex: 1, alignItems: "center", gap: 5 },
-  progressDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: colors.creamBorder,
-  },
-  progressDotActive: { backgroundColor: colors.teal },
-  progressLabel: {
-    color: colors.muted,
-    fontSize: 10,
-    textAlign: "center",
-    fontWeight: "700",
-  },
-  progressLabelActive: { color: colors.teal, fontWeight: "900" },
+  shortcutMeta: { color: colors.muted, fontSize: 12, fontWeight: "700", marginTop: 3 },
+  countBadge: { backgroundColor: colors.creamStrong, borderRadius: 999, paddingHorizontal: 7, paddingVertical: 3 },
+  countBadgeText: { color: colors.ink, fontFamily: "monospace", fontSize: 11, fontWeight: "900" },
 });
