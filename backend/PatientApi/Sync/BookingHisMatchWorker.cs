@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using Dapper;
 using Npgsql;
+using Oracle.ManagedDataAccess.Client;
 using PatientApi.Models;
 using PatientApi.Repositories;
 
@@ -88,6 +89,7 @@ public sealed class BookingHisMatchWorker(
               "soCCCD_encrypt" as "CitizenIdEncrypted",
               old_patient_code as "OldPatientCode",
               patient_code as "PatientCode",
+              his_online_booking_id as "HisOnlineBookingId",
               branch_code as "BranchCode",
               account_key as "AccountKey",
               "soCCCD_hash" as "IdentityHash",
@@ -138,6 +140,15 @@ public sealed class BookingHisMatchWorker(
 
         try
         {
+            var onlineMatch = await TryFindOnlineBookingMatchAsync(booking, mabn, cancellationToken);
+            if (onlineMatch is not null)
+            {
+                await using var connection = new NpgsqlConnection(connectionString);
+                await SaveMatchAsync(connection, booking, onlineMatch, cancellationToken);
+                logger.LogInformation("Matched booking {BookingId}/{BookingCode} from HGSOFT_SOYBA.DANGKYKHAM to HIS MABN {Mabn}, MAQL {Maql}.", booking.Id, booking.BookingCode, onlineMatch.HisMabn, onlineMatch.Registration.Id);
+                return;
+            }
+
             var registrations = await oracle.GetRegistrationsAsync(mabn, cancellationToken);
             var match = FindBestMatch(booking, mabn, registrations, citizenMatchedMabn);
 
@@ -160,6 +171,86 @@ public sealed class BookingHisMatchWorker(
             await using var connection = new NpgsqlConnection(connectionString);
             await MarkRetryAsync(connection, booking.Id, ex.Message, cancellationToken);
         }
+    }
+
+    private async Task<BookingMatch?> TryFindOnlineBookingMatchAsync(PendingBooking booking, string mabn, CancellationToken cancellationToken)
+    {
+        if (booking.HisOnlineBookingId is null or <= 0)
+        {
+            return null;
+        }
+
+        var oracleConnectionString = configuration.GetConnectionString("OracleHis");
+        if (string.IsNullOrWhiteSpace(oracleConnectionString))
+        {
+            return null;
+        }
+
+        const string sql = """
+            select
+              a.id as "Id",
+              a.madatcho as "BookingCode",
+              a.mabn as "Mabn",
+              to_char(a.maql_tiepdon) as "MaqlTiepdon",
+              to_char(a.mavaovien) as "Mavaovien",
+              a.phongkham as "DepartmentCode",
+              nvl(g.tenkp, a.phongkham) as "DepartmentName",
+              nvl(h.hoten, '') as "DoctorName",
+              a.ngaydangky as "RegisteredAt",
+              nvl(a.trangthai_zalo, 'CHUA_GUI') as "ZaloStatus"
+            from hgsoft_soyba.dangkykham a, btdkp_bv g, dmbs h
+            where a.phongkham = g.makp(+)
+              and a.bacsi = h.ma(+)
+              and a.id = :HisOnlineBookingId
+            """;
+
+        await using var connection = new OracleConnection(oracleConnectionString);
+        await connection.OpenAsync(cancellationToken);
+        var row = await connection.QuerySingleOrDefaultAsync<HisOnlineBookingRow>(new CommandDefinition(
+            sql,
+            new { HisOnlineBookingId = booking.HisOnlineBookingId.Value },
+            cancellationToken: cancellationToken));
+
+        if (row is null || (string.IsNullOrWhiteSpace(row.MaqlTiepdon) && string.IsNullOrWhiteSpace(row.Mavaovien)))
+        {
+            return null;
+        }
+
+        var hisMabn = FirstNonEmpty(row.Mabn, mabn);
+        if (string.IsNullOrWhiteSpace(hisMabn))
+        {
+            return null;
+        }
+
+        var registeredAt = row.RegisteredAt is null
+            ? DateTimeOffset.Now
+            : new DateTimeOffset(DateTime.SpecifyKind(row.RegisteredAt.Value, DateTimeKind.Local));
+        var maql = FirstNonEmpty(row.MaqlTiepdon, row.Mavaovien, row.Id.ToString(CultureInfo.InvariantCulture)) ?? "";
+        var mavaovien = FirstNonEmpty(row.Mavaovien, row.MaqlTiepdon) ?? "";
+        var departmentName = FirstNonEmpty(row.DepartmentName, booking.DepartmentName) ?? "";
+
+        var registration = new RegistrationDto(
+            Id: maql,
+            PatientId: hisMabn,
+            VisitId: mavaovien,
+            RegisteredAt: registeredAt,
+            TicketNumber: "",
+            DepartmentCode: row.DepartmentCode ?? "",
+            DepartmentName: departmentName,
+            DoctorName: row.DoctorName ?? "",
+            Status: "ONLINE_REGISTERED",
+            Reason: "Đã đăng ký trên HIS từ danh sách đặt khám online.",
+            Notes: row.BookingCode ?? booking.BookingCode ?? "",
+            PayerTypeCode: "",
+            PayerTypeName: "",
+            BranchCode: booking.BranchCode,
+            BranchName: BranchName(booking.BranchCode));
+
+        return new BookingMatch(
+            registration,
+            hisMabn,
+            95,
+            "khớp dòng đăng ký online đã được HIS ghi MAQL_TIEPDON/MAVAOVIEN");
     }
 
     private static BookingMatch? FindBestMatch(PendingBooking booking, string mabn, IReadOnlyList<RegistrationDto> registrations, string? citizenMatchedMabn)
@@ -567,10 +658,23 @@ public sealed class BookingHisMatchWorker(
         string? CitizenIdEncrypted,
         string? OldPatientCode,
         string? PatientCode,
+        long? HisOnlineBookingId,
         string BranchCode,
         string? AccountKey,
         string? IdentityHash,
         string? Status);
 
     private sealed record BookingMatch(RegistrationDto Registration, string HisMabn, decimal Confidence, string Reason);
+
+    private sealed record HisOnlineBookingRow(
+        long Id,
+        string? BookingCode,
+        string? Mabn,
+        string? MaqlTiepdon,
+        string? Mavaovien,
+        string? DepartmentCode,
+        string? DepartmentName,
+        string? DoctorName,
+        DateTime? RegisteredAt,
+        string? ZaloStatus);
 }
