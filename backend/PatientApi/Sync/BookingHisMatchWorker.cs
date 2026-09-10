@@ -248,7 +248,7 @@ public sealed class BookingHisMatchWorker(
             new { HisOnlineBookingId = booking.HisOnlineBookingId.Value },
             cancellationToken: cancellationToken));
 
-        if (row is null || (string.IsNullOrWhiteSpace(row.MaqlTiepdon) && string.IsNullOrWhiteSpace(row.Mavaovien)))
+        if (row is null || (string.IsNullOrWhiteSpace(NormalizeHisKey(row.MaqlTiepdon)) && string.IsNullOrWhiteSpace(NormalizeHisKey(row.Mavaovien))))
         {
             return null;
         }
@@ -272,8 +272,8 @@ public sealed class BookingHisMatchWorker(
         var registeredAt = row.RegisteredAt is null
             ? DateTimeOffset.Now
             : new DateTimeOffset(DateTime.SpecifyKind(row.RegisteredAt.Value, DateTimeKind.Local));
-        var maql = FirstNonEmpty(row.MaqlTiepdon, row.Mavaovien, row.Id.ToString(CultureInfo.InvariantCulture)) ?? "";
-        var mavaovien = FirstNonEmpty(row.Mavaovien, row.MaqlTiepdon) ?? "";
+        var maql = FirstNonEmpty(NormalizeHisKey(row.MaqlTiepdon), NormalizeHisKey(row.Mavaovien), row.Id.ToString(CultureInfo.InvariantCulture)) ?? "";
+        var mavaovien = FirstNonEmpty(NormalizeHisKey(row.Mavaovien), NormalizeHisKey(row.MaqlTiepdon)) ?? "";
         var departmentName = FirstNonEmpty(row.DepartmentName, booking.DepartmentName) ?? "";
 
         var registration = new RegistrationDto(
@@ -306,7 +306,7 @@ public sealed class BookingHisMatchWorker(
         string hisMabn,
         CancellationToken cancellationToken)
     {
-        var maql = FirstNonEmpty(onlineRow.MaqlTiepdon, onlineRow.Mavaovien);
+        var maql = FirstNonEmpty(NormalizeHisKey(onlineRow.MaqlTiepdon), NormalizeHisKey(onlineRow.Mavaovien));
         if (string.IsNullOrWhiteSpace(maql))
         {
             return null;
@@ -696,6 +696,13 @@ public sealed class BookingHisMatchWorker(
     private static string? FirstNonEmpty(params string?[] values)
     {
         return values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))?.Trim();
+    }
+
+    private static string? NormalizeHisKey(string? value)
+    {
+        var normalized = value?.Trim();
+        if (string.IsNullOrWhiteSpace(normalized)) return null;
+        return normalized == "0" ? null : normalized;
     }
 
     private static DateTime ToUtcDateTime(DateTimeOffset value)
