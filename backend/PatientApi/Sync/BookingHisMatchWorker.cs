@@ -150,6 +150,30 @@ public sealed class BookingHisMatchWorker(
             }
 
             var registrations = await oracle.GetRegistrationsAsync(mabn, cancellationToken);
+            var sameDayRegistrations = FindSameDayRegistrations(booking, registrations);
+            if (sameDayRegistrations.Count == 1)
+            {
+                var sameDayMatch = new BookingMatch(
+                    sameDayRegistrations[0],
+                    mabn,
+                    string.IsNullOrWhiteSpace(citizenMatchedMabn) ? 85 : 90,
+                    string.IsNullOrWhiteSpace(citizenMatchedMabn)
+                        ? "khớp MABN + trùng ngày khám + chỉ có 1 lượt HIS trong ngày"
+                        : "khớp CCCD/CMND + trùng ngày khám + chỉ có 1 lượt HIS trong ngày");
+
+                await using var connection = new NpgsqlConnection(connectionString);
+                await SaveMatchAsync(connection, booking, sameDayMatch, cancellationToken);
+                logger.LogInformation("Matched booking {BookingId}/{BookingCode} by unique same-day HIS registration for MABN {Mabn}, MAQL {Maql}.", booking.Id, booking.BookingCode, mabn, sameDayMatch.Registration.Id);
+                return;
+            }
+
+            if (sameDayRegistrations.Count > 1)
+            {
+                await using var connection = new NpgsqlConnection(connectionString);
+                await MarkNeedsReviewAsync(connection, booking.Id, $"Có {sameDayRegistrations.Count} lượt TIEPDON cùng MABN/CCCD trong ngày khám; cần chọn đúng lượt để tránh match nhầm.", cancellationToken);
+                return;
+            }
+
             var match = FindBestMatch(booking, mabn, registrations, citizenMatchedMabn);
 
             if (match is null || match.Confidence < 70)
@@ -171,6 +195,19 @@ public sealed class BookingHisMatchWorker(
             await using var connection = new NpgsqlConnection(connectionString);
             await MarkRetryAsync(connection, booking.Id, ex.Message, cancellationToken);
         }
+    }
+
+    private static List<RegistrationDto> FindSameDayRegistrations(PendingBooking booking, IReadOnlyList<RegistrationDto> registrations)
+    {
+        if (booking.AppointmentDate is null)
+        {
+            return [];
+        }
+
+        var appointmentDate = booking.AppointmentDate.Value.Date;
+        return registrations
+            .Where(registration => registration.RegisteredAt.Date == appointmentDate)
+            .ToList();
     }
 
     private async Task<BookingMatch?> TryFindOnlineBookingMatchAsync(PendingBooking booking, string mabn, CancellationToken cancellationToken)
