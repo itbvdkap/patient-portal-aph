@@ -67,7 +67,7 @@ export async function POST(request: Request) {
         await retryBookingMatch(parsed.data.target);
         break;
       case "send_booking_zalo":
-        await queueManualZaloSend(parsed.data.target);
+        await sendBookingZaloNow(parsed.data.target);
         break;
       case "test_zns_template":
         await queueZnsTemplateTest(parsed.data.target);
@@ -500,6 +500,305 @@ async function queueManualZaloSend(target: Record<string, string>) {
   );
 
   if (!inserted.rowCount) throw new Error("Chưa tạo được tin Zalo. Vui lòng kiểm tra số điện thoại của lịch khám.");
+}
+
+async function sendBookingZaloNow(target: Record<string, string>) {
+  const item = await prepareManualZaloSend(target);
+  const config = await readZaloConfig(item.templateId);
+  const firstResult = await postZaloTemplate(config, item);
+  const result = firstResult.isAccessTokenInvalid && config.refreshToken ? await retryWithRefreshedToken(config, item) : firstResult;
+
+  const pool = getBookingPool();
+  if (result.success) {
+    await pool.query(
+      `
+        update portal.notification_outbox
+        set status='sent',
+            attempt_count=attempt_count + 1,
+            locked_by=null,
+            locked_until=null,
+            last_error=null,
+            sent_at=now(),
+            updated_at=now(),
+            payload_json=jsonb_set(payload_json, '{zalo_send_result}', $2::jsonb, true)
+        where id=$1
+      `,
+      [
+        item.id,
+        JSON.stringify({ sent_at: new Date().toISOString(), zalo_error: numberValue(result.raw.error, 0), message_id: getZaloMessageId(result.raw) }),
+      ],
+    );
+    await pool.query(
+      `
+        update portal.lich_hen_kham
+        set zalo_confirm_sent_at=now()
+        where id=$1
+      `,
+      [item.appointmentId],
+    );
+    return;
+  }
+
+  await pool.query(
+    `
+      update portal.notification_outbox
+      set status='failed',
+          attempt_count=attempt_count + 1,
+          locked_by=null,
+          locked_until=null,
+          last_error=$2,
+          updated_at=now(),
+          payload_json=jsonb_set(payload_json, '{zalo_send_result}', $3::jsonb, true)
+      where id=$1
+    `,
+    [item.id, result.message, JSON.stringify(result.raw ?? { message: result.message })],
+  );
+
+  throw new Error(`Zalo chưa gửi được: ${result.message}`);
+}
+
+async function prepareManualZaloSend(target: Record<string, string>) {
+  await queueManualZaloSend(target);
+
+  const bookingId = clean(target.bookingId);
+  const outboxId = clean(target.outboxId);
+  const pool = getBookingPool();
+  const result = outboxId
+    ? await pool.query<ManualZaloItem>(
+        `
+          select
+            n.id,
+            n.appointment_id as "appointmentId",
+            n.recipient_phone as "recipientPhone",
+            n.template_id as "templateId",
+            n.payload_json::text as "payloadJson"
+          from portal.notification_outbox n
+          where n.id=$1
+            and n.channel='zalo'
+            and n.status <> 'sent'
+          limit 1
+        `,
+        [Number(outboxId)],
+      )
+    : await pool.query<ManualZaloItem>(
+        `
+          select
+            n.id,
+            n.appointment_id as "appointmentId",
+            n.recipient_phone as "recipientPhone",
+            n.template_id as "templateId",
+            n.payload_json::text as "payloadJson"
+          from portal.notification_outbox n
+          where n.appointment_id=$1
+            and n.channel='zalo'
+            and n.status <> 'sent'
+          order by n.id desc
+          limit 1
+        `,
+        [bookingId],
+      );
+
+  const item = result.rows[0];
+  if (!item) throw new Error("Không tìm thấy tin Zalo cần gửi.");
+  if (!normalizeZaloPhone(item.recipientPhone)) throw new Error("Số điện thoại nhận Zalo không hợp lệ.");
+  return item;
+}
+
+type ManualZaloItem = {
+  id: number;
+  appointmentId: string;
+  recipientPhone: string;
+  templateId: string | null;
+  payloadJson: string;
+};
+
+type ZaloConfig = {
+  endpoint: string;
+  tokenEndpoint: string;
+  appId: string;
+  secretKey: string;
+  accessToken: string;
+  refreshToken: string;
+  templateId: string;
+};
+
+type ZaloPostResult = {
+  success: boolean;
+  isAccessTokenInvalid: boolean;
+  message: string;
+  raw: Record<string, unknown>;
+};
+
+async function readZaloConfig(templateIdOverride: string | null): Promise<ZaloConfig> {
+  const supabase = createSupabaseServiceClient();
+  const { data, error } = await supabase
+    .from("portal_app_settings")
+    .select("setting_key,setting_value")
+    .in("setting_key", [
+      "zalo.zns_endpoint",
+      "zalo.token_endpoint",
+      "zalo.app_id",
+      "zalo.secret_key",
+      "zalo.access_token",
+      "zalo.refresh_token",
+      "zalo.template.booking_his_confirmed",
+    ]);
+  if (error) throw new Error(`Không đọc được cấu hình Zalo: ${error.message}`);
+
+  const settings = new Map((data ?? []).map((row) => [String(row.setting_key), String(row.setting_value ?? "")]));
+  const config = {
+    endpoint: firstNonEmpty(settings.get("zalo.zns_endpoint"), process.env.ZALO_ZNS_ENDPOINT, "https://business.openapi.zalo.me/message/template"),
+    tokenEndpoint: firstNonEmpty(settings.get("zalo.token_endpoint"), process.env.ZALO_TOKEN_ENDPOINT, "https://oauth.zaloapp.com/v4/oa/access_token"),
+    appId: firstNonEmpty(settings.get("zalo.app_id"), process.env.ZALO_APP_ID),
+    secretKey: firstNonEmpty(settings.get("zalo.secret_key"), process.env.ZALO_SECRET_KEY),
+    accessToken: firstNonEmpty(settings.get("zalo.access_token"), process.env.ZALO_ACCESS_TOKEN),
+    refreshToken: firstNonEmpty(settings.get("zalo.refresh_token"), process.env.ZALO_REFRESH_TOKEN),
+    templateId: firstNonEmpty(templateIdOverride, settings.get("zalo.template.booking_his_confirmed"), process.env.ZALO_BOOKING_CONFIRMED_TEMPLATE_ID, "628108"),
+  };
+
+  if (!config.endpoint || !config.templateId) throw new Error("Thiếu endpoint hoặc template ID Zalo.");
+  if (!config.accessToken && !config.refreshToken) throw new Error("Thiếu access token/refresh token Zalo.");
+  return config;
+}
+
+async function retryWithRefreshedToken(config: ZaloConfig, item: ManualZaloItem) {
+  if (!config.appId || !config.secretKey || !config.refreshToken) {
+    return { success: false, isAccessTokenInvalid: true, message: "Access token hết hạn và thiếu app id/secret/refresh token để làm mới.", raw: {} };
+  }
+
+  const response = await fetch(config.tokenEndpoint, {
+    method: "POST",
+    headers: {
+      secret_key: config.secretKey,
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: new URLSearchParams({
+      app_id: config.appId,
+      grant_type: "refresh_token",
+      refresh_token: config.refreshToken,
+    }),
+  });
+  const token = await response.json().catch(() => ({}));
+  const accessToken = stringValue((token as Record<string, unknown>).access_token);
+  if (!response.ok || !accessToken) {
+    return { success: false, isAccessTokenInvalid: true, message: stringValue((token as Record<string, unknown>).message) || "Không làm mới được access token Zalo.", raw: token as Record<string, unknown> };
+  }
+
+  const tokenRecord = token as Record<string, unknown>;
+  const nextRefreshToken = stringValue(tokenRecord.refresh_token) || config.refreshToken;
+  await persistZaloTokens(accessToken, nextRefreshToken, tokenRecord.expires_in, tokenRecord.refresh_expires_in);
+  return postZaloTemplate({ ...config, accessToken, refreshToken: nextRefreshToken }, item);
+}
+
+async function persistZaloTokens(accessToken: string, refreshToken: string, expiresIn?: unknown, refreshExpiresIn?: unknown) {
+  const now = Date.now();
+  const rows = [
+    settingRow("zalo.access_token", accessToken, true, "Zalo access token"),
+    settingRow("zalo.refresh_token", refreshToken, true, "Zalo refresh token"),
+  ];
+  const accessExpiresAt = expiryIso(now, expiresIn);
+  if (accessExpiresAt) rows.push(settingRow("zalo.access_token_expires_at", accessExpiresAt, false, "Zalo access token hết hạn"));
+  const refreshExpiresAt = expiryIso(now, refreshExpiresIn);
+  if (refreshExpiresAt) rows.push(settingRow("zalo.refresh_token_expires_at", refreshExpiresAt, false, "Zalo refresh token hết hạn"));
+
+  const supabase = createSupabaseServiceClient();
+  const { error } = await supabase.from("portal_app_settings").upsert(rows, { onConflict: "setting_key" });
+  if (error) throw new Error(`Không lưu được token Zalo mới: ${error.message}`);
+}
+
+function settingRow(setting_key: string, setting_value: string, is_secret: boolean, label: string) {
+  return {
+    setting_key,
+    setting_value,
+    setting_group: "zalo",
+    label,
+    is_secret,
+    updated_by: "portal-admin-manual-zalo",
+    updated_at: new Date().toISOString(),
+  };
+}
+
+function expiryIso(nowMillis: number, value: unknown) {
+  const seconds = typeof value === "number" ? value : typeof value === "string" ? Number(value) : 0;
+  if (!Number.isFinite(seconds) || seconds <= 0) return null;
+  const millis = seconds > 10_000 ? seconds : seconds * 1000;
+  return new Date(nowMillis + millis).toISOString();
+}
+
+async function postZaloTemplate(config: ZaloConfig, item: ManualZaloItem): Promise<ZaloPostResult> {
+  const phone = normalizeZaloPhone(item.recipientPhone);
+  const templateData = buildZaloTemplateData(JSON.parse(item.payloadJson || "{}"));
+  const response = await fetch(config.endpoint, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      access_token: config.accessToken,
+    },
+    body: JSON.stringify({
+      phone,
+      template_id: config.templateId,
+      template_data: templateData,
+    }),
+  });
+
+  const raw = await response.json().catch(async () => ({ message: await response.text().catch(() => "") }));
+  const rawRecord = raw as Record<string, unknown>;
+  const errorCode = rawRecord.error;
+  const success = response.ok && (errorCode === 0 || errorCode == null);
+  return {
+    success,
+    isAccessTokenInvalid: errorCode === -124 || String(rawRecord.message ?? "").toLowerCase().includes("access token invalid"),
+    message: stringValue(rawRecord.message ?? rawRecord.error_message) || (success ? "Success" : `Zalo HTTP ${response.status}`),
+    raw: rawRecord,
+  };
+}
+
+function buildZaloTemplateData(payload: Record<string, unknown>) {
+  return {
+    customer_name: stringValue(payload.customer_name ?? payload.full_name ?? payload.patient_name ?? payload.ho_ten ?? payload.name ?? "Quý khách"),
+    id_booking: stringValue(payload.id_booking ?? payload.booking_code ?? payload.ma_lich_hen ?? payload.appointment_code),
+    patient_code: stringValue(payload.patient_code ?? payload.mabn ?? payload.ma_bn),
+    date_code: formatZaloDate(payload.date_code ?? payload.appointment_date ?? payload.ngay_kham),
+    schedule_time: stringValue(payload.schedule_time ?? payload.appointment_time ?? payload.gio_kham),
+    department_name: stringValue(payload.department_name ?? payload.room_name ?? payload.phong_kham ?? payload.clinic_name),
+    ticket_number: stringValue(payload.ticket_number ?? payload.stt ?? payload.so_thu_tu),
+  };
+}
+
+function formatZaloDate(value: unknown) {
+  const text = stringValue(value);
+  const iso = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return `${iso[3]}/${iso[2]}/${iso[1]}`;
+  return text;
+}
+
+function normalizeZaloPhone(value: string) {
+  const raw = value.trim();
+  const digits = raw.replace(/\D/g, "");
+  if (!digits) return "";
+  if (raw.startsWith("+")) return `+${digits}`;
+  if (digits.startsWith("84")) return `+${digits}`;
+  if (digits.startsWith("0")) return `+84${digits.slice(1)}`;
+  return `+84${digits}`;
+}
+
+function stringValue(value: unknown) {
+  return value == null ? "" : String(value);
+}
+
+function firstNonEmpty(...values: Array<string | null | undefined>) {
+  return values.find((value) => value && value.trim())?.trim() ?? "";
+}
+
+function numberValue(value: unknown, fallback: number) {
+  return typeof value === "number" ? value : fallback;
+}
+
+function getZaloMessageId(raw: Record<string, unknown>) {
+  const data = raw.data;
+  if (!data || typeof data !== "object") return null;
+  const record = data as Record<string, unknown>;
+  return stringValue(record.msg_id ?? record.message_id) || null;
 }
 
 async function queueZnsTemplateTest(target: Record<string, string>) {
