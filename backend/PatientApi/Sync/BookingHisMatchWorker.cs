@@ -259,6 +259,16 @@ public sealed class BookingHisMatchWorker(
             return null;
         }
 
+        var registrationFromTiepdon = await TryFindTiepdonRegistrationAsync(booking, row, hisMabn, cancellationToken);
+        if (registrationFromTiepdon is not null)
+        {
+            return new BookingMatch(
+                registrationFromTiepdon,
+                hisMabn,
+                98,
+                "khớp dòng đăng ký online và đọc lại STT/phòng khám từ TIEPDON");
+        }
+
         var registeredAt = row.RegisteredAt is null
             ? DateTimeOffset.Now
             : new DateTimeOffset(DateTime.SpecifyKind(row.RegisteredAt.Value, DateTimeKind.Local));
@@ -288,6 +298,90 @@ public sealed class BookingHisMatchWorker(
             hisMabn,
             95,
             "khớp dòng đăng ký online đã được HIS ghi MAQL_TIEPDON/MAVAOVIEN");
+    }
+
+    private async Task<RegistrationDto?> TryFindTiepdonRegistrationAsync(
+        PendingBooking booking,
+        HisOnlineBookingRow onlineRow,
+        string hisMabn,
+        CancellationToken cancellationToken)
+    {
+        var maql = FirstNonEmpty(onlineRow.MaqlTiepdon, onlineRow.Mavaovien);
+        if (string.IsNullOrWhiteSpace(maql))
+        {
+            return null;
+        }
+
+        var schema = GetMonthlySchema(booking.AppointmentDate ?? onlineRow.RegisteredAt);
+        var masterSchema = GetOracleMasterSchema();
+        if (string.IsNullOrWhiteSpace(schema) || string.IsNullOrWhiteSpace(masterSchema))
+        {
+            return null;
+        }
+
+        var oracleConnectionString = configuration.GetConnectionString("OracleHis");
+        if (string.IsNullOrWhiteSpace(oracleConnectionString))
+        {
+            return null;
+        }
+
+        var sql = $"""
+            select
+              to_char(td.maql) as "Id",
+              to_char(td.mavaovien) as "VisitId",
+              td.ngay as "RegisteredAt",
+              to_char(td.stt_kham) as "TicketNumber",
+              to_char(td.makp) as "DepartmentCode",
+              nvl(kp.tenkp, to_char(td.makp)) as "DepartmentName",
+              nvl(bs.hoten, '') as "DoctorName",
+              nvl(td.ly_do_vv, '') as "Reason",
+              nvl(td.ghichu, '') as "Notes"
+            from {schema}.tiepdon td, {masterSchema}.btdkp_bv kp, {masterSchema}.dmbs bs
+            where td.makp = kp.makp(+)
+              and td.mabs = bs.ma(+)
+              and td.mabn = :HisMabn
+              and (to_char(td.maql) = :Maql or to_char(td.mavaovien) = :Maql)
+            """;
+
+        try
+        {
+            await using var connection = new OracleConnection(oracleConnectionString);
+            await connection.OpenAsync(cancellationToken);
+            var row = await connection.QuerySingleOrDefaultAsync<HisTiepdonRow>(new CommandDefinition(
+                sql,
+                new { HisMabn = hisMabn, Maql = maql },
+                cancellationToken: cancellationToken));
+
+            if (row is null)
+            {
+                return null;
+            }
+
+            var registeredAt = row.RegisteredAt is null
+                ? DateTimeOffset.Now
+                : new DateTimeOffset(DateTime.SpecifyKind(row.RegisteredAt.Value, DateTimeKind.Local));
+
+            return new RegistrationDto(
+                Id: FirstNonEmpty(row.Id, maql) ?? maql,
+                PatientId: hisMabn,
+                VisitId: FirstNonEmpty(row.VisitId, onlineRow.Mavaovien, row.Id, maql) ?? maql,
+                RegisteredAt: registeredAt,
+                TicketNumber: row.TicketNumber ?? "",
+                DepartmentCode: FirstNonEmpty(row.DepartmentCode, onlineRow.DepartmentCode) ?? "",
+                DepartmentName: FirstNonEmpty(row.DepartmentName, onlineRow.DepartmentName, booking.DepartmentName) ?? "",
+                DoctorName: FirstNonEmpty(row.DoctorName, onlineRow.DoctorName) ?? "",
+                Status: "ONLINE_REGISTERED",
+                Reason: FirstNonEmpty(row.Reason, "Đã đăng ký trên HIS từ danh sách đặt khám online.") ?? "",
+                Notes: FirstNonEmpty(row.Notes, onlineRow.BookingCode, booking.BookingCode) ?? "",
+                PayerTypeCode: "",
+                PayerTypeName: "",
+                BranchCode: booking.BranchCode,
+                BranchName: BranchName(booking.BranchCode));
+        }
+        catch (OracleException exception) when (IsMissingOracleObject(exception))
+        {
+            return null;
+        }
     }
 
     private static BookingMatch? FindBestMatch(PendingBooking booking, string mabn, IReadOnlyList<RegistrationDto> registrations, string? citizenMatchedMabn)
@@ -678,6 +772,39 @@ public sealed class BookingHisMatchWorker(
         return code is "CN1" or "CN3" ? code : null;
     }
 
+    private string? GetMonthlySchema(DateTime? date)
+    {
+        if (date is null)
+        {
+            return null;
+        }
+
+        var prefix = NormalizeOracleIdentifier(
+            configuration["PatientPortal:OracleMonthlySchemaPrefix"] ?? configuration["PatientPortal:OracleSchemaPrefix"],
+            NormalizeOracleIdentifier(configuration["PatientPortal:OracleMasterSchema"], "HGSOFT_BV"));
+        return $"{prefix}{date.Value:MMyy}";
+    }
+
+    private string GetOracleMasterSchema() => NormalizeOracleIdentifier(configuration["PatientPortal:OracleMasterSchema"], "HGSOFT_BV");
+
+    private static string NormalizeOracleIdentifier(string? value, string fallback)
+    {
+        var candidate = string.IsNullOrWhiteSpace(value) ? fallback : value.Trim().ToUpperInvariant();
+        var builder = new StringBuilder(candidate.Length);
+        foreach (var ch in candidate)
+        {
+            if (char.IsLetterOrDigit(ch) || ch == '_')
+            {
+                builder.Append(ch);
+            }
+        }
+
+        return builder.Length == 0 ? fallback : builder.ToString();
+    }
+
+    private static bool IsMissingOracleObject(OracleException exception) =>
+        exception.Number is 904 or 942 or 4043;
+
     private static string BranchName(string branchCode) => branchCode switch
     {
         "CN3" => "Phòng khám An Phú - Chi nhánh 3",
@@ -714,4 +841,15 @@ public sealed class BookingHisMatchWorker(
         string? DoctorName,
         DateTime? RegisteredAt,
         string? ZaloStatus);
+
+    private sealed record HisTiepdonRow(
+        string? Id,
+        string? VisitId,
+        DateTime? RegisteredAt,
+        string? TicketNumber,
+        string? DepartmentCode,
+        string? DepartmentName,
+        string? DoctorName,
+        string? Reason,
+        string? Notes);
 }
