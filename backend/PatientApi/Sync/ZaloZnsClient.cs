@@ -113,11 +113,17 @@ public sealed class ZaloZnsClient(HttpClient httpClient, IConfiguration configur
 
     private async Task<ZaloSendResult> PostTemplateAsync(ZaloConfig config, string phone, string templateId, JsonElement payload, CancellationToken cancellationToken)
     {
+        var normalizedPhone = NormalizeVietnamPhone(phone);
+        if (string.IsNullOrWhiteSpace(normalizedPhone))
+        {
+            return ZaloSendResult.Failed("Phone number invalid.");
+        }
+
         using var request = new HttpRequestMessage(HttpMethod.Post, config.Endpoint);
         request.Headers.TryAddWithoutValidation("access_token", config.AccessToken);
         request.Content = JsonContent.Create(new
         {
-            phone,
+            phone = normalizedPhone,
             template_id = templateId,
             template_data = BuildTemplateData(payload),
         }, options: JsonOptions);
@@ -224,8 +230,9 @@ public sealed class ZaloZnsClient(HttpClient httpClient, IConfiguration configur
         if (data.TryGetValue("department_name", out var departmentName)) data.TryAdd("phong_kham", departmentName);
         if (data.TryGetValue("appointment_date", out var appointmentDate))
         {
-            data.TryAdd("ngay_kham", appointmentDate);
-            data.TryAdd("date_code", appointmentDate);
+            var formattedDate = FormatZaloDate(appointmentDate);
+            data["ngay_kham"] = formattedDate;
+            data["date_code"] = formattedDate;
         }
         if (data.TryGetValue("appointment_time", out var appointmentTime))
         {
@@ -245,6 +252,37 @@ public sealed class ZaloZnsClient(HttpClient httpClient, IConfiguration configur
         if (data.TryGetValue("mabn", out var mabn)) data.TryAdd("patient_code", mabn);
         data.TryAdd("address", "Số 05, Đường 22 Tháng 12, P. An Phú, TP. Hồ Chí Minh");
         return data;
+    }
+
+    private static string FormatZaloDate(object? value)
+    {
+        var text = value switch
+        {
+            null => "",
+            JsonElement element when element.ValueKind == JsonValueKind.String => element.GetString() ?? "",
+            JsonElement element => element.ToString(),
+            DateTime date => date.ToString("dd/MM/yyyy"),
+            DateTimeOffset date => date.ToString("dd/MM/yyyy"),
+            _ => value.ToString() ?? ""
+        };
+
+        if (DateTime.TryParse(text, out var parsed))
+        {
+            return parsed.ToString("dd/MM/yyyy");
+        }
+
+        return text.Trim();
+    }
+
+    private static string NormalizeVietnamPhone(string? input)
+    {
+        var raw = input?.Trim() ?? "";
+        var digits = new string(raw.Where(char.IsDigit).ToArray());
+        if (string.IsNullOrWhiteSpace(digits)) return "";
+        if (raw.StartsWith("+", StringComparison.Ordinal)) return $"+{digits}";
+        if (digits.StartsWith("84", StringComparison.Ordinal)) return $"+{digits}";
+        if (digits.StartsWith("0", StringComparison.Ordinal)) return $"+84{digits[1..]}";
+        return $"+84{digits}";
     }
 
     private static ZaloTemplateResponse ParseZaloResponse(string rawText)
