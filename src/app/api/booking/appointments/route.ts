@@ -1,6 +1,8 @@
+import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createBookingAppointment, isDuplicateAppointmentError } from "@/lib/booking/appointments";
+import { getDemoPatientSession } from "@/lib/auth/session";
 import { verifyTurnstileToken } from "@/lib/security/turnstile";
 import { normalizePatientBranchCode } from "@anphu/patient-domain";
 
@@ -52,6 +54,7 @@ const appointmentSchema = z.object({
 });
 
 export async function POST(request: Request) {
+  const session = getDemoPatientSession(await cookies());
   const payload = await request.json().catch(() => null);
   const parsed = appointmentSchema.safeParse(payload);
 
@@ -80,6 +83,7 @@ export async function POST(request: Request) {
       ...parsed.data,
       oldPatientCode: parsed.data.oldPatientCode || parsed.data.patientCode,
       branchCode,
+      accountKey: session?.accountId ?? session?.accountKey,
     });
     return NextResponse.json(result, { status: 201 });
   } catch (error) {

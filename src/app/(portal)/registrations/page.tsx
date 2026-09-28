@@ -1,6 +1,9 @@
 import Link from "next/link";
 import { CalendarPlus } from "lucide-react";
+import { cookies } from "next/headers";
 import { Badge, EmptyState, PageHeader, Panel, SectionHeader } from "@/components/ui";
+import { getDemoPatientSession } from "@/lib/auth/session";
+import { getOnlineRegistrationSummary } from "@/lib/booking/online-registration-summary";
 import { createPatientRepository } from "@/lib/data";
 import type { Registration } from "@/types/patient";
 import { formatDateTime } from "@/utils/format";
@@ -94,9 +97,17 @@ function getRegistrationDisplay(registration: Registration, today: Date) {
 export default async function RegistrationsPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const repository = createPatientRepository();
   const patient = await repository.getCurrentPatient();
+  const session = getDemoPatientSession(await cookies());
   const rawParams = await searchParams;
   const filter = normalizeFilter(rawParams.status);
-  const registrations = await repository.getRegistrations(patient.id);
+  const [registrations, onlineRegistrationSummary] = await Promise.all([
+    repository.getRegistrations(patient.id),
+    getOnlineRegistrationSummary({
+      mabn: session?.mabn,
+      branchCode: session?.branchCode ?? "CN1",
+      accountKeys: [session?.accountId, session?.accountKey],
+    }),
+  ]);
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const registrationsWithBucket = registrations.map((registration) => ({
@@ -158,6 +169,27 @@ export default async function RegistrationsPage({ searchParams }: { searchParams
           ) : null}
         </Panel>
       )}
+
+      {onlineRegistrationSummary.available ? (
+        <Panel className="mb-4 border-primary-100 bg-primary-50/45 shadow-none">
+          <SectionHeader title="Đăng ký online" meta={`${onlineRegistrationSummary.total} lượt đang hiệu lực`} />
+          <div className="grid gap-2 sm:grid-cols-2">
+            <div className="rounded-md border border-primary-100 bg-white/80 p-3">
+              <p className="text-xs font-bold uppercase tracking-wide text-primary-700">Đã xác nhận</p>
+              <p className="clinical-mono mt-1 text-2xl font-black text-primary-900">{onlineRegistrationSummary.confirmed}</p>
+              <p className="mt-1 text-xs font-semibold text-slate-600">Bệnh viện đã xác nhận lịch đăng ký online.</p>
+            </div>
+            <div className="rounded-md border border-amber-200 bg-amber-50/80 p-3">
+              <p className="text-xs font-bold uppercase tracking-wide text-amber-800">Chưa xác nhận</p>
+              <p className="clinical-mono mt-1 text-2xl font-black text-amber-950">{onlineRegistrationSummary.unconfirmed}</p>
+              <p className="mt-1 text-xs font-semibold text-amber-900">Đang chờ HIS hoặc nhân viên tiếp nhận xử lý.</p>
+            </div>
+          </div>
+          {onlineRegistrationSummary.cancelled > 0 ? (
+            <p className="mt-2 text-xs font-semibold text-slate-500">Đã hủy: {onlineRegistrationSummary.cancelled} lượt.</p>
+          ) : null}
+        </Panel>
+      ) : null}
 
       <Panel>
         <SectionHeader title="Lượt đăng ký" meta={`${filteredRegistrations.length}/${registrations.length} lượt`} />
