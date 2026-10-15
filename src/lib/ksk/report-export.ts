@@ -25,7 +25,7 @@ export async function reportXlsx(report: KskReport): Promise<Uint8Array> {
   const workbook = new (excel.default?.Workbook ?? excel.Workbook)();
   // Open the one-patient-per-row matrix first in Excel; retain source and scope sheets.
   if (report.kind === "results" && report.sheets.some(sheet => sheet.name === "KQ XN-CLS theo người"))
-    workbook.views = [{ firstSheet: 0, activeTab: 2, visibility: "visible" }];
+    workbook.views = [{ x: 0, y: 0, width: 12000, height: 8000, firstSheet: 0, activeTab: 2, visibility: "visible" }];
   workbook.creator = "An Phu · KSK chỉ đọc";
   workbook.created = new Date();
   workbook.subject = "Nội bộ · dữ liệu sức khỏe cá nhân · không phải công nợ hợp đồng";
