@@ -11,6 +11,9 @@ beforeEach(() => { vi.stubGlobal("React", React); vi.stubGlobal("IS_REACT_ACT_EN
 afterEach(() => { act(() => root.unmount()); host.remove(); vi.unstubAllGlobals(); });
 const query = { from: "2026-10-01", to: "2026-10-14", cohort: "900001" };
 const select = (id: string, value: string) => act(() => { const node = host.querySelector<HTMLSelectElement>(`#${id}`)!; node.value = value; node.dispatchEvent(new Event("change", { bubbles: true })); });
+const choose = (id: string, text: string) => act(() => { const node = host.querySelector<HTMLInputElement>(`#${id}`)!;
+  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(node, text);
+  node.dispatchEvent(new Event("input", { bubbles: true })); });
 const click = (button: HTMLButtonElement) => act(() => button.dispatchEvent(new MouseEvent("click", { bubbles: true })));
 
 describe("KSK local UI interactions (DOM, no clinical data)", () => {
@@ -41,11 +44,11 @@ describe("KSK local UI interactions (DOM, no clinical data)", () => {
     const data = demoKskSnapshot(query);
     const rows = [...data.cohorts, { ...data.cohorts[0], id: "900002", customerid: "901", customer: "Công ty mẫu B" }];
     act(() => root.render(<KskFilterBar query={query} rows={rows} filters={{ company: "", support: "" }} />));
-    select("ksk-company", "901");
-    expect(host.querySelector<HTMLSelectElement>("#ksk-cohort")?.options.length).toBe(2);
-    expect(host.querySelector<HTMLSelectElement>("#ksk-cohort")?.options[1].value).toBe("900002");
+    choose("ksk-company", "Công ty mẫu B");
+    expect(host.querySelectorAll("#ksk-cohort-options option")).toHaveLength(1);
+    expect(host.querySelector<HTMLOptionElement>("#ksk-cohort-options option")?.value).toContain("#900002");
     expect(host.querySelector<HTMLInputElement>('input[name="cohort"]')?.value).toBe("");
-    select("ksk-cohort", "900002");
+    choose("ksk-cohort", `${rows[1].name} · ${rows[1].date?.slice(0, 10)} · #900002`);
     expect(host.querySelector<HTMLInputElement>('input[name="cohort"]')?.value).toBe("900002");
     const form = host.querySelector("form")!;
     expect(new FormData(form).get("company")).toBe("901");

@@ -27,6 +27,7 @@ function numeric(value: string | null | undefined): ReportCell {
   return Number.isFinite(n) && Number.isSafeInteger(Math.round(n * 100)) ? n : "Chưa xác định";
 }
 function labKey(r: KskRow) { return JSON.stringify([r.parameterid, r.name, r.unit]); }
+function imagingKey(r: KskRow) { return JSON.stringify([r.kind, r.serviceid, r.name]); }
 function readableResult(r: KskRow) {
   return r.value?.trim().startsWith("{\\rtf") ? `RTF nguồn — xem nội dung gốc ở bảng CLS chi tiết (phiếu ${r.id})` : r.value || "Chưa có giá trị";
 }
@@ -83,21 +84,30 @@ export function buildKskReport(data: KskSnapshot, requested: KskRow[], kind: Rep
     const summary: ReportSheet = { name: "Danh sách kết quả", headers: [...baseHeaders, "Trạng thái nguồn kết quả", "Số giá trị XN đã đọc", "Số giá trị CLS đã đọc", "Kết luận nguồn / bác sĩ"], rows: [] };
     const labDetails: ReportSheet = { name: "XN chi tiết", headers: [...baseHeaders, "MAQL", "Phiếu XN", "Mã thông số", "Thông số", "Giá trị nguồn", "Đơn vị", "Cờ bất thường nguồn", "Duyệt kết quả"], rows: [] };
     const imaging: ReportSheet = { name: "CLS chi tiết", headers: [...baseHeaders, "MAQL", "Phiếu CLS", "Nguồn", "Mã dịch vụ", "Dịch vụ", "Kết quả nguồn", "Đề nghị", "Dạng nội dung", "Duyệt kết quả"], rows: [] };
-    const columns = [...new Map(prepared.flatMap(p => distinct(p.records.labs)).map(r => [labKey(r), r])).entries()]
+    const labColumns = [...new Map(prepared.flatMap(p => distinct(p.records.labs)).map(r => [labKey(r), r])).entries()]
       .sort((a, b) => (a[1].name || "").localeCompare(b[1].name || "", "vi") || a[0].localeCompare(b[0]));
-    // A horizontal report can be wider than paper. Excel retains every parameter.
-    const matrix: ReportSheet = { name: "XN theo danh sách", headers: [...baseHeaders, ...columns.map(([, r]) => `${r.name || "Thông số"} [${r.parameterid}]${r.unit ? ` (${r.unit})` : ""}`)], rows: [] };
+    const imagingColumns = [...new Map(prepared.flatMap(p => distinct(p.records.imaging)).map(r => [imagingKey(r), r])).entries()]
+      .sort((a, b) => (a[1].name || "").localeCompare(b[1].name || "", "vi") || a[0].localeCompare(b[0]));
+    // One member per row. Detailed source rows remain in companion sheets for traceability.
+    const matrix: ReportSheet = { name: "KQ XN-CLS theo người", headers: [...baseHeaders,
+      ...labColumns.map(([, r]) => `XN · ${r.name || "Thông số"} [${r.parameterid || "?"}]${r.unit ? ` (${r.unit})` : ""}`),
+      ...imagingColumns.map(([, r]) => `CLS · ${r.name || "Dịch vụ"} [${r.serviceid || r.kind || "?"}]`)], rows: [] };
     prepared.forEach(({ member: m, records: r }, i) => {
       const labs = distinct(r.labs), cls = distinct(r.imaging);
       const byParameter = new Map<string, KskRow[]>();
       for (const lab of labs) { const key = labKey(lab); byParameter.set(key, [...(byParameter.get(key) || []), lab]); }
+      const byImaging = new Map<string, KskRow[]>();
+      for (const item of cls) { const key = imagingKey(item); byImaging.set(key, [...(byImaging.get(key) || []), item]); }
       summary.rows.push([...identity(m, i), resultStates[memberResultState(data, m)],
         sectionComplete(data, "labs") && sectionComplete(data, "visits") ? labs.filter(l => hasValue(l.value)).length : "Chưa xác định",
         sectionComplete(data, "imaging") && sectionComplete(data, "visits") ? cls.filter(c => hasValue(c.value)).length : "Chưa xác định",
         sectionComplete(data, "conclusions") && sectionComplete(data, "visits") ? distinct(r.clinical).filter(c => c.kind === "BASK_TONGKET" && hasValue(c.ketluan))
           .map(c => `${c.ketluan} · BS ${c.mabs || "chưa ghi"} · Lượt ${c.episodeid}`).join("\n") || "Chưa có kết luận nguồn" : "Chưa xác định"]);
-      matrix.rows.push([...identity(m, i), ...columns.map(([key]) => (byParameter.get(key) || []).map(l => `${l.value || "Trống"} · Phiếu ${l.id} · MAQL ${l.maql}`).join("\n")
-        || (!sectionComplete(data, "labs") || !sectionComplete(data, "visits") ? "Chưa xác định" : r.visits.length ? "Chưa có giá trị" : "Chưa có lượt"))]);
+      matrix.rows.push([...identity(m, i),
+        ...labColumns.map(([key]) => (byParameter.get(key) || []).map(l => `${l.value || "Trống"} · Phiếu ${l.id || "?"} · MAQL ${l.maql || "?"}`).join("\n")
+          || (!sectionComplete(data, "labs") || !sectionComplete(data, "visits") ? "Chưa xác định" : r.visits.length ? "Chưa có giá trị" : "Chưa có lượt")),
+        ...imagingColumns.map(([key]) => (byImaging.get(key) || []).map(c => `${readableResult(c)} · Phiếu ${c.id || "?"} · MAQL ${c.maql || "?"}`).join("\n")
+          || (!sectionComplete(data, "imaging") || !sectionComplete(data, "visits") ? "Chưa xác định" : r.visits.length ? "Chưa có kết quả" : "Chưa có lượt"))]);
       for (const l of labs) labDetails.rows.push([...identity(m, i), l.maql, l.id, l.parameterid, l.name, l.value || "Chưa có giá trị", l.unit,
         l.kq_batthuong === "1" ? "Có" : l.kq_batthuong === "0" ? "Không" : "Chưa xác định", "Chưa xác minh duyệt/ký"]);
       for (const c of cls) imaging.rows.push([...identity(m, i), c.maql, c.id, c.kind, c.serviceid, c.name, c.value || "Chưa có giá trị", c.denghi,
@@ -107,7 +117,7 @@ export function buildKskReport(data: KskSnapshot, requested: KskRow[], kind: Rep
     const clsPrint: ReportSheet = { name: "CLS bản in", headers: [...baseHeaders, "Dịch vụ", "Kết quả", "Đề nghị", "Phiếu / MAQL"], rows: [] };
     prepared.forEach(({ member: m, records: r }, i) => { for (const c of distinct(r.imaging)) clsPrint.rows.push([...identity(m, i), c.name, readableResult(c), c.denghi, `${c.id} / ${c.maql}`]); });
     report.warnings.push("Giá trị XN/CLS là dữ liệu nguồn, có kết quả không đồng nghĩa đủ dịch vụ hoặc đã duyệt/ký; số thông số không phải số dịch vụ.",
-      "Không tự chọn giá trị cuối khi có nhiều phiếu/lượt. Bảng XN ngang giữ mọi giá trị kèm phiếu/MAQL; không tự diễn giải lâm sàng.",
+      "Không tự chọn giá trị cuối khi có nhiều phiếu/lượt. Bảng KQ XN-CLS theo người giữ mọi giá trị kèm phiếu/MAQL; không tự diễn giải lâm sàng.",
       "RTF không tự chuyển thành văn bản y khoa. Bảng CLS bản in ghi tham chiếu; nội dung gốc có ở CLS chi tiết trong Excel, cần đối chiếu HIS.");
     report.sheets = [summary, matrix, labDetails, imaging, clsPrint];
   }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { FileSpreadsheet } from "lucide-react";
 import { buildKskReport, memberResultState, resultStates, type ReportKind, type ResultState } from "@/lib/ksk/reports";
 import { reportFilename, reportPrintHtml, reportXlsx } from "@/lib/ksk/report-export";
 import type { KskRow, KskSnapshot } from "@/lib/ksk/domain";
@@ -20,16 +21,20 @@ export function KskReports({ data, allMembers, filteredMembers, filterLabel }: {
     try { return { report: buildKskReport(data, members, kind, `${scope === "all" ? "Toàn bộ đợt" : filterLabel}${kind === "results" && resultFilter ? ` · ${resultStates[resultFilter]}` : ""}`), error: "" }; }
     catch (e) { return { report: null, error: e instanceof Error ? e.message : "Không lập được báo cáo." }; }
   }, [kind, scope, allMembers, filteredMembers, resultFilter, data, filterLabel]);
+  const quickResults = useMemo(() => {
+    try { return { report: buildKskReport(data, filteredMembers, "results", `${filterLabel} · Bảng ngang mỗi BN một hàng`), error: "" }; }
+    catch (e) { return { report: null, error: e instanceof Error ? e.message : "Không lập được báo cáo kết quả." }; }
+  }, [data, filteredMembers, filterLabel]);
   const report = generated.report;
   const sheet = report?.sheets[sheetIndex] ?? report?.sheets[0];
   const open = (next: ReportKind) => { setKind(next); setSheetIndex(0); setError(""); };
-  async function download() {
-    if (!report) return;
+  async function download(target = report) {
+    if (!target) return;
     setBusy(true); setError("");
     try {
-      const bytes = await reportXlsx(report);
+      const bytes = await reportXlsx(target);
       const url = URL.createObjectURL(new Blob([new Uint8Array(bytes)], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
-      const link = document.createElement("a"); link.href = url; link.download = reportFilename(report);
+      const link = document.createElement("a"); link.href = url; link.download = reportFilename(target);
       document.body.append(link); link.click(); link.remove();
       // Give the browser time to consume the object URL; no patient data in storage.
       setTimeout(() => URL.revokeObjectURL(url), 30000);
@@ -47,10 +52,19 @@ export function KskReports({ data, allMembers, filteredMembers, filterLabel }: {
     } catch (e) { setError(e instanceof Error ? e.message : "Không mở được bản in."); }
   }
   return <section className="mb-5 rounded-md border border-cream-200 bg-white p-4 shadow-sm" aria-label="Báo cáo đoàn khám">
-    <div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="text-lg font-bold">Báo cáo theo đoàn</h3><p className="mt-1 text-xs text-slate-500">Chọn một đợt, lập báo cáo từ dữ liệu đã đọc; xuất Excel hoặc in/lưu PDF bằng trình duyệt.</p></div>
-      <div className="flex flex-wrap gap-2"><button type="button" className="rounded border px-3 py-2 text-sm font-semibold text-primary-800" aria-pressed={kind === "collections"} onClick={() => open("collections")}>Danh sách & thu tiền</button>
+    <div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="text-lg font-bold">Báo cáo theo đoàn</h3><p className="mt-1 text-xs text-slate-500">Xuất trực tiếp danh sách đang lọc, hoặc mở tùy chọn chi tiết để chọn phạm vi/bảng in.</p></div>
+      <div className="flex flex-wrap gap-2">
+        <button type="button" disabled={busy || !quickResults.report} onClick={() => download(quickResults.report)}
+          className="inline-flex items-center gap-2 rounded bg-emerald-700 px-4 py-2.5 text-sm font-bold text-white shadow-sm hover:bg-emerald-800 disabled:opacity-50">
+          <FileSpreadsheet size={17} />{busy ? "Đang tạo Excel…" : `Xuất Excel XN + CLS (${filteredMembers.length} BN)`}
+        </button>
+        <button type="button" className="rounded border px-3 py-2 text-sm font-semibold text-primary-800" aria-pressed={kind === "collections"} onClick={() => open("collections")}>Danh sách & thu tiền</button>
         <button type="button" className="rounded border px-3 py-2 text-sm font-semibold text-primary-800" aria-pressed={kind === "results"} onClick={() => open("results")}>Kết quả XN / CLS</button></div>
     </div>
+    <div className="mt-3 rounded border border-emerald-200 bg-emerald-50 p-3 text-xs leading-5 text-emerald-950">
+      <strong>Excel XN + CLS:</strong> sheet “KQ XN-CLS theo người” có mỗi bệnh nhân một hàng; từng thông số xét nghiệm và dịch vụ CLS là một cột. Các sheet chi tiết vẫn giữ phiếu, MAQL và dữ liệu nguồn để đối chiếu.
+    </div>
+    {!kind && (error || quickResults.error) && <p role="alert" className="my-3 rounded border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">{error || quickResults.error}</p>}
     {kind && <>
       <div className="my-4 flex flex-wrap items-end gap-3">
         <label className="grid gap-1 text-sm" htmlFor="ksk-report-scope">Danh sách xuất<select id="ksk-report-scope" className="rounded border p-2" value={scope} onChange={e => { setScope(e.target.value); setSheetIndex(0); }}>
@@ -59,7 +73,7 @@ export function KskReports({ data, allMembers, filteredMembers, filterLabel }: {
           <option value="">Tất cả trạng thái kết quả</option>{Object.entries(resultStates).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>}
         {report && <label className="grid gap-1 text-sm" htmlFor="ksk-report-sheet">Bảng xem / in<select id="ksk-report-sheet" className="rounded border p-2" value={sheetIndex} onChange={e => { setSheetIndex(Number(e.target.value)); setError(""); }}>
           {report.sheets.map((s, i) => <option key={s.name} value={i}>{s.name}</option>)}</select></label>}
-        <button type="button" disabled={busy || !report} onClick={download} className="rounded bg-primary-800 px-4 py-2 text-sm font-bold text-white disabled:opacity-50">{busy ? "Đang tạo Excel…" : "Xuất Excel đầy đủ"}</button>
+        <button type="button" disabled={busy || !report} onClick={() => download()} className="rounded bg-primary-800 px-4 py-2 text-sm font-bold text-white disabled:opacity-50">{busy ? "Đang tạo Excel…" : "Xuất Excel đầy đủ"}</button>
         <button type="button" disabled={busy || !report} onClick={print} className="rounded border px-3 py-2 text-sm font-bold disabled:opacity-50">In bảng đang chọn / PDF</button>
         <button type="button" className="rounded border px-3 py-2 text-sm" onClick={() => setKind("")}>Đóng báo cáo</button>
       </div>

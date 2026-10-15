@@ -25,7 +25,10 @@ function render() {
 }
 describe("KSK reporting actions", () => {
   it("opens collection/results reports with the current filtered list, not only a pagination page", () => {
-    render(); click("Danh sách & thu tiền");
+    render();
+    expect([...host.querySelectorAll("button")].some(b => b.textContent?.includes("Xuất Excel XN + CLS (1 BN)"))).toBe(true);
+    expect(host.textContent).toContain("mỗi bệnh nhân một hàng");
+    click("Danh sách & thu tiền");
     expect(host.textContent).toContain("1 người · Danh sách và thu: 1 dòng");
     select("ksk-report-scope", "all"); expect(host.textContent).toContain("3 người");
     click("Kết quả XN / CLS"); select("ksk-report-results", "has");

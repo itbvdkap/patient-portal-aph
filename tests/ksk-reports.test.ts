@@ -56,10 +56,12 @@ describe("KSK report datasets", () => {
     const first = data.labs[0];
     data.labs.push({ ...first }, { ...first, id: "202", value: "6.2" }, { ...first, parameterid: "other", unit: "g/L", value: "3.3" });
     data.labs.push({ ...first, maql: "UNRELATED", value: "99.9" });
+    data.imaging.push({ kind: "SA_BNCDHA", id: "301", maql: "1001", serviceid: "SA01", name: "Siêu âm mẫu", value: "Kết quả CLS mẫu" });
     const report = buildKskReport(data, data.members, "results", "");
-    const matrix = report.sheets.find(s => s.name === "XN theo danh sách")!;
+    const matrix = report.sheets.find(s => s.name === "KQ XN-CLS theo người")!;
     const details = report.sheets.find(s => s.name === "XN chi tiết")!;
-    expect(matrix.headers).toHaveLength(9); expect(details.rows).toHaveLength(4);
+    expect(matrix.rows).toHaveLength(data.members.length); expect(matrix.headers.some(h => h.startsWith("CLS ·"))).toBe(true); expect(details.rows).toHaveLength(4);
+    expect(matrix.rows[0].some(c => typeof c === "string" && c.includes("Kết quả CLS mẫu"))).toBe(true);
     const repeated = matrix.rows[0].find(c => typeof c === "string" && c.includes("Phiếu 202")) as string;
     expect(repeated).toContain("5.1"); expect(repeated).toContain("6.2");
     expect(JSON.stringify(report)).not.toContain("99.9");
@@ -86,6 +88,19 @@ describe("KSK Excel and printable output", () => {
     const loaded = new browser.Workbook(); await loaded.xlsx.load(buffer);
     expect(loaded.getWorksheet("Mẫu").getCell("A1").value).toBe("Thông số mẫu");
     expect(loaded.getWorksheet("Mẫu").getCell("B1").value).toBe("000001");
+  });
+  it("opens the combined XN/CLS matrix and keeps one row per selected patient", async () => {
+    const data = sample();
+    data.imaging.push({ kind: "SA_BNCDHA", id: "301", maql: "1001", serviceid: "SA01", name: "Siêu âm mẫu", value: "Kết quả CLS mẫu" });
+    const report = buildKskReport(data, data.members, "results", "Toàn bộ đợt");
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(await reportXlsx(report) as unknown as ExcelJS.Buffer);
+    const sheet = workbook.getWorksheet("KQ XN-CLS theo người")!;
+    expect(workbook.views[0].activeTab).toBe(sheet.id - 1);
+    expect(sheet.rowCount - 1).toBe(data.members.length);
+    expect(sheet.getCell("B2").value).toBe(data.members[0].mabn);
+    expect(sheet.getRow(1).values?.toString()).toContain("CLS · Siêu âm mẫu");
+    expect(sheet.getRow(2).values?.toString()).toContain("Kết quả CLS mẫu");
   });
   it("round-trips real XLSX, keeps IDs and numeric money types, and never promotes source strings to formulas", async () => {
     const data = sample(); data.members[0].mabn = "000001"; data.visits[0].mabn = "000001";

@@ -23,6 +23,9 @@ export async function reportXlsx(report: KskReport): Promise<Uint8Array> {
   // Browser-compatible document writer; not loaded with the initial dashboard.
   const excel = await import("exceljs");
   const workbook = new (excel.default?.Workbook ?? excel.Workbook)();
+  // Open the one-patient-per-row matrix first in Excel; retain source and scope sheets.
+  if (report.kind === "results" && report.sheets.some(sheet => sheet.name === "KQ XN-CLS theo người"))
+    workbook.views = [{ firstSheet: 0, activeTab: 2, visibility: "visible" }];
   workbook.creator = "An Phu · KSK chỉ đọc";
   workbook.created = new Date();
   workbook.subject = "Nội bộ · dữ liệu sức khỏe cá nhân · không phải công nợ hợp đồng";
