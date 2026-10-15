@@ -5,15 +5,15 @@ import { LockKeyhole, RotateCcw, Settings2, ShieldCheck } from "lucide-react";
 import { AdminPageHeader, AdminShell } from "@/app/admin/admin-shell";
 import { AdminStatusBadge } from "@/app/admin/admin-table";
 import { SettingEditButton } from "@/app/admin/settings/setting-edit-button";
-import { canAdminAccessPath, getAdminSession } from "@/lib/admin/session";
+import { canAdminAccessPath, resolveAdminSession as getAdminSession } from "@/lib/admin/session";
 import { getAdminSettings, type AdminSettingEntry } from "@/lib/admin/modules";
 
 type SearchParams = Record<string, string | string[] | undefined>;
 
 export default async function AdminSettingsPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
-  const session = getAdminSession(await cookies());
+  const session = await getAdminSession(await cookies());
   if (!session) redirect("/admin/login");
-  if (!canAdminAccessPath(session.role, "/admin/settings")) redirect("/admin");
+  if (!canAdminAccessPath(session, "/admin/settings")) redirect("/admin");
 
   const rawParams = await searchParams;
   const group = one(rawParams.group) || "auth";
@@ -21,7 +21,7 @@ export default async function AdminSettingsPage({ searchParams }: { searchParams
   const visibleEntries = data.entries.filter((entry) => entry.group === group);
 
   return (
-    <AdminShell username={session.username} role={session.role}>
+    <AdminShell username={session.username} role={session.role} menus={session.menus}>
       <AdminPageHeader
         eyebrow="Cấu hình"
         title="Thông số vận hành"

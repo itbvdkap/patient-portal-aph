@@ -4,21 +4,21 @@ import { redirect } from "next/navigation";
 import { AdminActionButton } from "@/app/admin/admin-action-button";
 import { AdminPageHeader, AdminShell } from "@/app/admin/admin-shell";
 import { AdminStatusBadge } from "@/app/admin/admin-table";
-import { canAdminAccessPath, canAdminPerformAction, getAdminSession } from "@/lib/admin/session";
+import { canAdminAccessPath, canAdminPerformAction, resolveAdminSession as getAdminSession } from "@/lib/admin/session";
 import { getAdminProfileDetail } from "@/lib/admin/modules";
 
 export default async function AdminProfileDetailPage({ params }: { params: Promise<{ mabn: string }> }) {
-  const session = getAdminSession(await cookies());
+  const session = await getAdminSession(await cookies());
   if (!session) redirect("/admin/login");
-  if (!canAdminAccessPath(session.role, "/admin/profiles")) redirect("/admin");
+  if (!canAdminAccessPath(session, "/admin/profiles")) redirect("/admin");
 
   const { mabn } = await params;
   const data = await getAdminProfileDetail(mabn);
-  const canUnlink = canAdminPerformAction(session.role, "unlink_profile");
-  const canRetry = canAdminPerformAction(session.role, "retry_sync");
+  const canUnlink = canAdminPerformAction(session, "unlink_profile");
+  const canRetry = canAdminPerformAction(session, "retry_sync");
 
   return (
-    <AdminShell username={session.username} role={session.role}>
+    <AdminShell username={session.username} role={session.role} menus={session.menus}>
       <AdminPageHeader
         eyebrow="Chi tiết hồ sơ y tế"
         title={`Mã BN ${data.mabn || "?"}`}

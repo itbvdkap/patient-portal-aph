@@ -259,7 +259,9 @@ public sealed class BookingHisOnlineSyncWorker(
                     maphuongxa = :WardCode,
                     matt = :ProvinceCode,
                     trieuchung = :Symptoms,
+                    chuyenkhoa_dangky = :DepartmentName,
                     phongkham = :DepartmentCode,
+                    bacsi_dangky = :DoctorName,
                     bacsi = :DoctorCode,
                     cannang = :Weight,
                     id_user = :PortalUserId,
@@ -288,7 +290,9 @@ public sealed class BookingHisOnlineSyncWorker(
                     mapped.WardCode,
                     mapped.ProvinceCode,
                     booking.Symptoms,
+                    DepartmentName = Truncate(booking.DepartmentName ?? string.Empty, 200),
                     mapped.DepartmentCode,
+                    DoctorName = Truncate(booking.DoctorName ?? string.Empty, 200),
                     mapped.DoctorCode,
                     booking.Weight,
                     PortalUserId = PortalUserId(booking.AccountKey)
@@ -307,13 +311,13 @@ public sealed class BookingHisOnlineSyncWorker(
             insert into hgsoft_soyba.dangkykham (
               id, ngaydangky, madatcho, mabn, hoten, ngaysinh, phai, mabhyt,
               cccd, sdt, sdt_nguoithan, email, mann, madantoc, cholam, sonha, thon,
-              maphuongxa, matt, trieuchung, phongkham, bacsi, cannang, chieucao,
+              maphuongxa, matt, trieuchung, chuyenkhoa_dangky, phongkham, bacsi_dangky, bacsi, cannang, chieucao,
               id_usertao, id_user, trangthai, trangthai_zalo, maql_tiepdon, ngaytao, ngaycapnhat
             )
             values (
               :Id, :AppointmentAt, :BookingCode, :PatientCode, :FullName, :BirthDate, :Gender, null,
               :CitizenId, :Phone, null, :Email, :OccupationCode, :EthnicityCode, :BranchName, :Address, null,
-              :WardCode, :ProvinceCode, :Symptoms, :DepartmentCode, :DoctorCode, :Weight, null,
+              :WardCode, :ProvinceCode, :Symptoms, :DepartmentName, :DepartmentCode, :DoctorName, :DoctorCode, :Weight, null,
               :PortalUserId, :PortalUserId, 0, 'CHUA_GUI', 0, sysdate, sysdate
             )
             """,
@@ -336,7 +340,9 @@ public sealed class BookingHisOnlineSyncWorker(
                 mapped.WardCode,
                 mapped.ProvinceCode,
                 booking.Symptoms,
+                DepartmentName = Truncate(booking.DepartmentName ?? string.Empty, 200),
                 mapped.DepartmentCode,
+                DoctorName = Truncate(booking.DoctorName ?? string.Empty, 200),
                 mapped.DoctorCode,
                 booking.Weight,
                 PortalUserId = PortalUserId(booking.AccountKey)
@@ -761,9 +767,24 @@ public sealed class BookingHisOnlineSyncWorker(
         if (string.IsNullOrWhiteSpace(value)) return value;
         var trimmed = value.Trim();
         if (!trimmed.StartsWith("postgres://", StringComparison.OrdinalIgnoreCase) &&
-            !trimmed.StartsWith("postgresql://", StringComparison.OrdinalIgnoreCase))
+        !trimmed.StartsWith("postgresql://", StringComparison.OrdinalIgnoreCase))
         {
-            return trimmed;
+            try
+            {
+                var rawBuilder = new NpgsqlConnectionStringBuilder(trimmed)
+                {
+                    Timeout = 30,
+                    CommandTimeout = 45,
+                    KeepAlive = 30,
+                    Pooling = false,
+                    Multiplexing = false
+                };
+                return rawBuilder.ConnectionString;
+            }
+            catch (ArgumentException)
+            {
+                return trimmed;
+            }
         }
 
         var uri = new Uri(trimmed);
@@ -779,10 +800,11 @@ public sealed class BookingHisOnlineSyncWorker(
             Username = username,
             Password = password,
             SslMode = SslMode.Require,
-            Timeout = 60,
-            CommandTimeout = 60,
+            Timeout = 30,
+            CommandTimeout = 45,
             KeepAlive = 30,
-            Pooling = false
+            Pooling = false,
+            Multiplexing = false
         }.ConnectionString;
     }
 

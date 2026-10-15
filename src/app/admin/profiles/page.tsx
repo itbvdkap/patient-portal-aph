@@ -4,26 +4,26 @@ import { redirect } from "next/navigation";
 import { AlertTriangle, Filter, RotateCcw, Search, UsersRound } from "lucide-react";
 import { AdminPageHeader, AdminShell } from "@/app/admin/admin-shell";
 import { AdminTable } from "@/app/admin/admin-table";
-import { canAdminAccessPath, canAdminPerformAction, getAdminSession } from "@/lib/admin/session";
+import { canAdminAccessPath, canAdminPerformAction, resolveAdminSession as getAdminSession } from "@/lib/admin/session";
 import { getAdminProfiles, type AdminProfilesQuery } from "@/lib/admin/modules";
 
 type SearchParams = Record<string, string | string[] | undefined>;
 
 export default async function AdminProfilesPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
-  const session = getAdminSession(await cookies());
+  const session = await getAdminSession(await cookies());
   if (!session) redirect("/admin/login");
-  if (!canAdminAccessPath(session.role, "/admin/profiles")) redirect("/admin");
+  if (!canAdminAccessPath(session, "/admin/profiles")) redirect("/admin");
 
   const rawParams = await searchParams;
   const query = parseProfileQuery(rawParams);
   const data = await getAdminProfiles(query);
   const rows = data.rows.map((row) => ({
     ...row,
-    actions: row.actions?.filter((item) => canAdminPerformAction(session.role, item.action)),
+    actions: row.actions?.filter((item) => canAdminPerformAction(session, item.action)),
   }));
 
   return (
-    <AdminShell username={session.username} role={session.role}>
+    <AdminShell username={session.username} role={session.role} menus={session.menus}>
       <AdminPageHeader
         eyebrow="Hồ sơ bệnh nhân"
         title="Hồ sơ y tế liên kết"

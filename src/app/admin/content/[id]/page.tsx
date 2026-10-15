@@ -6,19 +6,19 @@ import { AdminPageHeader, AdminShell } from "@/app/admin/admin-shell";
 import { ContentPostEditor } from "@/app/admin/content/content-admin-client";
 import { AdminStatusBadge } from "@/app/admin/admin-table";
 import { getAdminContentPost } from "@/lib/admin/modules";
-import { canAdminAccessPath, getAdminSession } from "@/lib/admin/session";
+import { canAdminAccessPath, resolveAdminSession as getAdminSession } from "@/lib/admin/session";
 
 export default async function AdminContentDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  const session = getAdminSession(await cookies());
+  const session = await getAdminSession(await cookies());
   if (!session) redirect("/admin/login");
-  if (!canAdminAccessPath(session.role, "/admin/content")) redirect("/admin");
+  if (!canAdminAccessPath(session, "/admin/content")) redirect("/admin");
 
   const { id } = await params;
   const { post, categories, warnings } = await getAdminContentPost(id);
   if (!post) notFound();
 
   return (
-    <AdminShell username={session.username} role={session.role}>
+    <AdminShell username={session.username} role={session.role} menus={session.menus}>
       <AdminPageHeader
         eyebrow="Chi tiết bài viết"
         title={post.title || "Bài viết chưa có tiêu đề"}
@@ -35,7 +35,7 @@ export default async function AdminContentDetailPage({ params }: { params: Promi
                 Xem ngoài portal
               </Link>
             ) : null}
-            <ContentPostEditor post={post} categories={categories} />
+            {session.role !== "staff" && <ContentPostEditor post={post} categories={categories} />}
           </div>
         }
       />

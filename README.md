@@ -1,5 +1,19 @@
 Cổng Thông Tin Bệnh Nhân An Phú
 
+Module mới: [KSK theo đoàn — chỉ đọc HIS, nội bộ](docs/KSK_READONLY_MODULE.md), tại `/admin/ksk` (mặc định tắt, chỉ `super_admin`, không chạy trên Vercel). Đã có dashboard thanh toán theo chứng từ, lọc màu và lựa chọn công ty/phụ trách/đợt; không suy thu tiền từ PAID hoặc coi là công nợ hợp đồng. [Báo cáo đoàn/thu tiền và XN/CLS](docs/KSK_REPORTS.md) hỗ trợ Excel và in/PDF trong app nội bộ.
+
+[LAN CN1 và nhân viên/phân quyền menu](docs/KSK_LAN_STAFF_ACCESS.md): HTTPS `192.168.2.8:3443`, tài khoản staff chỉ đọc được cấp KSK rõ ràng có thể vào module/báo cáo. `/admin/staff` chỉ dành cho super_admin; không dùng tài khoản bệnh nhân.
+
+Quản lý nhân viên có Lưu/Sửa/Xóa mềm, xác nhận mật khẩu hai lần và thu hồi phiên khi thay đổi. Staff tự đổi mật khẩu tại `/admin/password` bằng mật khẩu hiện tại; không sửa tài khoản bootstrap server hoặc dữ liệu HIS.
+
+[Đối chiếu tài chính theo MAVAOVIEN — 15/10/2026](docs/KSK_EPISODE_PAYMENT_POLICY.md): chỉ định phải đúng lần vào viện của đợt; đầu phiếu mã 0 cần toàn bộ chi tiết được xác minh. Agent `episodePolicy=2`, không ghi HIS.
+
+[Báo cáo thu tiền khám đoàn tổng hợp](docs/KSK_COLLECTIONS_REPORT.md): `/admin/ksk-collections`, lọc công ty, phụ trách/CSKH, thu ngân HIS, ngày thu và ngày đăng ký; Excel/in. Quyền riêng `ksk_collections`, chỉ đọc HIS, chưa phải công nợ hợp đồng hoặc sổ thu đã nghiệm thu kế toán.
+
+[LAB phiếu thay đổi gói / danh sách khám](docs/KSK_CHANGE_WORKFLOW.md): `/admin/ksk-changes`, nháp → người khác duyệt → áp dụng HIS **giả lập**, quyền thao tác riêng từng user. Mặc định tắt; **chưa ghi Oracle thật**, không thay trạng thái chỉ đọc của báo cáo.
+
+[Quản lý đoàn / gói / danh sách HIS thật](docs/KSK_MANAGEMENT.md): `/admin/ksk-manage`, dữ liệu CN1 thật, thêm/sửa bằng form web → nháp mã hóa → người khác duyệt → API agent riêng có transaction/ledger. Menu/action tách khỏi LAB và báo cáo. Local đã mở đọc/nháp; **ghi CN1 vẫn tắt**, chưa cài ledger/commit DML; cần DB TEST/credential/USERID và nghiệm thu trước mở ghi.
+
 Repo: patient-portal-aph
 
 Patient Portal cho bệnh nhân Bệnh viện Đa khoa An Phú tra cứu hồ sơ khám chữa bệnh, lịch hẹn, xét nghiệm, chẩn đoán hình ảnh, đơn thuốc, bảo hiểm y tế và trạng thái khám hôm nay.
@@ -185,6 +199,13 @@ Nguyên tắc match hiện tại:
 - Điểm match ưu tiên CCCD/CMND + ngày khám; phòng/khoa chỉ là tín hiệu phụ.
 
 Agent cũng có `NotificationOutboxWorker` để đọc `portal.notification_outbox`, gửi Zalo ZNS, cập nhật `sent/retry/failed` và ghi `zalo_confirm_sent_at` vào lịch hẹn khi gửi thành công. Trong lúc template Zalo đang chờ duyệt, nên để `booking.zalo_auto_send_enabled=false`: hệ thống vẫn match HIS và tạo outbox, admin kiểm tra rồi bấm gửi thủ công từng phiếu trong `/admin/bookings`.
+
+Nghiệp vụ đổi ngày/giờ/phòng sau khi đã gửi xác nhận được mô tả trong
+[`docs/ZNS_BOOKING_CONFIRMATION_STATUS.md`](docs/ZNS_BOOKING_CONFIRMATION_STATUS.md).
+Thiết kế này chưa triển khai: không reset notification `sent`; mỗi lần đổi lịch sẽ
+có `schedule_revision`, lịch sử audit và outbox xác nhận mới. Nếu HIS đã tạo
+`MAQL_TIEPDON` hoặc STT thì phải xác nhận quy trình hủy/đăng ký lại trước khi gửi
+tin mới.
 
 Trong `C:\PatientPortalAgent\patientapi-service.env` cần có:
 

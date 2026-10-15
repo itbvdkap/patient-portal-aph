@@ -2,7 +2,7 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { Pool } from "pg";
 import { z } from "zod";
-import { canAdminPerformAction, getAdminSession } from "@/lib/admin/session";
+import { canAdminPerformAction, resolveAdminSession as getAdminSession } from "@/lib/admin/session";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
@@ -30,7 +30,7 @@ const actionSchema = z.object({
 let bookingPool: Pool | null = null;
 
 export async function POST(request: Request) {
-  const session = getAdminSession(await cookies());
+  const session = await getAdminSession(await cookies());
   if (!session) {
     return NextResponse.json({ error: "Phiên quản trị đã hết hạn." }, { status: 401 });
   }
@@ -39,7 +39,7 @@ export async function POST(request: Request) {
   if (!parsed.success) {
     return NextResponse.json({ error: "Thao tác quản trị không hợp lệ." }, { status: 400 });
   }
-  if (!canAdminPerformAction(session.role, parsed.data.action)) {
+  if (!canAdminPerformAction(session, parsed.data.action)) {
     return NextResponse.json({ error: "Tài khoản quản trị không có quyền thực hiện thao tác này." }, { status: 403 });
   }
 

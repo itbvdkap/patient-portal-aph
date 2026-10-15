@@ -7,6 +7,7 @@ import {
   Activity,
   BookOpenText,
   CalendarCheck,
+  ChevronDown,
   DatabaseZap,
   FileText,
   KeyRound,
@@ -23,11 +24,17 @@ import type { LucideIcon } from "lucide-react";
 
 export type AdminNavIcon = "activity" | "user" | "users" | "calendar" | "database" | "key" | "book" | "settings" | "file";
 
-export interface AdminShellNavItem {
+export interface AdminShellNavLink {
   label: string;
   href: string;
   icon: AdminNavIcon;
 }
+export type AdminShellNavItem = AdminShellNavLink | {
+  id: string;
+  label: string;
+  icon: AdminNavIcon;
+  children: AdminShellNavLink[];
+};
 
 const icons: Record<AdminNavIcon, LucideIcon> = {
   activity: Activity,
@@ -57,6 +64,18 @@ export function AdminShellClient({
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
+  const compact = collapsed && !mobileOpen;
+  const isActive = (href: string) => pathname === href || (href !== "/admin" && Boolean(pathname?.startsWith(`${href}/`)));
+
+  function navLink(item: AdminShellNavLink, nested = false) {
+    const Icon = icons[item.icon];
+    const active = isActive(item.href);
+    return <Link key={item.href} href={item.href} onClick={() => setMobileOpen(false)} title={compact ? item.label : undefined} aria-current={active ? "page" : undefined}
+      className={["flex items-center rounded-md text-sm font-bold transition hover:bg-white/10 hover:text-white", compact ? "justify-center px-0 py-3" : nested ? "gap-3 px-3 py-2" : "gap-3 px-3 py-2.5", active ? "bg-white text-primary-900 shadow-sm hover:bg-white hover:text-primary-900" : "text-primary-50/85"].join(" ")}>
+      <Icon aria-hidden="true" className="h-4 w-4 shrink-0" /><span className={compact ? "sr-only" : "min-w-0"}>{item.label}</span>
+    </Link>;
+  }
 
   useEffect(() => {
     setCollapsed(window.localStorage.getItem(storageKey) === "1");
@@ -138,26 +157,21 @@ export function AdminShellClient({
             </div>
           )}
 
-          <nav className="mt-5 grid gap-1 overflow-y-auto pr-1">
+          <nav aria-label="Menu quản trị" className="mt-5 grid gap-1 overflow-y-auto pr-1">
             {nav.map((item) => {
+              if (!("children" in item)) return navLink(item);
               const Icon = icons[item.icon];
-              const active = pathname === item.href || (item.href !== "/admin" && pathname?.startsWith(`${item.href}/`));
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  onClick={() => setMobileOpen(false)}
-                  title={collapsed ? item.label : undefined}
-                  className={[
-                    "flex items-center rounded-md text-sm font-bold transition hover:bg-white/10 hover:text-white",
-                    collapsed ? "justify-center px-0 py-3" : "gap-3 px-3 py-2.5",
-                    active ? "bg-white text-primary-900 shadow-sm hover:bg-white hover:text-primary-900" : "text-primary-50/85",
-                  ].join(" ")}
-                >
-                  <Icon aria-hidden="true" className="h-4 w-4 shrink-0" />
-                  <span className={collapsed ? "sr-only" : "truncate"}>{item.label}</span>
-                </Link>
-              );
+              const active = item.children.some(child => isActive(child.href));
+              const expanded = !compact && (openGroups[item.id] ?? active);
+              return <div key={item.id}>
+                <button type="button" aria-label={item.label} aria-expanded={expanded} aria-controls={`admin-nav-${item.id}`} title={compact ? item.label : undefined}
+                  onClick={() => { if (compact) { setCollapsed(false); window.localStorage.setItem(storageKey, "0"); } setOpenGroups(current => ({ ...current, [item.id]: !expanded })); }}
+                  className={["flex w-full items-center rounded-md py-2.5 text-left text-sm font-bold hover:bg-white/10", compact ? "justify-center px-0" : "gap-3 px-3", active ? "bg-white/10 text-white" : "text-primary-50/85"].join(" ")}>
+                  <Icon aria-hidden="true" className="h-4 w-4 shrink-0" /><span className={compact ? "sr-only" : "min-w-0 flex-1"}>{item.label}</span>
+                  {!compact && <ChevronDown aria-hidden="true" className={`h-4 w-4 shrink-0 transition-transform ${expanded ? "rotate-180" : ""}`} />}
+                </button>
+                <div id={`admin-nav-${item.id}`} hidden={!expanded} className={`ml-3 mt-1 gap-1 border-l border-white/20 pl-2 ${expanded ? "grid" : "hidden"}`}>{item.children.map(child => navLink(child, true))}</div>
+              </div>;
             })}
           </nav>
 

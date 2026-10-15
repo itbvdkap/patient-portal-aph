@@ -1,31 +1,51 @@
-import { AdminShellClient, type AdminNavIcon } from "@/app/admin/admin-shell-client";
+import { AdminShellClient, type AdminNavIcon, type AdminShellNavItem } from "@/app/admin/admin-shell-client";
 import { adminRoleLabel, canAdminAccessPath, type AdminRole } from "@/lib/admin/session";
+import { adminMenuOptions, kskMenuGroup, type AdminMenu } from "@/lib/admin/permissions";
 
 const nav: Array<{ label: string; href: string; iconKey: AdminNavIcon }> = [
   { label: "Tổng quan", href: "/admin", iconKey: "activity" },
   { label: "Tài khoản", href: "/admin/accounts", iconKey: "user" },
   { label: "Hồ sơ liên kết", href: "/admin/profiles", iconKey: "users" },
   { label: "Đăng ký khám", href: "/admin/bookings", iconKey: "calendar" },
+  { label: "Khám đoàn · chỉ đọc", href: "/admin/ksk", iconKey: "users" },
+  { label: "Báo cáo thu tiền", href: "/admin/ksk-collections", iconKey: "file" },
+  { label: "Phiếu thay đổi · LAB", href: "/admin/ksk-changes", iconKey: "file" },
+  { label: "Quản lý đoàn / gói HIS", href: "/admin/ksk-manage", iconKey: "users" },
   { label: "Sync HIS", href: "/admin/sync", iconKey: "database" },
   { label: "OTP / Zalo", href: "/admin/otp", iconKey: "key" },
   { label: "Nội dung", href: "/admin/content", iconKey: "book" },
   { label: "Cấu hình", href: "/admin/settings", iconKey: "settings" },
   { label: "Audit log", href: "/admin/audit", iconKey: "file" },
+  { label: "Nhân viên & phân quyền", href: "/admin/staff", iconKey: "user" },
+  { label: "Đổi mật khẩu", href: "/admin/password", iconKey: "key" },
 ];
 
 export function AdminShell({
   children,
   username,
   role = "super_admin",
+  menus,
 }: {
   children: React.ReactNode;
   username: string;
   role?: AdminRole;
+  menus?: AdminMenu[];
 }) {
-  const visibleNav = nav.filter((item) => canAdminAccessPath(role, item.href)).map(({ label, href, iconKey }) => ({ label, href, icon: iconKey }));
+  const subject = { username, role, exp: 0, menus };
+  const visibleNav = nav.filter((item) => (item.href !== "/admin/password" || role === "staff") && canAdminAccessPath(subject, item.href)).map(({ label, href, iconKey }) => ({ label, href, icon: iconKey }));
+  const kskPaths = new Set<string>(adminMenuOptions.filter(menu => kskMenuGroup.menus.some(id => id === menu.id)).map(menu => menu.path));
+  const kskChildren = visibleNav.filter(item => kskPaths.has(item.href));
+  const groupedNav: AdminShellNavItem[] = [];
+  for (const item of visibleNav) {
+    if (kskPaths.has(item.href)) {
+      if (!groupedNav.some(entry => "id" in entry && entry.id === kskMenuGroup.id)) {
+        groupedNav.push({ id: kskMenuGroup.id, label: kskMenuGroup.label, icon: "users", children: kskChildren });
+      }
+    } else groupedNav.push(item);
+  }
 
   return (
-    <AdminShellClient nav={visibleNav} username={username} roleLabel={adminRoleLabel(role)}>
+    <AdminShellClient nav={groupedNav} username={username} roleLabel={adminRoleLabel(role)}>
       {children}
     </AdminShellClient>
   );

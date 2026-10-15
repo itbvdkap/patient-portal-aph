@@ -1,0 +1,40 @@
+using PatientApi.Ksk;
+using Row = System.Collections.Generic.Dictionary<string, string>;
+var tests = 0;
+void Assert(bool condition) { if (!condition) throw new Exception("Management assertion failed."); tests++; }
+void Reject(Action action) { try { action(); } catch (ManagementError) { tests++; return; } throw new Exception("Unsafe proposal accepted."); }
+var customer = new Row { ["id"] = "1", ["ten"] = "Công ty GIẢ LẬP", ["stt"] = "1" };
+var cohort = new Row { ["id"] = "2", ["done"] = "0" };
+var group = new Row { ["id"] = "3" };
+var member = new Row { ["iddonvi"] = "3", ["mabn"] = "26000001", ["done"] = "0" };
+var package = new Row { ["id"] = "4", ["id_goi_kskmuc"] = "7", ["phai"] = "0" };
+var data = new ManagementSnapshot("TEST", "a", false, "2", [customer], [cohort], [group], [member], [package], [], [new Row { ["id"] = "5", ["hide"] = "0" }], false, [], []);
+var fields = new Row { ["stt"] = "1", ["phai"] = "0", ["tt"] = "", ["namsinh"] = "", ["ghichu"] = "Gói GIẢ LẬP", ["namsinh_tu"] = "1900", ["namsinh_den"] = "9999", ["id_goi_kskmuc"] = "7", ["tinhtrang_honnhan"] = "2" };
+var p = new ManagementProposal("package", "4", fields, [new Row { ["mavp"] = "5", ["stt"] = "1", ["gia_nv"] = "100000", ["gia_ngv"] = "120000", ["ghichu"] = "" }]);
+KskManagementModel.Validate(data, p); Assert(true);
+Reject(() => KskManagementModel.Validate(data with { HasVisits = true }, p));
+Reject(() => KskManagementModel.Validate(data with { Cohorts = [new Row { ["id"] = "2", ["done"] = "1" }] }, p));
+Reject(() => KskManagementModel.Validate(data, p with { Key = "999" }));
+Reject(() => KskManagementModel.Validate(data, p with { Key = "NEW" })); // same sex/group ambiguous
+Reject(() => KskManagementModel.Validate(data, p with { Fields = new Row(fields) { ["id_goi_kskmuc"] = "100" } }));
+Reject(() => KskManagementModel.Validate(data, p with { Fields = new Row(fields) { ["namsinh_tu"] = "9999", ["namsinh_den"] = "1900" } }));
+Reject(() => KskManagementModel.Validate(data, p with { Items = [p.Items[0], p.Items[0]] }));
+Reject(() => KskManagementModel.Validate(data, p with { Items = [new Row(p.Items[0]) { ["gia_nv"] = "-1" }] }));
+Reject(() => KskManagementModel.Validate(data, p with { Items = [new Row(p.Items[0]) { ["gia_nv"] = "10000000000" }] }));
+Reject(() => KskManagementModel.Validate(data, p with { Items = [new Row(p.Items[0]) { ["quantity"] = "2" }] }));
+Reject(() => KskManagementModel.Validate(data, p with { Items = [new Row(p.Items[0]) { ["mavp"] = "999" }] }));
+Reject(() => KskManagementModel.Validate(data with { Services = [new Row { ["id"] = "5", ["hide"] = "1" }] }, p));
+Reject(() => KskManagementModel.Validate(data, p with { Fields = new Row(fields) { ["sql"] = "do-not-execute" } }));
+Assert(!KskManagementModel.Id("1 or 1=1")); Assert(KskManagementModel.Id("900000000000000001"));
+var mf = new Row { ["stt"] = "1", ["hoten"] = "Người GIẢ LẬP", ["namsinh"] = "1990", ["phai"] = "0", ["dienthoai"] = "", ["diachi"] = "", ["manv"] = "T01", ["bo_phan"] = "", ["id_goi_kskmuc"] = "7", ["tinhtrang_honnhan"] = "2" };
+var m = new ManagementProposal("member", "3:26000001", mf, []);
+KskManagementModel.Validate(data, m); Assert(true);
+Reject(() => KskManagementModel.Validate(data with { VisitedMembers = ["3:26000001"] }, m));
+Reject(() => KskManagementModel.Validate(data, m with { Fields = new Row(mf) { ["id_goi_kskmuc"] = "8" } }));
+Reject(() => KskManagementModel.Validate(data, m with { Fields = new Row(mf) { ["namsinh"] = "9999" } }));
+Reject(() => KskManagementModel.Validate(data, m with { Fields = new Row(mf) { ["hoten"] = new string('a', 101) } }));
+var adding = m with { Key = "NEW", Fields = new Row(mf) { ["iddonvi"] = "3", ["mabn"] = "26000002" } };
+KskManagementModel.Validate(data, adding); Assert(true);
+Reject(() => KskManagementModel.Validate(data with { VisitedMembers = ["3:26000002"] }, adding));
+Reject(() => KskManagementModel.Validate(data, adding with { Fields = new Row(adding.Fields) { ["mabn"] = "26000001" } }));
+Console.WriteLine($"KSK management validation: {tests} assertions passed; synthetic only, no Oracle connections.");

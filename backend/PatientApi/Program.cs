@@ -1,6 +1,7 @@
 using PatientApi.Repositories;
 using PatientApi.Security;
 using PatientApi.Sync;
+using PatientApi.Ksk;
 using System.Text;
 
 Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
@@ -38,6 +39,9 @@ if (OperatingSystem.IsWindows())
 
 builder.Services.AddSingleton<PatientTokenValidator>();
 builder.Services.AddScoped<OracleHisPatientRepository>();
+builder.Services.AddScoped<OracleKskRepository>();
+builder.Services.AddScoped<OracleKskManagementRepository>();
+builder.Services.AddHostedService<KskCloudWorker>();
 builder.Services.AddHttpClient<SupabaseRestPortalStore>();
 builder.Services.AddHttpClient<ZaloZnsClient>();
 
@@ -69,15 +73,24 @@ if (builder.Configuration.GetValue("PatientPortal:EnableBookingHisOnlineSyncWork
     builder.Services.AddHostedService<BookingHisOnlineSyncWorker>();
 }
 
-if (builder.Configuration.GetValue("PatientPortal:EnableNotificationOutboxWorker", false))
-{
-    builder.Services.AddHttpClient<NotificationOutboxWorker>();
-    builder.Services.AddHostedService(sp => sp.GetRequiredService<NotificationOutboxWorker>());
-}
+// Always register the outbox worker. The worker performs the feature-flag check
+// inside ExecuteAsync, so a disabled deployment exits cleanly while an enabled
+// deployment cannot be skipped because of configuration binding/registration
+// timing during service startup.
+builder.Services.AddHttpClient<NotificationOutboxWorker>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<NotificationOutboxWorker>());
 
 var app = builder.Build();
+app.MapKskEndpoints();
+app.MapKskManagement();
 
-app.MapGet("/health", () => Results.Ok(new { status = "healthy", dataMode }));
+app.MapGet("/health", () => Results.Ok(new
+{
+    status = "healthy",
+    dataMode,
+    branchCode = app.Configuration["PatientPortal:BranchCode"],
+    notificationOutboxWorkerEnabled = app.Configuration.GetValue("PatientPortal:EnableNotificationOutboxWorker", false)
+}));
 
 var disableHttpsRedirection = app.Configuration.GetValue("PatientPortal:DisableHttpsRedirection", false);
 if (!app.Environment.IsDevelopment() && !disableHttpsRedirection)

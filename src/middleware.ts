@@ -37,6 +37,15 @@ function withCors(response: NextResponse, request: NextRequest) {
 }
 
 export function middleware(request: NextRequest) {
+  if (request.nextUrl.pathname.startsWith("/admin/") || request.nextUrl.pathname === "/admin") {
+    const requestHeaders = new Headers(request.headers);
+    requestHeaders.set("x-admin-path", request.nextUrl.pathname);
+    return NextResponse.next({ request: { headers: requestHeaders } });
+  }
+  if (request.nextUrl.pathname === "/api/admin" || request.nextUrl.pathname.startsWith("/api/admin/")) {
+    // Employee/admin data is never part of the public/mobile cross-origin APIs.
+    return NextResponse.next();
+  }
   if (request.nextUrl.pathname.startsWith("/api/")) {
     if (request.method === "OPTIONS") {
       return withCors(new NextResponse(null, { status: 204 }), request);
@@ -70,6 +79,7 @@ export function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
+    "/admin/:path*",
     "/api/:path*",
     "/dashboard/:path*",
     "/profile/:path*",

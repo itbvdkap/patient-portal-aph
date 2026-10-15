@@ -5,24 +5,24 @@ import { redirect } from "next/navigation";
 import { AdminActionButton } from "@/app/admin/admin-action-button";
 import { AdminPageHeader, AdminShell } from "@/app/admin/admin-shell";
 import { AdminStatusBadge } from "@/app/admin/admin-table";
-import { canAdminAccessPath, canAdminPerformAction, getAdminSession } from "@/lib/admin/session";
+import { canAdminAccessPath, canAdminPerformAction, resolveAdminSession as getAdminSession } from "@/lib/admin/session";
 import { getAdminAccountDetail } from "@/lib/admin/modules";
 
 export default async function AdminAccountDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  const session = getAdminSession(await cookies());
+  const session = await getAdminSession(await cookies());
   if (!session) redirect("/admin/login");
-  if (!canAdminAccessPath(session.role, "/admin/accounts")) redirect("/admin");
+  if (!canAdminAccessPath(session, "/admin/accounts")) redirect("/admin");
 
   const { id } = await params;
   const data = await getAdminAccountDetail(id);
   const account = data.account;
-  const canLock = canAdminPerformAction(session.role, "lock_account");
-  const canUnlock = canAdminPerformAction(session.role, "unlock_account");
-  const canDelete = canAdminPerformAction(session.role, "delete_account");
-  const canEdit = canAdminPerformAction(session.role, "edit_account");
+  const canLock = canAdminPerformAction(session, "lock_account");
+  const canUnlock = canAdminPerformAction(session, "unlock_account");
+  const canDelete = canAdminPerformAction(session, "delete_account");
+  const canEdit = canAdminPerformAction(session, "edit_account");
 
   return (
-    <AdminShell username={session.username} role={session.role}>
+    <AdminShell username={session.username} role={session.role} menus={session.menus}>
       <AdminPageHeader
         eyebrow="Chi tiết tài khoản"
         title={String(account?.full_name ?? account?.display_name ?? "Tài khoản portal")}
@@ -91,7 +91,7 @@ export default async function AdminAccountDetailPage({ params }: { params: Promi
           <DetailSection title="Hồ sơ y tế liên kết" count={data.profiles.length}>
             <div className="divide-y divide-cream-200">
               {data.profiles.map((profile) => (
-                <ProfileRow key={`${profile.account_id ?? profile.account_key}-${profile.mabn}`} profile={profile} account={account} canUnlink={canAdminPerformAction(session.role, "unlink_profile")} />
+                <ProfileRow key={`${profile.account_id ?? profile.account_key}-${profile.mabn}`} profile={profile} account={account} canUnlink={canAdminPerformAction(session, "unlink_profile")} />
               ))}
               {!data.profiles.length && <Empty text="Tài khoản này chưa liên kết hồ sơ y tế." />}
             </div>

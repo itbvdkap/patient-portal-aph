@@ -17,21 +17,30 @@ import { AdminPageHeader, AdminShell } from "@/app/admin/admin-shell";
 import { AdminActionButton } from "@/app/admin/admin-action-button";
 import { AdminStatusBadge } from "@/app/admin/admin-table";
 import { getAdminDashboardData, type AdminMetric, type AdminRow, type AdminSettingStatus } from "@/lib/admin/dashboard";
-import { canAdminPerformAction, getAdminSession } from "@/lib/admin/session";
+import { canAdminAccessPath, canAdminPerformAction, resolveAdminSession as getAdminSession } from "@/lib/admin/session";
+import { adminMenuOptions } from "@/lib/admin/permissions";
 
 export default async function AdminPage() {
-  const session = getAdminSession(await cookies());
+  const session = await getAdminSession(await cookies());
   if (!session) redirect("/admin/login");
+
+  // The landing page must not disclose every module's data to limited accounts.
+  if (session.role !== "super_admin") return <AdminShell username={session.username} role={session.role} menus={session.menus}>
+    <AdminPageHeader eyebrow="Nhân viên" title="Trang quản trị" description="Chỉ hiển thị các phân hệ được cấp. Tài khoản nhân viên là chỉ đọc; không ghi HIS." />
+    <section className="grid gap-3 sm:grid-cols-2">{adminMenuOptions.filter(menu => canAdminAccessPath(session, menu.path)).map(menu =>
+      <Link key={menu.id} href={menu.path} className="rounded border bg-white p-5 font-bold text-primary-800">{menu.label} →</Link>)}</section>
+    {session.role === "staff" && !session.menus?.length && <p className="mt-4 text-sm">Chưa được cấp menu. Liên hệ quản trị để phân quyền.</p>}
+  </AdminShell>;
 
   const data = await getAdminDashboardData();
   const filterRows = (rows: AdminRow[]) =>
     rows.map((row) => ({
       ...row,
-      actions: row.actions?.filter((item) => canAdminPerformAction(session.role, item.action)),
+      actions: row.actions?.filter((item) => canAdminPerformAction(session, item.action)),
     }));
 
   return (
-    <AdminShell username={session.username} role={session.role}>
+    <AdminShell username={session.username} role={session.role} menus={session.menus}>
       <AdminPageHeader
         eyebrow="Tổng quan hệ thống"
         title="Trang quản trị"

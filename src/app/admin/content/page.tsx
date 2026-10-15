@@ -5,22 +5,22 @@ import { BookOpen, RotateCcw } from "lucide-react";
 import { AdminPageHeader, AdminShell } from "@/app/admin/admin-shell";
 import { ContentActions, ContentPagination, ContentPostList, ContentToolbar } from "@/app/admin/content/content-admin-client";
 import { getAdminContent, type AdminContentQuery } from "@/lib/admin/modules";
-import { canAdminAccessPath, canAdminPerformAction, getAdminSession } from "@/lib/admin/session";
+import { canAdminAccessPath, canAdminPerformAction, resolveAdminSession as getAdminSession } from "@/lib/admin/session";
 
 type SearchParams = Record<string, string | string[] | undefined>;
 
 export default async function AdminContentPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
-  const session = getAdminSession(await cookies());
+  const session = await getAdminSession(await cookies());
   if (!session) redirect("/admin/login");
-  if (!canAdminAccessPath(session.role, "/admin/content")) redirect("/admin");
+  if (!canAdminAccessPath(session, "/admin/content")) redirect("/admin");
 
   const rawParams = await searchParams;
   const query = parseContentQuery(rawParams);
   const data = await getAdminContent(query);
-  const canPublish = canAdminPerformAction(session.role, "publish_content") || canAdminPerformAction(session.role, "archive_content");
+  const canPublish = canAdminPerformAction(session, "publish_content") || canAdminPerformAction(session, "archive_content");
 
   return (
-    <AdminShell username={session.username} role={session.role}>
+    <AdminShell username={session.username} role={session.role} menus={session.menus}>
       <AdminPageHeader
         eyebrow="Nội dung"
         title="Cẩm nang sức khỏe"
@@ -57,7 +57,7 @@ export default async function AdminContentPage({ searchParams }: { searchParams:
             <span className="clinical-mono font-black text-ink">{data.total}</span> bài viết · <span className="clinical-mono font-black text-ink">{data.categories.length}</span> chuyên mục
           </p>
         </div>
-        <ContentActions categories={data.categories} />
+        {session.role !== "staff" && <ContentActions categories={data.categories} />}
       </section>
 
       <ContentToolbar data={data} rawParams={rawParams} />
@@ -71,7 +71,7 @@ export default async function AdminContentPage({ searchParams }: { searchParams:
         </p>
       </div>
 
-      <ContentPostList posts={data.posts} categories={data.categories} canPublish={canPublish} />
+      <ContentPostList posts={data.posts} categories={data.categories} canPublish={canPublish} canEdit={session.role !== "staff"} />
       <ContentPagination page={data.page} pageCount={data.pageCount} rawParams={rawParams} />
     </AdminShell>
   );

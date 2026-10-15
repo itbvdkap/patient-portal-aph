@@ -7,27 +7,27 @@ import { AdminPageHeader, AdminShell } from "@/app/admin/admin-shell";
 import { AdminActionButton } from "@/app/admin/admin-action-button";
 import { AdminStatusBadge } from "@/app/admin/admin-table";
 import { AdminZnsTestForm } from "./zns-test-form";
-import { canAdminAccessPath, canAdminPerformAction, getAdminSession } from "@/lib/admin/session";
+import { canAdminAccessPath, canAdminPerformAction, resolveAdminSession as getAdminSession } from "@/lib/admin/session";
 import { getAdminBookings, type AdminBookingsQuery } from "@/lib/admin/modules";
 import type { AdminRow } from "@/lib/admin/dashboard";
 
 type SearchParams = Record<string, string | string[] | undefined>;
 
 export default async function AdminBookingsPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
-  const session = getAdminSession(await cookies());
+  const session = await getAdminSession(await cookies());
   if (!session) redirect("/admin/login");
-  if (!canAdminAccessPath(session.role, "/admin/bookings")) redirect("/admin");
+  if (!canAdminAccessPath(session, "/admin/bookings")) redirect("/admin");
 
   const rawParams = await searchParams;
   const query = parseBookingQuery(rawParams);
   const data = await getAdminBookings(query);
   const rows = data.rows.map((row) => ({
     ...row,
-    actions: row.actions?.filter((item) => canAdminPerformAction(session.role, item.action)),
+    actions: row.actions?.filter((item) => canAdminPerformAction(session, item.action)),
   }));
 
   return (
-    <AdminShell username={session.username} role={session.role}>
+    <AdminShell username={session.username} role={session.role} menus={session.menus}>
       <AdminPageHeader
         eyebrow="Đăng ký khám"
         title="Phiếu đăng ký khám"
@@ -51,7 +51,7 @@ export default async function AdminBookingsPage({ searchParams }: { searchParams
         </section>
       )}
 
-      <BookingOperationsSummary data={data} canTestZns={canAdminPerformAction(session.role, "test_zns_template")} />
+      <BookingOperationsSummary data={data} canTestZns={canAdminPerformAction(session, "test_zns_template")} />
       <BookingToolbar data={data} rawParams={rawParams} />
 
       <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">

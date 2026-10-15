@@ -43,32 +43,39 @@ public sealed class OracleHisPatientRepository(IConfiguration configuration, ILo
 
     public async Task<string?> FindPatientCodeByCitizenIdAsync(string citizenId, CancellationToken cancellationToken)
     {
+        var candidates = await FindPatientCodesByCitizenIdAsync(citizenId, cancellationToken);
+        return candidates.FirstOrDefault();
+    }
+
+    public async Task<IReadOnlyList<string>> FindPatientCodesByCitizenIdAsync(string citizenId, CancellationToken cancellationToken)
+    {
         var sql = $"""
-            select HisPatientCode
-            from (
-              select b.MABN as HisPatientCode
-              from {_oracleMasterSchema}.BTDBN b
-              left join {_oracleMasterSchema}.DIENTHOAI dt on dt.MABN = b.MABN
-              where regexp_replace(nvl(b.CMND, ''), '[^0-9]', '') = :CitizenId
-                 or regexp_replace(nvl(b.CMND_BN, ''), '[^0-9]', '') = :CitizenId
-                 or regexp_replace(nvl(dt.CMND, ''), '[^0-9]', '') = :CitizenId
-              order by b.MABN desc
-            )
-            where rownum = 1
+            select distinct b.MABN as HisPatientCode
+            from {_oracleMasterSchema}.BTDBN b
+            left join {_oracleMasterSchema}.DIENTHOAI dt on dt.MABN = b.MABN
+            where regexp_replace(nvl(b.CMND, ''), '[^0-9]', '') = :CitizenId
+               or regexp_replace(nvl(b.CMND_BN, ''), '[^0-9]', '') = :CitizenId
+               or regexp_replace(nvl(dt.CMND, ''), '[^0-9]', '') = :CitizenId
+            order by b.MABN desc
             """;
 
         var normalizedCitizenId = NormalizeDigits(citizenId);
         if (normalizedCitizenId.Length < 9)
         {
-            return null;
+            return [];
         }
 
         await using var connection = CreateConnection();
-        return await connection.QuerySingleOrDefaultAsync<string?>(new CommandDefinition(
+        var rows = await connection.QueryAsync<string>(new CommandDefinition(
             sql,
             new { CitizenId = normalizedCitizenId },
             cancellationToken: cancellationToken,
             commandTimeout: 20));
+        return rows
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => value.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
     }
 
     public async Task<PatientLoginVerificationDto?> VerifyLoginAsync(string phone, string citizenId, CancellationToken cancellationToken)
@@ -945,6 +952,60 @@ public sealed class OracleHisPatientRepository(IConfiguration configuration, ILo
             .Select(group => group.First())
             .OrderByDescending(registration => registration.RegisteredAt)
             .ToList();
+    }
+
+    public async Task<IReadOnlyList<RegistrationDto>> GetRegistrationsOnDateAsync(
+        string hisPatientCode,
+        DateTime appointmentDate,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(hisPatientCode))
+        {
+            return [];
+        }
+
+        var schema = $"{_oracleMonthlySchemaPrefix}{appointmentDate:MMyy}";
+        var dayStart = appointmentDate.Date;
+        var dayEnd = dayStart.AddDays(1);
+        var sql = $"""
+            select
+              to_char(td.MAQL) as ID,
+              to_char(td.MAVAOVIEN) as VISITID,
+              td.NGAY as REGISTEREDAT,
+              to_char(td.STT_KHAM) as TICKETNUMBER,
+              to_char(td.MAKP) as DEPARTMENTCODE,
+              nvl(kp.TENKP, to_char(td.MAKP)) as DEPARTMENTNAME,
+              cast(null as varchar2(1)) as DOCTORNAME,
+              td.DONE as DONESTATUS,
+              cast(null as varchar2(1)) as REASON,
+              cast(null as varchar2(1)) as NOTES,
+              cast(null as varchar2(1)) as PAYERTYPECODE,
+              cast(null as varchar2(1)) as PAYERTYPENAME
+            from {schema}.TIEPDON td
+            left join {_oracleMasterSchema}.BTDKP_BV kp on kp.MAKP = td.MAKP
+            where td.MABN = :HisPatientCode
+              and td.NGAY >= :DayStart
+              and td.NGAY < :DayEnd
+            order by td.NGAY, td.MAQL
+            """;
+
+        try
+        {
+            await using var connection = CreateConnection();
+            var rows = await connection.QueryAsync(new CommandDefinition(
+                sql,
+                new { HisPatientCode = hisPatientCode, DayStart = dayStart, DayEnd = dayEnd },
+                cancellationToken: cancellationToken,
+                commandTimeout: 30));
+            return rows
+                .Select(row => (RegistrationDto)MapRegistration(row, hisPatientCode))
+                .Where(registration => registration.RegisteredAt.Date == dayStart)
+                .ToList();
+        }
+        catch (OracleException exception) when (IsMissingMonthlySchema(exception) || IsMissingColumnOrTable(exception))
+        {
+            return [];
+        }
     }
 
     private async Task<IReadOnlyList<RegistrationDto>> EnrichRegistrationsWithClinicalInfoAsync(

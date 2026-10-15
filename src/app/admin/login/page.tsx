@@ -1,10 +1,10 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { AdminLoginForm } from "@/app/admin/login/admin-login-form";
-import { getAdminSession, isAdminConfigured } from "@/lib/admin/session";
+import { resolveAdminSession as getAdminSession, isAdminConfigured } from "@/lib/admin/session";
 
 export default async function AdminLoginPage() {
-  const session = getAdminSession(await cookies());
+  const session = await getAdminSession(await cookies());
   if (session) redirect("/admin");
 
   return (

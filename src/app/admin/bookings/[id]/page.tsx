@@ -5,24 +5,24 @@ import { redirect } from "next/navigation";
 import { AdminActionButton } from "@/app/admin/admin-action-button";
 import { AdminPageHeader, AdminShell } from "@/app/admin/admin-shell";
 import { AdminStatusBadge } from "@/app/admin/admin-table";
-import { canAdminAccessPath, canAdminPerformAction, getAdminSession } from "@/lib/admin/session";
+import { canAdminAccessPath, canAdminPerformAction, resolveAdminSession as getAdminSession } from "@/lib/admin/session";
 import { getAdminBookingDetail } from "@/lib/admin/modules";
 
 export default async function AdminBookingDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  const session = getAdminSession(await cookies());
+  const session = await getAdminSession(await cookies());
   if (!session) redirect("/admin/login");
-  if (!canAdminAccessPath(session.role, "/admin/bookings")) redirect("/admin");
+  if (!canAdminAccessPath(session, "/admin/bookings")) redirect("/admin");
 
   const { id } = await params;
   const data = await getAdminBookingDetail(id);
   const booking = data.booking;
   const status = String(booking?.status ?? "CHO_DUYET");
   const canReview = ["CHO_DUYET", "CHO_DUYET_LAI"].includes(status);
-  const canApprove = canAdminPerformAction(session.role, "approve_booking");
-  const canCancel = canAdminPerformAction(session.role, "cancel_booking");
+  const canApprove = canAdminPerformAction(session, "approve_booking");
+  const canCancel = canAdminPerformAction(session, "cancel_booking");
 
   return (
-    <AdminShell username={session.username} role={session.role}>
+    <AdminShell username={session.username} role={session.role} menus={session.menus}>
       <AdminPageHeader
         eyebrow="Chi tiết đăng ký khám"
         title={String(booking?.ho_ten ?? booking?.ma_lich_hen ?? "Phiếu đăng ký khám")}
@@ -51,7 +51,7 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
                     {canCancel && <AdminActionButton action="cancel_booking" label="Hủy lịch" tone="danger" target={bookingTarget(booking)} />}
                   </>
                 )}
-                {canAdminPerformAction(session.role, "retry_booking_match") && (
+                {canAdminPerformAction(session, "retry_booking_match") && (
                   <AdminActionButton action="retry_booking_match" label="Retry HIS" tone="neutral" target={bookingTarget(booking)} />
                 )}
               </div>
@@ -113,7 +113,7 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
                         <AdminStatusBadge status={status} />
                         <span className="clinical-mono text-xs font-black text-slate-500">#{String(item.id ?? "")}</span>
                       </div>
-                      {status !== "sent" && canAdminPerformAction(session.role, "send_booking_zalo") && (
+                      {status !== "sent" && canAdminPerformAction(session, "send_booking_zalo") && (
                         <AdminActionButton action="send_booking_zalo" label="Gửi Zalo" tone="primary" target={target} />
                       )}
                     </div>

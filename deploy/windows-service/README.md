@@ -1,5 +1,11 @@
 # PatientApi Windows Service
 
+KSK management API is separately disabled by default. See [real cohort/package/roster management](../../docs/KSK_MANAGEMENT.md). The package includes `ksk-management-ledger.sql` for **IT-reviewed DB TEST installation first**, not an automatic migration. Real CN1 writes remain OFF until a dedicated write connection, HIS audit USERID, ledger/sequence and transaction/load validation are approved. Never replace the real service env from the example or change existing worker/Zalo settings to enable this feature.
+
+KSK read-only module: disabled by default. Configure a separate `OracleKskReadOnly` account and KSK staff token; do not replace existing worker settings. See [KSK module deployment](../../docs/KSK_READONLY_MODULE.md).
+
+For the approved public KSK reporting path, enable `KskCloud__Enabled=true`. The bridge is outbound-only, accepts only read/validate jobs, and calls the KSK endpoints through `KskCloud__LocalApiBase` on loopback. Keep `KskManagement__WriteEnabled=false`; this cloud release cannot apply changes to HIS.
+
 Use this package for the internal hospital sync agent. The public portal stays on Vercel; this service only polls Supabase jobs, reads Oracle HIS, and writes snapshots back to Supabase.
 
 ## Build package on dev machine
@@ -14,6 +20,10 @@ Output:
 artifacts\patientapi-agent-win-x64
 artifacts\patientapi-agent-win-x64.zip
 ```
+
+The package includes `notification-outbox-worker-recovery.sql`. Run that SQL
+once in the booking Supabase database before restarting the updated service.
+It adds the indexes used by the booking and notification workers.
 
 ## Check Windows Server 2012 environment
 
@@ -44,11 +54,14 @@ Fill these values:
 ```text
 SUPABASE_URL=
 SUPABASE_SECRET_KEY=
+SUPABASE_SERVICE_ROLE_KEY=
 AUTH_SYNC_ENCRYPTION_KEY=
 ConnectionStrings__OracleHis=
 ConnectionStrings__BookingDatabase=
 BOOKING_ENCRYPTION_KEY=
 ```
+
+Cloud KSK additionally needs `Ksk__Enabled=true`, the read-only Oracle connection, `KskManagement__Enabled=true`, `KskManagement__WriteEnabled=false`, and `KskCloud__Enabled=true`. Do not change booking/Zalo worker flags while enabling this bridge. The service supports the current `sb_secret_` key and the legacy service-role JWT; when both exist it prefers `SUPABASE_SERVICE_ROLE_KEY`.
 
 `AUTH_SYNC_ENCRYPTION_KEY` must match the Vercel environment variable with the same name.
 `BOOKING_ENCRYPTION_KEY` must match the key used by the public portal to encrypt `soCCCD_encrypt` in `portal.lich_hen_kham`; otherwise booking HIS auto-match cannot prioritize CCCD/CMND.
@@ -109,6 +122,23 @@ Booking HIS worker và notification worker chỉ nhận hàng đợi có `branch
 
 After a successful match, the service writes HIS fields back to `portal.lich_hen_kham`, updates `portal.booking_his_matches`, and queues a Zalo notification in `portal.notification_outbox`.
 
+## Reschedule and resend design (not deployed)
+
+Changing the appointment date, time, department or room after a confirmation has
+been sent must not reset the old `sent` outbox row. The planned workflow is to keep
+the old notification for audit, increment a `schedule_revision`, create a new
+`booking_rescheduled` outbox event, and send the new confirmation only after HIS
+matching is complete.
+
+The portal booking record remains the source of truth for online changes. If HIS
+already assigned `MAQL_TIEPDON` or a ticket number, staff must confirm the HIS
+cancel/re-register procedure before the new notification is released. Auto-send
+should remain disabled until this workflow has been tested; the initial rollout
+should queue the new event for manual approval.
+
+This section is a design note only. It does not add the migration or change the
+Windows service behavior.
+
 ## Install
 
 Run as Administrator inside the published folder:
@@ -117,6 +147,10 @@ Run as Administrator inside the published folder:
 Set-ExecutionPolicy -Scope Process Bypass
 .\install-patientapi-service.ps1
 ```
+
+After the service starts, the notification worker automatically requeues
+expired `running` outbox locks. This recovers rows left behind by a database
+timeout without changing rows whose lock is still active.
 
 Check:
 

@@ -1,6 +1,6 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { canAdminAccessPath, getAdminSession } from "@/lib/admin/session";
+import { canAdminAccessPath, resolveAdminSession as getAdminSession } from "@/lib/admin/session";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
 
 const bucketName = "portal-content-covers";
@@ -14,11 +14,11 @@ const extensions: Record<string, string> = {
 };
 
 export async function POST(request: Request) {
-  const session = getAdminSession(await cookies());
+  const session = await getAdminSession(await cookies());
   if (!session) {
     return NextResponse.json({ error: "Phiên quản trị đã hết hạn." }, { status: 401 });
   }
-  if (!canAdminAccessPath(session.role, "/admin/content")) {
+  if (session.role === "staff" || !canAdminAccessPath(session, "/admin/content")) {
     return NextResponse.json({ error: "Tài khoản quản trị không có quyền quản lý nội dung." }, { status: 403 });
   }
 

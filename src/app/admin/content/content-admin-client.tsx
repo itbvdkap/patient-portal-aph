@@ -82,10 +82,12 @@ export function ContentPostList({
   posts,
   categories,
   canPublish,
+  canEdit = true,
 }: {
   posts: AdminContentPost[];
   categories: AdminContentCategory[];
   canPublish: boolean;
+  canEdit?: boolean;
 }) {
   if (!posts.length) {
     return <p className="rounded-md border border-cream-200 bg-cream-50 px-4 py-8 text-center text-sm font-semibold text-slate-500">Không có bài viết phù hợp bộ lọc.</p>;
@@ -125,7 +127,7 @@ export function ContentPostList({
             <div className="flex flex-wrap items-center gap-2 lg:justify-end">
               <p className="clinical-mono mr-auto text-xs font-bold text-slate-500 lg:mr-0">{post.updatedAt ? formatDate(post.updatedAt) : formatDate(post.createdAt)}</p>
               <ContentPreviewButton post={post} />
-              <ContentPostEditor post={post} categories={categories} />
+              {canEdit && <ContentPostEditor post={post} categories={categories} />}
             </div>
           </article>
         ))}

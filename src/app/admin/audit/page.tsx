@@ -4,22 +4,22 @@ import { redirect } from "next/navigation";
 import { FileSearch, Filter, RotateCcw, Search, ShieldCheck } from "lucide-react";
 import { AdminPageHeader, AdminShell } from "@/app/admin/admin-shell";
 import { AdminStatusBadge } from "@/app/admin/admin-table";
-import { canAdminAccessPath, getAdminSession } from "@/lib/admin/session";
+import { canAdminAccessPath, resolveAdminSession as getAdminSession } from "@/lib/admin/session";
 import { getAdminAuditLogs, type AdminAuditEntry, type AdminAuditLogsQuery } from "@/lib/admin/modules";
 
 type SearchParams = Record<string, string | string[] | undefined>;
 
 export default async function AdminAuditPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
-  const session = getAdminSession(await cookies());
+  const session = await getAdminSession(await cookies());
   if (!session) redirect("/admin/login");
-  if (!canAdminAccessPath(session.role, "/admin/audit")) redirect("/admin");
+  if (!canAdminAccessPath(session, "/admin/audit")) redirect("/admin");
 
   const rawParams = await searchParams;
   const query = parseAuditQuery(rawParams);
   const data = await getAdminAuditLogs(query);
 
   return (
-    <AdminShell username={session.username} role={session.role}>
+    <AdminShell username={session.username} role={session.role} menus={session.menus}>
       <AdminPageHeader
         eyebrow="Audit"
         title="Nhật ký quản trị"
