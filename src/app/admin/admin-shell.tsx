@@ -32,6 +32,14 @@ export function AdminShell({
   menus?: AdminMenu[];
 }) {
   const subject = { username, role, exp: 0, menus };
+  // Public URL only. No HIS token or internal API address is sent to the browser.
+  const candidate = process.env.ADMIN_LAN_BASE_URL || "https://192.168.2.8:3014";
+  let lanBaseUrl: string | undefined;
+  try {
+    const parsed = new URL(candidate);
+    if (parsed.protocol === "https:" && !parsed.username && !parsed.password && parsed.pathname === "/" && !parsed.search && !parsed.hash)
+      lanBaseUrl = parsed.origin;
+  } catch { /* Keep the switch hidden when the deployment URL is invalid. */ }
   const visibleNav = nav.filter((item) => (item.href !== "/admin/password" || role === "staff") && canAdminAccessPath(subject, item.href)).map(({ label, href, iconKey }) => ({ label, href, icon: iconKey }));
   const kskPaths = new Set<string>(adminMenuOptions.filter(menu => kskMenuGroup.menus.some(id => id === menu.id)).map(menu => menu.path));
   const kskChildren = visibleNav.filter(item => kskPaths.has(item.href));
@@ -45,7 +53,7 @@ export function AdminShell({
   }
 
   return (
-    <AdminShellClient nav={groupedNav} username={username} roleLabel={adminRoleLabel(role)}>
+    <AdminShellClient nav={groupedNav} username={username} roleLabel={adminRoleLabel(role)} lanBaseUrl={lanBaseUrl}>
       {children}
     </AdminShellClient>
   );

@@ -21,6 +21,15 @@ const server = https.createServer({ cert: fs.readFileSync(process.env.KSK_LAN_CE
   let url;
   try { url = new URL(req.url, `https://${host}`); if (!req.url.startsWith("/") || req.url.startsWith("//")) throw new Error(); }
   catch { res.writeHead(400); res.end(); return; }
+  // A one-pixel reachability marker. It contains no auth, HIS data or credentials.
+  // Public admin checks it before navigating, so failed LAN/TLS stays on the public page.
+  if (url.pathname === "/admin/lan-ready.gif") {
+    if (req.method !== "GET" && req.method !== "HEAD") { res.writeHead(405); res.end(); return; }
+    const pixel = Buffer.from("R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=", "base64");
+    res.writeHead(200, { "Content-Type": "image/gif", "Content-Length": pixel.length, "Cache-Control": "no-store, private", "X-Content-Type-Options": "nosniff" });
+    res.end(req.method === "HEAD" ? undefined : pixel);
+    return;
+  }
   if (url.pathname === "/") { res.writeHead(302, { Location: "/admin/login" }); res.end(); return; }
   if (!allowedPath(url.pathname)) { res.writeHead(404); res.end(); return; }
   if (!["GET", "HEAD", "POST"].includes(req.method)) { res.writeHead(405); res.end(); return; }

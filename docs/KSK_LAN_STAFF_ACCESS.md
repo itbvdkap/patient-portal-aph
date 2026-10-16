@@ -1,5 +1,13 @@
 # KSK CN1: LAN HTTPS và tài khoản nhân viên
 
+## Nút chuyển từ admin public sang bản LAN tạm trên 192.168.2.8 — 16/10/2026
+
+- Sidebar admin có nút **Mở bản nội bộ CN1**. Trình duyệt tải ảnh kiểm tra không chứa dữ liệu bệnh nhân tại `https://192.168.2.8:3014/admin/lan-ready.gif` trong tối đa 4 giây. Chỉ khi tải được mới chuyển sang cùng đường dẫn `/admin/...` và giữ query lọc; nếu thất bại, ở nguyên trang public và báo lỗi.
+- URL đích mặc định là `https://192.168.2.8:3014`; có thể thay bằng biến server `ADMIN_LAN_BASE_URL` khi chuyển sang máy chủ mới. Chỉ chấp nhận HTTPS origin, không nhận path/query/credential. Không chứa Oracle, PatientApi hay token HIS trong URL/browser.
+- Bản LAN hiện là web và agent KSK thử nghiệm trên máy `.2.8`; service chính trên `.246` không đổi. Máy khách cần ở subnet CN1 được phép qua firewall và tin cậy chứng chỉ HTTPS nội bộ sau khi IT xác minh fingerprint. Việc kiểm tra trên chính `.2.8` không chứng minh máy khách khác truy cập được.
+- Tên miền public và IP LAN khác origin/cookie; người dùng có thể phải đăng nhập lại ở bản LAN. Nếu server ngừng hoạt động sau phép kiểm tra nhưng trước khi điều hướng, trình duyệt có thể hiển thị lỗi mạng; mở lại `https://anphucare.benhvienanphu.vn/admin` thủ công. Nút không hứa tự phục hồi được từ trang lỗi của trình duyệt.
+- Để hoạt động sau khởi động lại máy, cần chuyển web/gateway tạm thành dịch vụ có giám sát hoặc chạy launcher theo quy trình vận hành. Không coi tiến trình `next dev` hiện tại là dịch vụ production.
+
 ## Test LAN cổng 3014 — cập nhật 15/10/2026
 
 Theo yêu cầu mới, đã bổ sung gateway HTTPS riêng nghe **`192.168.2.8:3014`**, chỉ chấp nhận IP nguồn CN1 `192.168.2.0/24`. Web upstream vẫn HTTP loopback `127.0.0.1:3014`; agent `127.0.0.1:5094` không mở LAN. Không bind tất cả card mạng, không port-forward Internet. Cổng 3443 bên dưới vẫn là lựa chọn cũ, mặc định launcher không đổi.

@@ -21,6 +21,7 @@ import {
   X,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import { AdminLanSwitch } from "@/app/admin/admin-lan-switch";
 
 export type AdminNavIcon = "activity" | "user" | "users" | "calendar" | "database" | "key" | "book" | "settings" | "file";
 
@@ -55,11 +56,13 @@ export function AdminShellClient({
   nav,
   username,
   roleLabel,
+  lanBaseUrl,
 }: {
   children: React.ReactNode;
   nav: AdminShellNavItem[];
   username: string;
   roleLabel: string;
+  lanBaseUrl?: string;
 }) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
@@ -176,6 +179,7 @@ export function AdminShellClient({
           </nav>
 
           <div className="mt-auto pt-5">
+            {lanBaseUrl && <AdminLanSwitch baseUrl={lanBaseUrl} compact={compact} />}
             <div className={collapsed ? "hidden" : "rounded-md border border-white/10 bg-white/5 px-3 py-2 text-xs font-bold leading-5 text-primary-50/80"}>
               Đăng nhập: <span className="text-white">{username}</span>
               <br />

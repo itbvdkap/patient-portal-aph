@@ -21,6 +21,9 @@ async function request(url, method = "GET", cookie, payload) {
 }
 const loginPage = await request("/admin/login");
 if (loginPage.status !== 200) throw new Error(`LAN login page: ${loginPage.status}`);
+const ready = await request("/admin/lan-ready.gif");
+if (ready.status !== 200 || ready.headers["content-type"] !== "image/gif" || !ready.headers["cache-control"]?.includes("no-store"))
+  throw new Error("LAN reachability marker failed.");
 const anon = await request("/api/admin/ksk?from=2026-10-01&to=2026-10-14");
 if (anon.status !== 401) throw new Error("Anonymous LAN KSK API not blocked.");
 const anonPage = await request("/admin/ksk");
@@ -52,6 +55,7 @@ if (portal.status !== 404) throw new Error("LAN gateway exposes routes outside a
 const logout = await request("/api/admin/logout", "POST", cookie, {});
 if (logout.status !== 303 || logout.headers.location !== `${origin}/admin/login`) throw new Error("LAN logout redirects away from HTTPS admin host.");
 console.log(JSON.stringify({ status: "passed", tlsVerified: true, url: origin + "/admin/login", loginPage: loginPage.status, secureCookie: true,
+  reachabilityMarker: ready.status,
   anonymousKsk: anon.status, staffPage: staffPage.status, staffApi: roster.status, staffCount: staffPayload.users.length, privateFieldsOmitted: true, nonAdminRoutesBlocked: true, logout: logout.status,
   visibleSaveToolbar: true, passwordConfirmation: true, mismatchedCreateBlocked: mismatch.status, mismatchedDeleteBlocked: deleteMismatch.status, anonymousPasswordBlocked: anonymousPassword.status, bootstrapPasswordProtected: bootstrapPassword.status,
   remotePcReachability: "Not verified: Windows firewall rule needs elevated operator action." }));
