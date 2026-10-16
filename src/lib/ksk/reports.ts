@@ -1,6 +1,7 @@
 import { chargeTotal, cohortSupportLabel, hasValue, memberRecords, sectionComplete, type KskRow, type KskSnapshot } from "./domain";
 import { paymentDashboard, paymentLinksCharge, paymentStates } from "./payment";
 import { formatHisDateTime, hisDateTimeNotice } from "./datetime";
+import { plainClsResult } from "./rtf-text";
 
 export type ReportKind = "collections" | "results";
 export type ReportCell = string | number | null;
@@ -28,8 +29,11 @@ function numeric(value: string | null | undefined): ReportCell {
 }
 function labKey(r: KskRow) { return JSON.stringify([r.parameterid, r.name, r.unit]); }
 function imagingKey(r: KskRow) { return JSON.stringify([r.kind, r.serviceid, r.name]); }
-function readableResult(r: KskRow) {
-  return r.value?.trim().startsWith("{\\rtf") ? `RTF nguồn — xem nội dung gốc ở bảng CLS chi tiết (phiếu ${r.id})` : r.value || "Chưa có giá trị";
+function readableResult(r: KskRow) { return plainClsResult(r.value); }
+function readableLabResult(r: KskRow) { return r.value?.trim() || "Chưa có giá trị"; }
+function uniqueHeadings(labels: string[]) {
+  const counts = new Map<string, number>();
+  return labels.map(label => { const count = (counts.get(label) || 0) + 1; counts.set(label, count); return count === 1 ? label : `${label} · cột ${count}`; });
 }
 export function buildKskReport(data: KskSnapshot, requested: KskRow[], kind: ReportKind, filterLabel: string): KskReport {
   if (data.cohorts.length !== 1) throw new Error("Chọn một đợt khám trước khi lập báo cáo.");
@@ -81,17 +85,17 @@ export function buildKskReport(data: KskSnapshot, requested: KskRow[], kind: Rep
     report.warnings.push(hisDateTimeNotice, "Thu theo chứng từ HIS, không phải tiền công ty đã trả hợp đồng. Tiền trên bảng chứng từ nguồn là cả phiếu, không cộng lại với bảng danh sách.");
     report.sheets = [list, receipts, charges];
   } else {
-    const summary: ReportSheet = { name: "Danh sách kết quả", headers: [...baseHeaders, "Trạng thái nguồn kết quả", "Số giá trị XN đã đọc", "Số giá trị CLS đã đọc", "Kết luận nguồn / bác sĩ"], rows: [] };
-    const labDetails: ReportSheet = { name: "XN chi tiết", headers: [...baseHeaders, "MAQL", "Phiếu XN", "Mã thông số", "Thông số", "Giá trị nguồn", "Đơn vị", "Cờ bất thường nguồn", "Duyệt kết quả"], rows: [] };
-    const imaging: ReportSheet = { name: "CLS chi tiết", headers: [...baseHeaders, "MAQL", "Phiếu CLS", "Nguồn", "Mã dịch vụ", "Dịch vụ", "Kết quả nguồn", "Đề nghị", "Dạng nội dung", "Duyệt kết quả"], rows: [] };
+    const summary: ReportSheet = { name: "Danh sách kết quả", headers: [...baseHeaders, "Trạng thái kết quả", "Số giá trị XN đã đọc", "Số giá trị CLS đã đọc", "Kết luận / bác sĩ"], rows: [] };
+    const labDetails: ReportSheet = { name: "XN chi tiết", headers: [...baseHeaders, "Thông số", "Kết quả", "Đơn vị", "Cờ bất thường", "Duyệt kết quả"], rows: [] };
+    const imaging: ReportSheet = { name: "CLS chi tiết", headers: [...baseHeaders, "Dịch vụ", "Kết quả (văn bản)", "Đề nghị", "Duyệt kết quả"], rows: [] };
     const labColumns = [...new Map(prepared.flatMap(p => distinct(p.records.labs)).map(r => [labKey(r), r])).entries()]
       .sort((a, b) => (a[1].name || "").localeCompare(b[1].name || "", "vi") || a[0].localeCompare(b[0]));
     const imagingColumns = [...new Map(prepared.flatMap(p => distinct(p.records.imaging)).map(r => [imagingKey(r), r])).entries()]
       .sort((a, b) => (a[1].name || "").localeCompare(b[1].name || "", "vi") || a[0].localeCompare(b[0]));
-    // One member per row. Detailed source rows remain in companion sheets for traceability.
+    // One member per row; report cells contain only measured values or readable CLS text.
     const matrix: ReportSheet = { name: "KQ XN-CLS theo người", headers: [...baseHeaders,
-      ...labColumns.map(([, r]) => `XN · ${r.name || "Thông số"} [${r.parameterid || "?"}]${r.unit ? ` (${r.unit})` : ""}`),
-      ...imagingColumns.map(([, r]) => `CLS · ${r.name || "Dịch vụ"} [${r.serviceid || r.kind || "?"}]`)], rows: [] };
+      ...uniqueHeadings(labColumns.map(([, r]) => `XN · ${r.name || "Thông số"}${r.unit ? ` (${r.unit})` : ""}`)),
+      ...uniqueHeadings(imagingColumns.map(([, r]) => `CLS · ${r.name || "Dịch vụ"}`))], rows: [] };
     prepared.forEach(({ member: m, records: r }, i) => {
       const labs = distinct(r.labs), cls = distinct(r.imaging);
       const byParameter = new Map<string, KskRow[]>();
@@ -104,21 +108,19 @@ export function buildKskReport(data: KskSnapshot, requested: KskRow[], kind: Rep
         sectionComplete(data, "conclusions") && sectionComplete(data, "visits") ? distinct(r.clinical).filter(c => c.kind === "BASK_TONGKET" && hasValue(c.ketluan))
           .map(c => `${c.ketluan} · BS ${c.mabs || "chưa ghi"} · Lượt ${c.episodeid}`).join("\n") || "Chưa có kết luận nguồn" : "Chưa xác định"]);
       matrix.rows.push([...identity(m, i),
-        ...labColumns.map(([key]) => (byParameter.get(key) || []).map(l => `${l.value || "Trống"} · Phiếu ${l.id || "?"} · MAQL ${l.maql || "?"}`).join("\n")
+        ...labColumns.map(([key]) => (byParameter.get(key) || []).map(readableLabResult).join("\n")
           || (!sectionComplete(data, "labs") || !sectionComplete(data, "visits") ? "Chưa xác định" : r.visits.length ? "Chưa có giá trị" : "Chưa có lượt")),
-        ...imagingColumns.map(([key]) => (byImaging.get(key) || []).map(c => `${readableResult(c)} · Phiếu ${c.id || "?"} · MAQL ${c.maql || "?"}`).join("\n")
+        ...imagingColumns.map(([key]) => (byImaging.get(key) || []).map(readableResult).join("\n")
           || (!sectionComplete(data, "imaging") || !sectionComplete(data, "visits") ? "Chưa xác định" : r.visits.length ? "Chưa có kết quả" : "Chưa có lượt"))]);
-      for (const l of labs) labDetails.rows.push([...identity(m, i), l.maql, l.id, l.parameterid, l.name, l.value || "Chưa có giá trị", l.unit,
+      for (const l of labs) labDetails.rows.push([...identity(m, i), l.name, readableLabResult(l), l.unit,
         l.kq_batthuong === "1" ? "Có" : l.kq_batthuong === "0" ? "Không" : "Chưa xác định", "Chưa xác minh duyệt/ký"]);
-      for (const c of cls) imaging.rows.push([...identity(m, i), c.maql, c.id, c.kind, c.serviceid, c.name, c.value || "Chưa có giá trị", c.denghi,
-        c.value?.trim().startsWith("{\\rtf") ? "RTF gốc - chưa chuyển văn bản" : "Văn bản nguồn", "Chưa xác minh duyệt/ký"]);
+      for (const c of cls) imaging.rows.push([...identity(m, i), c.name, readableResult(c), c.denghi, "Chưa xác minh duyệt/ký"]);
     });
-    // readableResult is used by the printable CLS companion; raw RTF stays in Excel.
-    const clsPrint: ReportSheet = { name: "CLS bản in", headers: [...baseHeaders, "Dịch vụ", "Kết quả", "Đề nghị", "Phiếu / MAQL"], rows: [] };
-    prepared.forEach(({ member: m, records: r }, i) => { for (const c of distinct(r.imaging)) clsPrint.rows.push([...identity(m, i), c.name, readableResult(c), c.denghi, `${c.id} / ${c.maql}`]); });
+    const clsPrint: ReportSheet = { name: "CLS bản in", headers: [...baseHeaders, "Dịch vụ", "Kết quả (văn bản)", "Đề nghị"], rows: [] };
+    prepared.forEach(({ member: m, records: r }, i) => { for (const c of distinct(r.imaging)) clsPrint.rows.push([...identity(m, i), c.name, readableResult(c), c.denghi]); });
     report.warnings.push("Giá trị XN/CLS là dữ liệu nguồn, có kết quả không đồng nghĩa đủ dịch vụ hoặc đã duyệt/ký; số thông số không phải số dịch vụ.",
-      "Không tự chọn giá trị cuối khi có nhiều phiếu/lượt. Bảng KQ XN-CLS theo người giữ mọi giá trị kèm phiếu/MAQL; không tự diễn giải lâm sàng.",
-      "RTF không tự chuyển thành văn bản y khoa. Bảng CLS bản in ghi tham chiếu; nội dung gốc có ở CLS chi tiết trong Excel, cần đối chiếu HIS.");
+      "Nếu một thông số có nhiều giá trị, báo cáo giữ tất cả theo dòng; không tự chọn kết quả cuối. Mã phiếu/nguồn không hiển thị trong báo cáo kết quả; đối chiếu HIS khi cần.",
+      "CLS chỉ giải mã định dạng RTF sang văn bản thuần, không dịch hoặc diễn giải y khoa. Bản RTF gốc vẫn ở HIS; dòng không giải mã được được đánh dấu để đối chiếu.");
     report.sheets = [summary, matrix, labDetails, imaging, clsPrint];
   }
   if (report.sheets.some(s => s.headers.length > 1000 || s.rows.length > 30000)) throw new Error("Báo cáo quá lớn; lọc theo nhóm/người để xuất, không trả bảng bị cắt.");

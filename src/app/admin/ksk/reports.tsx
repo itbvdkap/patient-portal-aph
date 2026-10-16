@@ -62,7 +62,7 @@ export function KskReports({ data, allMembers, filteredMembers, filterLabel }: {
         <button type="button" className="rounded border px-3 py-2 text-sm font-semibold text-primary-800" aria-pressed={kind === "results"} onClick={() => open("results")}>Kết quả XN / CLS</button></div>
     </div>
     <div className="mt-3 rounded border border-emerald-200 bg-emerald-50 p-3 text-xs leading-5 text-emerald-950">
-      <strong>Excel XN + CLS:</strong> sheet “KQ XN-CLS theo người” có mỗi bệnh nhân một hàng; từng thông số xét nghiệm và dịch vụ CLS là một cột. Các sheet chi tiết vẫn giữ phiếu, MAQL và dữ liệu nguồn để đối chiếu.
+      <strong>Excel XN + CLS:</strong> sheet “KQ XN-CLS theo người” có mỗi bệnh nhân một hàng; từng thông số xét nghiệm và dịch vụ CLS là một cột. Ô xét nghiệm chỉ chứa giá trị, CLS hiển thị văn bản thuần; báo cáo không kèm mã phiếu/nguồn. Khi cần kiểm tra bản gốc, đối chiếu HIS.
     </div>
     {!kind && (error || quickResults.error) && <p role="alert" className="my-3 rounded border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">{error || quickResults.error}</p>}
     {kind && <>

@@ -8,6 +8,7 @@ import { paymentDashboard, paymentLinksCharge, paymentStates, type PaymentState 
 import { filterChoices, KskFilterBar, type KskFilters } from "./filters";
 import { KskReports } from "./reports";
 import { formatHisDateTime, hisDateTimeNotice } from "@/lib/ksk/datetime";
+import { plainClsResult } from "@/lib/ksk/rtf-text";
 
 const box = "rounded-md border border-cream-200 bg-white p-4 shadow-sm";
 const kindLabels: Record<string, string> = { BASK_NOIKHOA: "Nội khoa", BASK_NGKHOA: "Ngoại khoa", BASK_MAT: "Mắt", BASK_RHM: "Răng hàm mặt", BASK_TMH: "Tai mũi họng", BASK_SANPHU: "Sản phụ khoa", BASK_TONGKET: "Kết luận sức khỏe" };
@@ -126,8 +127,8 @@ export function KskWorkspace({ data, query, choices = data.cohorts, filters = { 
             {!Object.keys(clinicalLabels).some(k => r[k]?.trim()) && <p className="mt-2 text-sm text-slate-500">Có bản ghi khởi tạo, chưa thấy nội dung kết quả.</p>}
           </article>)}
         </details>
-        <details open className="mb-4"><summary className="cursor-pointer font-bold">Xét nghiệm gốc ({records.labs.length} thông số)</summary><p className="my-2 text-xs text-amber-800">Có giá trị chưa đồng nghĩa đã duyệt. Không dùng số thông số để tính số dịch vụ/tiền.</p><Table headers={["Thông số", "Kết quả", "Đơn vị", "Cờ bất thường", "Phiếu"]} rows={records.labs.map(r => [r.name, r.value, r.unit, r.kq_batthuong === "1" ? "Có" : r.kq_batthuong === "0" ? "Không" : "Chưa xác định", r.id])} /></details>
-        <details open className="mb-4"><summary className="cursor-pointer font-bold">CDHA / siêu âm / X-quang</summary><Table headers={["Dịch vụ", "Kết quả", "Đề nghị", "Phiếu"]} rows={records.imaging.map(r => [r.name, <PlainResult key="result" value={r.value} />, r.denghi, r.id])} /></details>
+        <details open className="mb-4"><summary className="cursor-pointer font-bold">Xét nghiệm ({records.labs.length} thông số)</summary><p className="my-2 text-xs text-amber-800">Có giá trị chưa đồng nghĩa đã duyệt. Không dùng số thông số để tính số dịch vụ/tiền.</p><Table headers={["Thông số", "Kết quả", "Đơn vị", "Cờ bất thường"]} rows={records.labs.map(r => [r.name, r.value, r.unit, r.kq_batthuong === "1" ? "Có" : r.kq_batthuong === "0" ? "Không" : "Chưa xác định"])} /></details>
+        <details open className="mb-4"><summary className="cursor-pointer font-bold">CDHA / siêu âm / X-quang</summary><Table headers={["Dịch vụ", "Kết quả (văn bản)", "Đề nghị"]} rows={records.imaging.map(r => [r.name, <PlainResult key="result" value={r.value} />, r.denghi])} /></details>
         <details className="mb-4"><summary className="cursor-pointer font-bold">Chi tiết phát sinh ({records.charges.length} dòng)</summary><Table headers={["Dịch vụ", "SL", "Đơn giá", "Thành tiền", "Cờ PAID nguồn (không xác nhận thu)"]} rows={records.charges.map(r => [r.name, r.quantity, r.price, r.amount, r.paid ?? "—"])} /></details>
       </section>}
     </>}
@@ -143,8 +144,8 @@ function PaymentBadge({ state }: { state: PaymentState }) {
 }
 
 function PlainResult({ value }: { value?: string | null }) {
-  // Do not inject legacy HTML or attempt unsafe RTF->HTML conversion.
-  return value?.trim().startsWith("{\\rtf") ? <details><summary>Nội dung RTF nguồn — mở để đối chiếu</summary><pre className="max-h-48 max-w-lg overflow-auto whitespace-pre-wrap text-xs">{value}</pre></details> : <span className="whitespace-pre-wrap">{value ?? "—"}</span>;
+  // Render text only. The original RTF remains in HIS, never as injected HTML.
+  return <span className="whitespace-pre-wrap">{plainClsResult(value)}</span>;
 }
 function Table({ headers, rows, empty = "Không có dữ liệu trong phạm vi; kiểm tra cảnh báo nguồn." }: { headers: string[]; rows: React.ReactNode[][]; empty?: string }) {
   return <div className="mt-3 overflow-x-auto"><table className="w-full text-left text-sm"><thead><tr>{headers.map((h, i) => <th key={i} className="whitespace-nowrap border-b bg-primary-50 p-3 font-bold text-primary-900">{h}</th>)}</tr></thead><tbody>{rows.length === 0 ? <tr><td colSpan={headers.length} className="p-4 text-slate-500">{empty}</td></tr> : rows.map((row, i) => <tr key={i} className="border-b border-cream-100 hover:bg-cream-50">{row.map((cell, j) => <td key={j} className="max-w-lg break-words p-3 align-top">{cell ?? "—"}</td>)}</tr>)}</tbody></table></div>;

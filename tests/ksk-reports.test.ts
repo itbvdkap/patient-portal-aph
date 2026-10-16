@@ -4,6 +4,7 @@ import ExcelJS from "exceljs";
 import { buildKskReport, memberResultState } from "@/lib/ksk/reports";
 import { reportFilename, reportPrintHtml, reportXlsx } from "@/lib/ksk/report-export";
 import { demoKskSnapshot } from "@/lib/ksk/sample";
+import { plainClsResult, rtfToPlainText } from "@/lib/ksk/rtf-text";
 
 const query = { from: "2026-10-01", to: "2026-10-14", cohort: "900001" };
 const sample = () => demoKskSnapshot(query);
@@ -62,20 +63,43 @@ describe("KSK report datasets", () => {
     const details = report.sheets.find(s => s.name === "XN chi tiết")!;
     expect(matrix.rows).toHaveLength(data.members.length); expect(matrix.headers.some(h => h.startsWith("CLS ·"))).toBe(true); expect(details.rows).toHaveLength(4);
     expect(matrix.rows[0].some(c => typeof c === "string" && c.includes("Kết quả CLS mẫu"))).toBe(true);
-    const repeated = matrix.rows[0].find(c => typeof c === "string" && c.includes("Phiếu 202")) as string;
-    expect(repeated).toContain("5.1"); expect(repeated).toContain("6.2");
+    const repeated = matrix.rows[0].find(c => c === "5.1\n6.2") as string;
+    expect(repeated).toBe("5.1\n6.2");
+    expect(matrix.headers.join(" ")).not.toMatch(/\[1\]|\[other\]|\[SA01\]/);
+    expect(matrix.rows[0].join(" ")).not.toMatch(/Phiếu|MAQL|RTF nguồn/);
+    expect(details.headers).toEqual(["STT", "Mã BN", "Mã NV", "Họ tên", "Năm sinh", "Nhóm khám", "Thông số", "Kết quả", "Đơn vị", "Cờ bất thường", "Duyệt kết quả"]);
     expect(JSON.stringify(report)).not.toContain("99.9");
   });
-  it("retains raw CLS RTF in Excel data, while the print companion identifies its source instead of inventing text", () => {
-    const data = sample(); const raw = "{\\rtf1\\ansi Nội dung mẫu}";
+  it("converts CLS RTF to readable text in every report sheet without exporting raw control words", () => {
+    const data = sample(); const raw = String.raw`{\rtf1\ansi\ansicpg1252{\fonttbl{\f0 Calibri;}}{\*\generator Riched20;}\viewkind4\uc1\pard K\u7871?t qu\u7843? si\u234?u \u226?m\par B\u236?nh th\u432?\u7901?ng}`;
     data.imaging = [{ kind: "SA_BNCDHA_CT", id: "501", maql: "1001", serviceid: "90", name: "Siêu âm mẫu", value: raw }];
     const report = buildKskReport(data, data.members, "results", "");
-    expect(report.sheets.find(s => s.name === "CLS chi tiết")?.rows[0][11]).toBe(raw);
-    expect(report.sheets.find(s => s.name === "CLS bản in")?.rows[0][7]).toContain("RTF nguồn");
+    expect(report.sheets.find(s => s.name === "CLS chi tiết")?.rows[0][7]).toBe("Kết quả siêu âm\nBình thường");
+    expect(report.sheets.find(s => s.name === "CLS bản in")?.rows[0][7]).toBe("Kết quả siêu âm\nBình thường");
+    expect(report.sheets.find(s => s.name === "KQ XN-CLS theo người")?.rows[0]).toContain("Kết quả siêu âm\nBình thường");
+    expect(JSON.stringify(report.sheets)).not.toContain("\\rtf1");
+    expect(JSON.stringify(data)).toContain("\\rtf1");
+  });
+  it("marks malformed CLS RTF for HIS review instead of returning damaged medical text", () => {
+    const data = sample(); data.imaging = [{ kind: "SA_BNCDHA_CT", id: "501", maql: "1001", serviceid: "90", name: "Siêu âm mẫu", value: "{\\rtf1\\ansi broken" }];
+    const report = buildKskReport(data, data.members, "results", "");
+    expect(report.sheets.find(s => s.name === "CLS chi tiết")?.rows[0][7]).toBe("Không chuyển được RTF — đối chiếu HIS");
   });
   it("returns a valid empty filtered report, not all members by fallback", () => {
     const report = buildKskReport(sample(), [], "results", "Không khớp");
     expect(report.memberCount).toBe(0); expect(report.sheets.every(s => !s.rows.length)).toBe(true);
+  });
+});
+
+describe("HIS RTF plain text", () => {
+  it("skips hidden tables, decodes ANSI bytes and preserves Vietnamese Unicode and line breaks", () => {
+    const rtf = String.raw`{\rtf1\ansi\ansicpg1252{\fonttbl{\f0 Calibri;}}{\*\generator RichEdit;}\uc1\pard K\u7871?t qu\u7843?\par \b B\u236?nh th\u432?\u7901?ng\b0\line caf\'e9}`;
+    expect(rtfToPlainText(rtf)).toBe("Kết quả\nBình thường\ncafé");
+  });
+  it("does not silently accept malformed data or replace plain results", () => {
+    expect(rtfToPlainText("{\\rtf1 incomplete")).toBeNull();
+    expect(plainClsResult("Không thấy tổn thương")).toBe("Không thấy tổn thương");
+    expect(plainClsResult("{\\rtf1 incomplete")).toBe("Không chuyển được RTF — đối chiếu HIS");
   });
 });
 
@@ -91,7 +115,7 @@ describe("KSK Excel and printable output", () => {
   });
   it("opens the combined XN/CLS matrix and keeps one row per selected patient", async () => {
     const data = sample();
-    data.imaging.push({ kind: "SA_BNCDHA", id: "301", maql: "1001", serviceid: "SA01", name: "Siêu âm mẫu", value: "Kết quả CLS mẫu" });
+    data.imaging.push({ kind: "SA_BNCDHA", id: "301", maql: "1001", serviceid: "SA01", name: "Siêu âm mẫu", value: String.raw`{\rtf1\ansi\uc1 K\u7871?t qu\u7843? CLS m\u7851?u}` });
     const report = buildKskReport(data, data.members, "results", "Toàn bộ đợt");
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(await reportXlsx(report) as unknown as ExcelJS.Buffer);
@@ -101,6 +125,9 @@ describe("KSK Excel and printable output", () => {
     expect(sheet.getCell("B2").value).toBe(data.members[0].mabn);
     expect(sheet.getRow(1).values?.toString()).toContain("CLS · Siêu âm mẫu");
     expect(sheet.getRow(2).values?.toString()).toContain("Kết quả CLS mẫu");
+    expect(sheet.getRow(2).values?.toString()).not.toMatch(/\\rtf|Phiếu|MAQL/);
+    expect(workbook.getWorksheet("CLS chi tiết")?.getCell("H2").value).toBe("Kết quả CLS mẫu");
+    expect(workbook.getWorksheet("XN chi tiết")?.getRow(1).values?.toString()).not.toMatch(/Phiếu XN|Giá trị nguồn/);
   });
   it("round-trips real XLSX, keeps IDs and numeric money types, and never promotes source strings to formulas", async () => {
     const data = sample(); data.members[0].mabn = "000001"; data.visits[0].mabn = "000001";
