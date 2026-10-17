@@ -138,3 +138,11 @@ Thư mục TLS được giữ sau stop để không đổi fingerprint; không t
 - HTTPS smoke kiểm tra form mới có Lưu/xác nhận mật khẩu, API chặn xác nhận tạo/xóa không khớp (400), đổi mật khẩu chưa đăng nhập (401), tài khoản bootstrap (403); các probe bị từ chối trước ghi file. Đợt KSK/report CN1 trước vẫn qua 13 người/540 XN/21 CLS, không ghi HIS.
 - Sửa lỗi nút Lưu chìm vào nền: `primary-800` không có trong `tailwind.config.ts`, khiến chữ trắng trên nền trong suốt. Ba nút Lưu của staff/password đã chuyển sang `bg-primary-700` có định nghĩa, thêm border/hover/focus. Không chỉ kiểm tra chữ trong HTML: `tests/admin-button-styles.test.ts` biên dịch CSS Tailwind thật, còn `tools/test-staff-button-browser.mjs` dùng Edge headless độc lập kiểm tra màu hiển thị, tương phản và vị trí nút trong viewport 1366×768 và 682×1012. Nền thực tế `rgb(0, 91, 85)`, chữ trắng, tỷ lệ tương phản 7,99:1; đã xem ảnh `artifacts/staff-save-visible-1366.png` và `staff-save-visible-682.png`. Không nhập/lưu nhân viên thật, không thay cửa sổ browser hiện có. Nút KSK `Đọc/Làm mới` và `Xuất Excel đầy đủ` vẫn dùng token `primary-800` cũ, cần xử lý ở đợt riêng hoặc chuẩn hóa palette chung.
 - Chưa kiểm tra từ máy khách LAN thật do còn bước firewall Administrator và trust cert; cần người dùng/IT hoàn tất. Chưa đưa public/Vercel hoặc thay agent ZIP.
+
+## Chạy nhanh trên máy CN1 192.168.2.8
+
+- Chạy `KHOI_DONG_ADMIN_CN1.bat` ở thư mục gốc để kiểm tra/khởi động agent cổng 5094, web loopback 3014 và gateway HTTPS LAN 3014. File giữ các tiến trình đang khỏe, không mở bản trùng. Lần đầu có thể Run as administrator để tạo rule chỉ cho nguồn `192.168.2.0/24` trên profile Private.
+- Chạy `CAI_TU_KHOI_DONG_ADMIN_CN1.bat` một lần nếu muốn tự chạy nền sau khi **tài khoản Windows hiện tại đăng nhập**. Đây là shortcut Startup, không phải Windows service và không chạy trước đăng nhập.
+- Gỡ shortcut bằng `KHOI_DONG_ADMIN_CN1.bat -UninstallStartup`.
+- Đường dẫn báo cáo đúng: `https://192.168.2.8:3014/admin/vienphi-revenue` (có chữ `e` cuối). Đường dẫn `/admin/vienphi-revenu` thiếu chữ sẽ không mở được báo cáo.
+- Runtime PowerShell 7 được tìm tự động trong PATH, Program Files hoặc runtime Codex đã có; không cần gõ `pwsh` trực tiếp. Giữ nguyên thư mục dự án và file cấu hình local khi dùng Startup.
