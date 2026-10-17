@@ -7,7 +7,7 @@ export type ReportKind = "collections" | "results";
 export type ReportCell = string | number | null;
 export interface ReportSheet { name: string; headers: string[]; rows: ReportCell[][]; moneyColumns?: number[] }
 export interface KskReport {
-  kind: ReportKind; title: string; memberCount: number; metadata: [string, string][];
+  kind: ReportKind | "revenue"; title: string; memberCount: number; metadata: [string, string][];
   warnings: string[]; sheets: ReportSheet[];
 }
 export const resultStates = { has: "Có giá trị XN / CLS", empty: "Chưa có giá trị XN / CLS", no_visit: "Chưa có lượt trong phạm vi", unknown: "Chưa xác định nguồn kết quả" } as const;

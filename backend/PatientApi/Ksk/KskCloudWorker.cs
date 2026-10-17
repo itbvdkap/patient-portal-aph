@@ -43,9 +43,10 @@ public sealed class KskCloudWorker(IConfiguration config, IHttpClientFactory cli
                         string endpoint; object? body = null; string? token;
                         if (job.Operation is "report" or "management") {
                             var fields = job.Input.EnumerateObject().ToDictionary(x => x.Name, x => x.Value.GetString() ?? "");
-                            var allowed = job.Operation == "report" ? new[] { "from", "to", "cohort", "all", "collectedFrom", "collectedTo" } : new[] { "from", "to", "cohort" };
+                            var revenue = job.Operation == "report" && fields.GetValueOrDefault("reportType") == "cashier";
+                            var allowed = revenue ? new[] { "reportType", "from", "to" } : job.Operation == "report" ? new[] { "from", "to", "cohort", "all", "collectedFrom", "collectedTo" } : new[] { "from", "to", "cohort" };
                             if (fields.Keys.Any(k => !allowed.Contains(k))) throw new InvalidOperationException("Invalid input.");
-                            endpoint = (job.Operation == "report" ? "/api/internal/ksk" : "/api/internal/ksk-management") + "?" + string.Join("&", fields.Select(p => Uri.EscapeDataString(p.Key) + "=" + Uri.EscapeDataString(p.Value)));
+                            endpoint = (revenue ? "/api/internal/vienphi-revenue" : job.Operation == "report" ? "/api/internal/ksk" : "/api/internal/ksk-management") + "?" + string.Join("&", fields.Where(p => p.Key != "reportType").Select(p => Uri.EscapeDataString(p.Key) + "=" + Uri.EscapeDataString(p.Value)));
                             token = config[job.Operation == "report" ? "Ksk:ServerToken" : "KskManagement:ServerToken"];
                         } else if (job.Operation is "patient" or "validate") {
                             endpoint = "/api/internal/ksk-management/" + job.Operation; body = job.Input; token = config["KskManagement:ServerToken"];

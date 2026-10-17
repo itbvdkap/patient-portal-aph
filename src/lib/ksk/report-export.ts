@@ -2,6 +2,7 @@ import type { KskReport, ReportCell, ReportSheet } from "./reports";
 
 export function reportFilename(report: KskReport) {
   const branch = report.metadata.find(([key]) => key === "Nguồn")?.[1].match(/\b(CN\d+|DEMO)\b/)?.[1] || "his";
+  if (report.kind === "revenue") return `vienphi-thu-ngan-${branch}.xlsx`;
   const cohort = report.metadata.find(([key]) => key === "ID đợt")?.[1].replace(/\D/g, "") || "doan";
   return `ksk-${branch}-${report.kind === "collections" ? "danh-sach-thu" : "xn-cls"}-${cohort}.xlsx`;
 }
@@ -26,7 +27,7 @@ export async function reportXlsx(report: KskReport): Promise<Uint8Array> {
   // Open the one-patient-per-row matrix first in Excel; retain source and scope sheets.
   if (report.kind === "results" && report.sheets.some(sheet => sheet.name === "KQ XN-CLS theo người"))
     workbook.views = [{ x: 0, y: 0, width: 12000, height: 8000, firstSheet: 0, activeTab: 2, visibility: "visible" }];
-  workbook.creator = "An Phu · KSK chỉ đọc";
+  workbook.creator = report.kind === "revenue" ? "An Phu · Viện phí" : "An Phu · KSK chỉ đọc";
   workbook.created = new Date();
   workbook.subject = "Nội bộ · dữ liệu sức khỏe cá nhân · không phải công nợ hợp đồng";
   const overflow: ReportCell[][] = [];
@@ -54,7 +55,7 @@ export async function reportXlsx(report: KskReport): Promise<Uint8Array> {
     sheet.getRow(1).height = 34;
     sheet.autoFilter = { from: { row: 1, column: 1 }, to: { row: Math.max(1, sheet.rowCount), column: s.headers.length } };
     sheet.pageSetup.printTitlesRow = "1:1";
-    sheet.headerFooter.oddHeader = "&CAn Phu · KSK chỉ đọc HIS";
+    sheet.headerFooter.oddHeader = report.kind === "revenue" ? "&CAn Phu · Viện phí theo thu ngân" : "&CAn Phu · KSK chỉ đọc HIS";
     sheet.headerFooter.oddFooter = "&LNội bộ - không phải công nợ hợp đồng&RTrang &P / &N";
   }
   if (overflow.length) {

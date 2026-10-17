@@ -7,6 +7,7 @@ const nav: Array<{ label: string; href: string; iconKey: AdminNavIcon }> = [
   { label: "Tài khoản", href: "/admin/accounts", iconKey: "user" },
   { label: "Hồ sơ liên kết", href: "/admin/profiles", iconKey: "users" },
   { label: "Đăng ký khám", href: "/admin/bookings", iconKey: "calendar" },
+  { label: "Doanh thu viện phí", href: "/admin/vienphi-revenue", iconKey: "file" },
   { label: "Khám đoàn · chỉ đọc", href: "/admin/ksk", iconKey: "users" },
   { label: "Báo cáo thu tiền", href: "/admin/ksk-collections", iconKey: "file" },
   { label: "Phiếu thay đổi · LAB", href: "/admin/ksk-changes", iconKey: "file" },

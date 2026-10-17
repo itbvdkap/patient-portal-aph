@@ -40,6 +40,7 @@ if (OperatingSystem.IsWindows())
 builder.Services.AddSingleton<PatientTokenValidator>();
 builder.Services.AddScoped<OracleHisPatientRepository>();
 builder.Services.AddScoped<OracleKskRepository>();
+builder.Services.AddScoped<PatientApi.Revenue.OracleRevenueRepository>();
 builder.Services.AddScoped<OracleKskManagementRepository>();
 builder.Services.AddHostedService<KskCloudWorker>();
 builder.Services.AddHttpClient<SupabaseRestPortalStore>();
@@ -82,6 +83,7 @@ builder.Services.AddHostedService(sp => sp.GetRequiredService<NotificationOutbox
 
 var app = builder.Build();
 app.MapKskEndpoints();
+PatientApi.Revenue.RevenueEndpoints.MapRevenueEndpoints(app);
 app.MapKskManagement();
 
 app.MapGet("/health", () => Results.Ok(new

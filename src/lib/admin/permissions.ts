@@ -2,6 +2,7 @@ export const adminMenuOptions = [
   { id: "accounts", path: "/admin/accounts", label: "Tài khoản bệnh nhân" },
   { id: "profiles", path: "/admin/profiles", label: "Hồ sơ liên kết" },
   { id: "bookings", path: "/admin/bookings", label: "Đăng ký khám" },
+  { id: "revenue", path: "/admin/vienphi-revenue", label: "Doanh thu viện phí toàn viện theo thu ngân" },
   { id: "ksk", path: "/admin/ksk", label: "Khám đoàn và báo cáo XN / CLS" },
   { id: "ksk_collections", path: "/admin/ksk-collections", label: "Báo cáo thu tiền khám đoàn" },
   { id: "ksk_changes", path: "/admin/ksk-changes", label: "Phiếu thay đổi gói / danh sách · LAB" },

@@ -36,6 +36,7 @@ Copy-Item -LiteralPath (Join-Path $repoRoot "supabase\migrations\202609260001_no
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot "README.md") -Destination (Join-Path $output "README.md") -Force
 Copy-Item -LiteralPath (Join-Path $repoRoot "docs\KSK_READONLY_MODULE.md") -Destination (Join-Path $output "KSK_READONLY_MODULE.md") -Force
 Copy-Item -LiteralPath (Join-Path $repoRoot "docs\KSK_COLLECTIONS_REPORT.md") -Destination (Join-Path $output "KSK_COLLECTIONS_REPORT.md") -Force
+Copy-Item -LiteralPath (Join-Path $repoRoot "docs\VIENPHI_REVENUE_REPORT.md") -Destination (Join-Path $output "VIENPHI_REVENUE_REPORT.md") -Force
 Copy-Item -LiteralPath (Join-Path $repoRoot "docs\KSK_EPISODE_PAYMENT_POLICY.md") -Destination (Join-Path $output "KSK_EPISODE_PAYMENT_POLICY.md") -Force
 Copy-Item -LiteralPath (Join-Path $repoRoot "docs\KSK_MANAGEMENT.md") -Destination (Join-Path $output "KSK_MANAGEMENT.md") -Force
 Copy-Item -LiteralPath (Join-Path $repoRoot "deploy\oracle\ksk_management_ledger.sql") -Destination (Join-Path $output "ksk-management-ledger.sql") -Force
