@@ -56,6 +56,7 @@ export function RevenueWorkspace({ initialQuery, initialError = "" }: { initialQ
         <label className="grid gap-1 text-sm">Loại thu<select className="min-w-0 rounded border p-2" value={query.kind} onChange={e => change("kind", e.target.value)}><option value="">Tất cả loại thu / hoàn</option>{Object.entries(revenueKinds).map(([id,name]) => <option key={id} value={id}>{name}</option>)}</select></label>
       </div>
       <div className="mt-4 flex flex-wrap items-center gap-3"><button disabled={busy} className="rounded bg-primary-800 px-4 py-2 font-bold text-white disabled:opacity-50">{busy ? "Đang đọc HIS…" : "Đọc / Làm mới"}</button><button type="button" className="rounded border px-3 py-2 text-sm" onClick={() => setQuery(current => ({ ...current, cashier: "", department: "", kind: "" }))}>Bỏ lọc thu ngân / khoa / loại</button><p className="text-xs text-slate-600">Giờ theo HIS, tối đa 31 ngày. Khoa/phòng là nơi ghi trên đầu phiếu; mỗi phiếu chỉ tính một lần.</p></div>
+      <p className="mt-3 text-xs text-amber-900">Lọc theo ngày giờ trên phiếu HIS. Nhiều phiếu chỉ lưu ngày với giờ 00:00:00; đây chưa phải giờ thu thực tế đã xác minh. Khi lọc riêng một khung giờ, các phiếu giờ 00:00:00 sẽ không nằm trong khung đó.</p>
     </form>
     {error && <p role="alert" className="mb-4 rounded border border-amber-300 bg-amber-50 p-3 text-amber-950">{error}</p>}
     {stale && <p role="status" className="mb-4 rounded border bg-amber-50 p-3">Khoảng ngày giờ đã đổi. Nhấn Đọc / Làm mới để xem báo cáo mới.</p>}

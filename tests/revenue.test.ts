@@ -38,6 +38,10 @@ describe("Whole-hospital cash report", () => {
     const data=sample();data.receipts=[{...bill("1"),refunded:"1"},{...bill("2"),deferred:"1"}];const rows=revenueRows(data);
     expect(rows[0].amount).toBe(100);expect(rows[0].notes.join()).toContain("ngày");expect(rows[1].amount).toBe(0);
   });
+  it("labels midnight source times without inventing a payment time", () => {
+    const data=sample();data.scope={...data.scope,from:"2026-10-01T00:00:00"};data.receipts=[{...bill("1"),occurredat:"2026-10-01T00:00:00"}];
+    const row=revenueRows(data)[0];expect(row.at).toBe("2026-10-01T00:00:00");expect(row.notes.join()).toContain("chưa xác minh giờ thu");expect(row.amount).toBe(100);
+  });
   it("requires every source and every requested month before calling a report complete", () => {
     const data=sample();expect(revenueComplete(data)).toBe(true);data.sections["HGSOFT_BV1026:pharmacy"]=false;expect(revenueComplete(data)).toBe(false);
     data.sections["HGSOFT_BV1026:pharmacy"]=true;data.scope={...data.scope,to:"2026-11-01T01:00:00"};expect(revenueComplete(data)).toBe(false);
