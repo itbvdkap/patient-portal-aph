@@ -1,6 +1,20 @@
 import Link from "next/link";
-import { ArrowRight, BookOpenText, CalendarDays, ChevronDown, ClipboardList, FileClock, FileText, HeartPulse, Hospital, Pill, ShieldCheck, Stethoscope } from "lucide-react";
-import { Badge, Panel, SectionHeader, StatBadge } from "@/components/ui";
+import {
+  ArrowRight,
+  BookOpenText,
+  CalendarDays,
+  ChevronDown,
+  ChevronRight,
+  ClipboardList,
+  FileText,
+  HeartPulse,
+  Hospital,
+  Info,
+  Pill,
+  ShieldCheck,
+  Stethoscope,
+} from "lucide-react";
+import { Badge, Panel, SectionHeader } from "@/components/ui";
 import { CopyButton } from "@/components/copy-button";
 import { createPatientRepository } from "@/lib/data";
 import { getFeaturedHealthGuidePosts } from "@/lib/content/health-guide";
@@ -12,7 +26,13 @@ const bookingUrl = "/booking";
 export default async function DashboardPage() {
   const repository = createPatientRepository();
   const patient = await repository.getCurrentPatient();
-  const [visitsResult, summaryResult, appointmentsResult, registrationsResult, todayStatusResult] = await Promise.allSettled([
+  const [
+    visitsResult,
+    summaryResult,
+    appointmentsResult,
+    registrationsResult,
+    todayStatusResult,
+  ] = await Promise.allSettled([
     repository.getVisits(patient.id),
     repository.getSummary(patient.id),
     repository.getAppointments(patient.id),
@@ -25,18 +45,50 @@ export default async function DashboardPage() {
   const summary =
     summaryResult.status === "fulfilled"
       ? summaryResult.value
-      : { visitsCount: 0, labResultsCount: 0, imagingResultsCount: 0, prescriptionsCount: 0, appointmentsCount: 0 };
-  const appointments = appointmentsResult.status === "fulfilled" ? appointmentsResult.value : [];
-  const registrations = registrationsResult.status === "fulfilled" ? registrationsResult.value : [];
-  const todayStatus = todayStatusResult.status === "fulfilled" ? todayStatusResult.value : null;
+      : {
+          visitsCount: 0,
+          labResultsCount: 0,
+          imagingResultsCount: 0,
+          prescriptionsCount: 0,
+          appointmentsCount: 0,
+        };
+  const appointments =
+    appointmentsResult.status === "fulfilled" ? appointmentsResult.value : [];
+  const registrations =
+    registrationsResult.status === "fulfilled" ? registrationsResult.value : [];
+  const todayStatus =
+    todayStatusResult.status === "fulfilled" ? todayStatusResult.value : null;
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const nextAppointment = appointments
     .filter((appointment) => new Date(appointment.appointmentDate) >= today)
-    .sort((first, second) => new Date(first.appointmentDate).getTime() - new Date(second.appointmentDate).getTime())[0];
+    .sort(
+      (first, second) =>
+        new Date(first.appointmentDate).getTime() -
+        new Date(second.appointmentDate).getTime(),
+    )[0];
   const nextPendingRegistration = registrations
-    .filter((registration) => new Date(registration.registeredAt) >= today && registration.status !== "Đã khám")
-    .sort((first, second) => new Date(first.registeredAt).getTime() - new Date(second.registeredAt).getTime())[0];
+    .filter(
+      (registration) =>
+        new Date(registration.registeredAt) >= today &&
+        registration.status !== "Đã khám",
+    )
+    .sort(
+      (first, second) =>
+        new Date(first.registeredAt).getTime() -
+        new Date(second.registeredAt).getTime(),
+    )[0];
+  const recentVisits = [...visits].sort(
+    (a, b) => new Date(b.visitDate).getTime() - new Date(a.visitDate).getTime(),
+  );
+  const latestVisit = recentVisits[0];
+  const failed = [
+    visitsResult,
+    summaryResult,
+    appointmentsResult,
+    registrationsResult,
+    todayStatusResult,
+  ].some((result) => result.status === "rejected");
 
   const shortcuts = [
     {
@@ -83,7 +135,9 @@ export default async function DashboardPage() {
       href: "/appointments",
       label: "Lịch hẹn",
       value: `${summary.appointmentsCount} lịch`,
-      count: appointments.filter((appointment) => new Date(appointment.appointmentDate) >= today).length,
+      count: appointments.filter(
+        (appointment) => new Date(appointment.appointmentDate) >= today,
+      ).length,
       icon: CalendarDays,
       color: "bg-rose-50 text-rose-700 ring-rose-100",
     },
@@ -106,48 +160,186 @@ export default async function DashboardPage() {
   ];
 
   return (
-    <>
-      <header className="mb-3 rounded-xl border border-primary-100 bg-white/86 px-3 py-2.5 shadow-[0_10px_24px_rgba(7,60,57,0.06)] sm:rounded-2xl sm:px-4 sm:py-3">
-        <div className="flex items-center gap-3">
-          <div className="min-w-0 flex-1">
-            <p className="text-[10px] font-black uppercase tracking-wide text-primary-700">Hồ sơ đang xem</p>
-            <h1 className="mt-0.5 line-clamp-1 font-serif text-lg font-black leading-6 text-ink sm:text-2xl">{patient.fullName}</h1>
-            <p className="clinical-mono mt-0.5 text-xs font-black text-slate-600">BN {patient.hisPatientCode}</p>
-          </div>
-        </div>
+    <div className="patient-home" aria-label="Trang chủ bệnh nhân">
+      <header className="mb-6">
+        <h1 className="patient-title">Xin chào!</h1>
+        <p className="patient-subtitle mt-2">
+          {patient.fullName} ·{" "}
+          <span className="font-semibold">BN {patient.hisPatientCode}</span>
+        </p>
       </header>
-
-      <section className="grid gap-3 lg:grid-cols-[1.05fr_0.95fr]">
-        <Panel className={`rounded-xl p-3 shadow-sm sm:rounded-2xl sm:p-4 ${todayStatus?.hasActiveVisit ? "border-amber-200 bg-amber-50/80" : "bg-white/85"}`}>
-          <div className="flex items-start gap-2">
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary-50 text-primary-700 sm:h-11 sm:w-11 sm:rounded-2xl">
-              <Stethoscope aria-hidden="true" className="h-5 w-5" />
-            </span>
-            <div className="min-w-0 flex-1">
-              <div className="mb-1 flex items-center justify-between gap-2">
-                <Link href="/today-visit" className="inline-flex min-h-9 items-center rounded-xl bg-primary-700 px-4 text-sm font-black text-white shadow-sm hover:bg-primary-900">
-                  Khám hôm nay
-                </Link>
-                {todayStatus?.hasActiveVisit && <Badge tone="amber">{todayStatus.currentStepText}</Badge>}
-              </div>
-              {todayStatus?.hasActiveVisit ? (
-                <div>
-                  <p className="line-clamp-1 text-sm font-semibold leading-5 text-ink">{todayStatus.registration?.departmentName || "Đang có lượt khám hôm nay"}</p>
-                  {todayStatus.registration?.ticketNumber && <p className="text-xs text-slate-700">STT: <span className="clinical-mono font-semibold">{todayStatus.registration.ticketNumber}</span></p>}
-                </div>
-              ) : nextPendingRegistration ? (
-                <div>
-                  <Badge tone="amber">Có lượt đăng ký chưa khám</Badge>
-                  <p className="mt-1 line-clamp-1 text-sm font-semibold leading-5 text-ink">{nextPendingRegistration.departmentName}</p>
-                  <p className="clinical-mono text-xs text-slate-700">{formatDateTime(nextPendingRegistration.registeredAt)}</p>
-                </div>
-              ) : (
-                <p className="line-clamp-2 text-sm font-medium leading-5 text-slate-600">Chưa có lịch khám hôm nay. Anh/chị có thể đăng ký nhanh từ ô Đăng ký khám bên dưới.</p>
-              )}
-            </div>
+      {failed && (
+        <div className="patient-notice patient-error" role="alert">
+          <Info aria-hidden="true" />
+          <p>
+            Một số thông tin chưa tải được. Các mục đã tải vẫn xem được.{" "}
+            <Link href="/dashboard">Tải lại trang</Link>
+          </p>
+        </div>
+      )}
+      <div className="patient-home-grid">
+        <section
+          className="patient-card"
+          aria-labelledby="next-appointment-heading"
+        >
+          <div className="flex items-center justify-between gap-3 mb-4">
+            <h2 id="next-appointment-heading" className="patient-heading">
+              Lịch hẹn sắp tới
+            </h2>
+            <Link
+              href="/appointments"
+              className="text-sm font-semibold text-primary-700 inline-flex min-h-11 items-center"
+            >
+              Xem tất cả
+            </Link>
           </div>
-        </Panel>
-
+          {nextAppointment ? (
+            <Link href="/appointments" className="patient-row mb-4">
+              <DateTile value={nextAppointment.appointmentDate} />
+              <div>
+                <p className="font-bold">{nextAppointment.departmentName}</p>
+                <p className="patient-subtitle mt-1">
+                  {formatDateTime(nextAppointment.appointmentDate)}
+                </p>
+                {nextAppointment.doctorName && (
+                  <p className="patient-subtitle">
+                    {nextAppointment.doctorName}
+                  </p>
+                )}
+              </div>
+              <ChevronRight aria-hidden="true" />
+            </Link>
+          ) : (
+            <p className="patient-subtitle mb-4">
+              {appointmentsResult.status === "rejected"
+                ? "Chưa tải được lịch hẹn."
+                : "Chưa có lịch hẹn sắp tới."}
+            </p>
+          )}
+          <Link href={bookingUrl} className="patient-primary">
+            <CalendarDays aria-hidden="true" />
+            Đăng ký khám
+            <ArrowRight className="ml-auto" aria-hidden="true" />
+          </Link>
+        </section>
+        <div className="mt-4 md:mt-0 grid gap-3 content-start">
+          {latestVisit ? (
+            <Link
+              href={`/visits/${latestVisit.id}`}
+              className="patient-card patient-row"
+            >
+              <FileText aria-hidden="true" />
+              <div>
+                <p className="font-bold">Kết quả lần khám</p>
+                <p className="patient-subtitle mt-1">
+                  {formatDate(latestVisit.visitDate)} ·{" "}
+                  {latestVisit.departmentName}
+                </p>
+              </div>
+              <ChevronRight aria-hidden="true" />
+            </Link>
+          ) : (
+            <div className="patient-card patient-row">
+              <FileText aria-hidden="true" />
+              <p className="patient-subtitle">
+                {visitsResult.status === "rejected"
+                  ? "Chưa tải được lịch sử khám."
+                  : "Chưa có lần khám để xem kết quả."}
+              </p>
+            </div>
+          )}
+          {(todayStatus?.hasActiveVisit ||
+            nextPendingRegistration ||
+            todayStatusResult.status === "rejected") && (
+            <Link href="/today-visit" className="patient-row patient-card">
+              <Stethoscope aria-hidden="true" />
+              <div>
+                <p className="font-bold">Khám hôm nay</p>
+                <p className="patient-subtitle mt-1">
+                  {todayStatus?.hasActiveVisit
+                    ? `${todayStatus.registration?.departmentName || "Đang có lượt khám"}${todayStatus.registration?.ticketNumber ? ` · STT ${todayStatus.registration.ticketNumber}` : ""}`
+                    : nextPendingRegistration
+                      ? `${nextPendingRegistration.departmentName} · ${formatDateTime(nextPendingRegistration.registeredAt)}`
+                      : "Chưa tải được thông tin hôm nay."}
+                </p>
+                {todayStatus?.hasActiveVisit && (
+                  <Badge tone="amber">{todayStatus.currentStepText}</Badge>
+                )}
+              </div>
+              <ChevronRight aria-hidden="true" />
+            </Link>
+          )}
+        </div>
+      </div>
+      <nav className="patient-shortcuts" aria-label="Tra cứu hồ sơ sức khỏe">
+        {shortcuts
+          .filter((item) =>
+            ["/visits", "/lab-results", "/imaging", "/prescriptions"].includes(
+              item.href,
+            ),
+          )
+          .map((item) => (
+            <Link href={item.href} key={item.href} className="patient-shortcut">
+              <item.icon aria-hidden="true" />
+              <span>
+                <strong>
+                  {item.href === "/imaging" ? "Chẩn đoán hình ảnh" : item.label}
+                </strong>
+                <small>
+                  {summaryResult.status === "rejected"
+                    ? "Chưa tải được số lượng"
+                    : item.value}
+                </small>
+              </span>
+            </Link>
+          ))}
+      </nav>
+      <section
+        className="patient-section"
+        aria-labelledby="recent-visits-heading"
+      >
+        <div className="flex items-center justify-between gap-3 mb-2">
+          <h2 id="recent-visits-heading" className="patient-heading">
+            Lần khám gần đây
+          </h2>
+          <Link
+            href="/visits"
+            className="inline-flex min-h-11 items-center text-sm font-semibold text-primary-700"
+          >
+            Xem tất cả
+          </Link>
+        </div>
+        {recentVisits.length ? (
+          recentVisits
+            .slice(0, 3)
+            .map((visit) => <RecentVisitRow key={visit.id} visit={visit} />)
+        ) : (
+          <p className="patient-subtitle py-4">
+            {visitsResult.status === "rejected"
+              ? "Chưa tải được lịch sử khám."
+              : "Chưa có lịch sử khám."}
+          </p>
+        )}
+      </section>
+      <nav className="patient-more" aria-label="Tiện ích bệnh nhân">
+        <Link href="/insurance">
+          <ShieldCheck aria-hidden="true" />
+          Thẻ BHYT
+        </Link>
+        <Link href="/hospital-info">
+          <Hospital aria-hidden="true" />
+          Bệnh viện
+        </Link>
+        <Link href="/health-guide">
+          <BookOpenText aria-hidden="true" />
+          Cẩm nang
+        </Link>
+        <Link href="/profile">
+          <ClipboardList aria-hidden="true" />
+          Hồ sơ & người thân
+        </Link>
+      </nav>
+      <div className="patient-section">
         <InsuranceDigitalCard
           cardNumber={patient.insurance.cardNumber}
           status={patient.insurance.status}
@@ -155,41 +347,35 @@ export default async function DashboardPage() {
           validTo={patient.insurance.validTo}
           patientCode={patient.hisPatientCode}
         />
-      </section>
-
-      <section className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-8">
-        {shortcuts.map((item) => (
-          <ShortcutCard key={item.href} {...item} />
-        ))}
-      </section>
-
-      <HealthGuidePreview posts={featuredHealthGuidePosts} />
-
-      {nextAppointment && (
-        <Panel className="mt-4 border-primary-100 bg-primary-50/80 shadow-none">
-          <SectionHeader title="Lịch hẹn sắp tới" />
-          <Badge tone="blue">{formatDateTime(nextAppointment.appointmentDate)}</Badge>
-          <p className="mt-3 text-sm font-semibold leading-6 text-ink">{nextAppointment.departmentName}</p>
-          {nextAppointment.doctorName && <p className="mt-1 text-sm text-slate-700">{nextAppointment.doctorName}</p>}
-        </Panel>
+      </div>
+      {featuredHealthGuidePosts.length > 0 && (
+        <HealthGuidePreview posts={featuredHealthGuidePosts} />
       )}
-
-      <Panel className="mt-4">
-        <SectionHeader title="Lần khám gần đây" meta={`${visits.length} lần khám`} />
-        <div className="divide-y divide-slate-100">
-          {visits.slice(0, 3).map((visit) => (
-            <RecentVisitRow key={visit.id} visit={visit} />
-          ))}
-        </div>
-      </Panel>
-    </>
+    </div>
   );
 }
 
-function HealthGuidePreview({ posts }: { posts: Awaited<ReturnType<typeof getFeaturedHealthGuidePosts>> }) {
+function DateTile({ value }: { value: string }) {
+  const parts = formatDate(value).split("/");
+  return (
+    <span className="patient-date" aria-hidden="true">
+      <strong>{parts[0]}</strong>
+      <span>TH{parts[1]}</span>
+    </span>
+  );
+}
+
+function HealthGuidePreview({
+  posts,
+}: {
+  posts: Awaited<ReturnType<typeof getFeaturedHealthGuidePosts>>;
+}) {
   return (
     <Panel className="mt-4">
-      <SectionHeader title="Cẩm nang sức khỏe" meta={`${posts.length} bài nổi bật`} />
+      <SectionHeader
+        title="Cẩm nang sức khỏe"
+        meta={`${posts.length} bài nổi bật`}
+      />
       <div className="grid gap-2 sm:grid-cols-3">
         {posts.map((post) => {
           const Icon = post.icon;
@@ -199,25 +385,45 @@ function HealthGuidePreview({ posts }: { posts: Awaited<ReturnType<typeof getFea
               key={post.slug}
               href={`/health-guide/${post.slug}`}
               className="group relative overflow-hidden rounded-md border border-cream-200 p-3 transition hover:-translate-y-0.5 hover:border-primary-200"
-              style={post.coverImageUrl ? { backgroundImage: `linear-gradient(135deg, rgba(255,247,237,0.95), rgba(255,247,237,0.82)), url(${post.coverImageUrl})`, backgroundSize: "cover", backgroundPosition: "center" } : { background: post.background }}
+              style={
+                post.coverImageUrl
+                  ? {
+                      backgroundImage: `linear-gradient(135deg, rgba(255,247,237,0.95), rgba(255,247,237,0.82)), url(${post.coverImageUrl})`,
+                      backgroundSize: "cover",
+                      backgroundPosition: "center",
+                    }
+                  : { background: post.background }
+              }
             >
               <div className="relative z-10 flex items-center gap-2">
-                <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md ring-1 ${post.tone}`}>
+                <span
+                  className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md ring-1 ${post.tone}`}
+                >
                   <Icon aria-hidden="true" className="h-4 w-4" />
                 </span>
                 <Badge tone="slate">{post.category}</Badge>
               </div>
-              <h3 className="relative z-10 mt-2 line-clamp-2 text-sm font-black leading-5 text-ink">{post.title}</h3>
-              <p className="relative z-10 mt-1 line-clamp-2 text-xs font-medium leading-5 text-slate-600">{post.summary}</p>
+              <h3 className="relative z-10 mt-2 line-clamp-2 text-sm font-black leading-5 text-ink">
+                {post.title}
+              </h3>
+              <p className="relative z-10 mt-1 line-clamp-2 text-xs font-medium leading-5 text-slate-600">
+                {post.summary}
+              </p>
               <span className="relative z-10 mt-2 inline-flex items-center gap-1 text-[11px] font-black text-primary-700">
                 Mở hướng dẫn
-                <ArrowRight aria-hidden="true" className="h-3.5 w-3.5 transition group-hover:translate-x-0.5" />
+                <ArrowRight
+                  aria-hidden="true"
+                  className="h-3.5 w-3.5 transition group-hover:translate-x-0.5"
+                />
               </span>
             </Link>
           );
         })}
       </div>
-      <Link href="/health-guide" className="mt-3 inline-flex items-center gap-1.5 text-sm font-black text-primary-700 hover:text-primary-800">
+      <Link
+        href="/health-guide"
+        className="mt-3 inline-flex items-center gap-1.5 text-sm font-black text-primary-700 hover:text-primary-800"
+      >
         Xem tất cả cẩm nang
         <ArrowRight aria-hidden="true" className="h-4 w-4" />
       </Link>
@@ -239,39 +445,53 @@ function InsuranceDigitalCard({
   patientCode: string;
 }) {
   return (
-    <details className="group overflow-hidden rounded-xl border border-primary-700 bg-[linear-gradient(135deg,#005f56,#007c73_62%,#0f6ea8)] text-white shadow-[0_10px_24px_rgba(7,60,57,0.16)] sm:rounded-2xl">
-      <summary className="flex min-h-14 cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 marker:hidden [&::-webkit-details-marker]:hidden sm:px-4">
-        <div className="flex min-w-0 items-center gap-2">
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-white/14 text-white ring-1 ring-white/20">
-            <ShieldCheck aria-hidden="true" className="h-4 w-4" />
-          </span>
-          <div className="min-w-0">
-            <p className="text-[10px] font-bold uppercase leading-4 text-white/75">Ví sức khỏe</p>
-            <h2 className="line-clamp-1 text-sm font-black sm:text-base">Thẻ BHYT điện tử</h2>
-          </div>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <Badge tone={status === "Còn hiệu lực" ? "green" : "amber"}>{status}</Badge>
-          <ChevronDown aria-hidden="true" className="h-4 w-4 transition group-open:rotate-180" />
-        </div>
+    <details className="group patient-card">
+      <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3">
+        <span className="flex items-center gap-2">
+          <ShieldCheck
+            aria-hidden="true"
+            className="h-5 w-5 text-primary-700"
+          />
+          <span className="font-bold">Thẻ BHYT điện tử</span>
+        </span>
+        <span className="inline-flex items-center gap-2">
+          <Badge tone={status === "Còn hiệu lực" ? "green" : "amber"}>
+            {status || "Chưa ghi nhận"}
+          </Badge>
+          <ChevronDown
+            aria-hidden="true"
+            className="h-4 w-4 transition group-open:rotate-180"
+          />
+        </span>
       </summary>
-      <div className="px-3 pb-3 sm:px-4 sm:pb-4">
-        <p className="clinical-mono break-all text-base font-black tracking-normal text-white sm:text-xl">{cardNumber || "Chưa ghi nhận"}</p>
-        <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
-        <div>
-          <p className="text-[10px] font-bold uppercase text-white/70">Từ ngày</p>
-          <p className="clinical-mono mt-0.5 font-bold text-white">{formatOptionalDate(validFrom)}</p>
-        </div>
-        <div>
-          <p className="text-[10px] font-bold uppercase text-white/70">Đến ngày</p>
-          <p className="clinical-mono mt-0.5 font-bold text-white">{formatOptionalDate(validTo)}</p>
-        </div>
-      </div>
-        <div className="mt-2 flex flex-wrap items-center gap-2 sm:mt-3">
-          {cardNumber && <CopyButton value={cardNumber} label="Copy số thẻ" variant="dark" />}
-          <CopyButton value={patientCode} label="Copy mã BN" variant="dark" />
-          <Link href="/insurance" className="inline-flex min-h-9 items-center rounded-md px-2.5 text-xs font-black text-white ring-1 ring-white/25 hover:bg-white/10">
-            Chi tiết
+      <div className="border-t border-slate-100 pt-3 mt-2">
+        <p className="break-all font-semibold">
+          {cardNumber || "Chưa ghi nhận số thẻ"}
+        </p>
+        <dl className="grid grid-cols-2 gap-3 mt-3 text-sm">
+          <div>
+            <dt className="text-slate-600">Từ ngày</dt>
+            <dd className="font-semibold mt-1">
+              {formatOptionalDate(validFrom)}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-slate-600">Đến ngày</dt>
+            <dd className="font-semibold mt-1">
+              {formatOptionalDate(validTo)}
+            </dd>
+          </div>
+        </dl>
+        <div className="flex flex-wrap items-center gap-3 mt-3">
+          {cardNumber && (
+            <CopyButton value={cardNumber} label="Sao chép số thẻ" />
+          )}
+          <CopyButton value={patientCode} label="Sao chép mã BN" />
+          <Link
+            href="/insurance"
+            className="inline-flex min-h-11 items-center text-sm font-semibold text-primary-700"
+          >
+            Chi tiết thẻ BHYT
           </Link>
         </div>
       </div>
@@ -279,72 +499,37 @@ function InsuranceDigitalCard({
   );
 }
 
-function ShortcutCard({
-  href,
-  external,
-  label,
-  value,
-  count,
-  icon: Icon,
-  color,
-}: {
-  href: string;
-  external?: boolean;
-  label: string;
-  value: string;
-  count: number;
-  icon: typeof FileClock;
-  color: string;
-}) {
-  const content = (
-    <>
-      {count > 0 && (
-        <span className="absolute right-2 top-2">
-          <StatBadge>{count > 99 ? "99+" : count}</StatBadge>
-        </span>
-      )}
-      <span className={`flex h-9 w-9 items-center justify-center rounded-md ring-1 ${color}`}>
-        <Icon aria-hidden="true" className="h-5 w-5" />
-      </span>
-      <p className="mt-2 text-sm font-black leading-4 text-ink">{label}</p>
-      <p className="mt-1 line-clamp-1 text-xs font-semibold leading-4 text-slate-500">{value}</p>
-    </>
-  );
-  const className =
-    "relative min-h-[92px] rounded-xl border border-cream-200 bg-white/86 p-2.5 shadow-[0_10px_24px_rgba(7,60,57,0.055)] transition hover:-translate-y-0.5 hover:border-primary-200 hover:bg-primary-50 sm:min-h-[104px] sm:rounded-2xl sm:p-3";
-
-  return external ? (
-    <a href={href} target="_blank" rel="noreferrer" className={className}>
-      {content}
-    </a>
-  ) : (
-    <Link href={href} className={className}>
-      {content}
-    </Link>
-  );
-}
-
 function RecentVisitRow({ visit }: { visit: Visit }) {
   return (
-    <Link href={`/visits/${visit.id}`} className="block py-3 transition hover:bg-primary-50 sm:px-2">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="clinical-mono font-bold text-ink">{formatDate(visit.visitDate)}</p>
-          <p className="mt-1 line-clamp-1 text-sm text-slate-600">
-            {visit.departmentName}
-            {visit.doctorName ? ` · ${visit.doctorName}` : ""}
-          </p>
+    <Link href={`/visits/${visit.id}`} className="patient-visit-row">
+      <DateTile value={visit.visitDate} />
+      <div>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="font-bold">{visit.departmentName || "Lần khám"}</p>
+          <Badge tone="blue">{visit.status || "Đã ghi nhận"}</Badge>
         </div>
-        <Badge tone="blue">{visit.status}</Badge>
+        {visit.doctorName && (
+          <p className="patient-subtitle mt-1">{visit.doctorName}</p>
+        )}
+        <p className="patient-subtitle mt-1">
+          {formatDateTime(visit.visitDate)}
+        </p>
+        {visit.primaryDiagnosis && (
+          <p className="patient-subtitle mt-1">
+            {removeIcdPrefix(visit.primaryDiagnosis)}
+          </p>
+        )}
       </div>
-      <p className="mt-2 line-clamp-2 text-sm font-semibold leading-6 text-ink">{removeIcdPrefix(visit.primaryDiagnosis)}</p>
-      <p className="mt-1 text-sm font-bold text-primary-700">Xem chi tiết</p>
+      <ChevronRight aria-label="Xem chi tiết lần khám" />
     </Link>
   );
 }
 
 function removeIcdPrefix(value: string) {
-  return value.replace(/^[A-Z][0-9][0-9](?:\.[0-9A-Z]+)?\s*-\s*/i, "").trim() || value;
+  return (
+    value.replace(/^[A-Z][0-9][0-9](?:\.[0-9A-Z]+)?\s*-\s*/i, "").trim() ||
+    value
+  );
 }
 
 function formatOptionalDate(value: string) {

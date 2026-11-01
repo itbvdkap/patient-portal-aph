@@ -1,0 +1,472 @@
+/* Selected patient design, scoped to the two pilot routes; admin/native unchanged. */
+.patient-modern {
+  background: #fff;
+  color: #17312f;
+  font-family: var(--font-sans), Arial, sans-serif;
+  min-height: 100vh;
+}
+.patient-modern h1,
+.patient-modern h2,
+.patient-modern h3,
+.patient-modern .font-serif {
+  font-family: var(--font-sans), Arial, sans-serif;
+  letter-spacing: -0.025em;
+}
+.patient-modern main {
+  max-width: 1120px;
+  margin-inline: auto;
+  padding-top: 12px;
+}
+.patient-modern .patient-mobile-header {
+  background: #fff;
+  border: 0;
+  border-bottom: 1px solid #e4eceb;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 8px 0 16px;
+  margin-bottom: 22px;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.patient-modern .patient-mobile-header > div:first-child {
+  flex-shrink: 1;
+}
+.patient-modern
+  .patient-mobile-header
+  button[aria-label="Đổi hồ sơ y tế đang xem"] {
+  background: #fff;
+  box-shadow: none;
+  min-height: 44px;
+  height: auto;
+  padding: 6px 8px;
+  max-width: 156px;
+}
+.patient-modern nav[aria-label="Điều hướng dưới"] {
+  background: #fff;
+  border-color: #e4eceb;
+  box-shadow: 0 -2px 12px #17312f05;
+}
+.patient-modern :where(a, button, summary):focus-visible {
+  outline: 3px solid #006f67;
+  outline-offset: 3px;
+}
+.patient-modern .patient-title {
+  font-size: clamp(24px, 4vw, 32px);
+  line-height: 1.25;
+  font-weight: 750;
+  overflow-wrap: anywhere;
+}
+.patient-modern .patient-subtitle {
+  font-size: 14px;
+  line-height: 1.6;
+  color: #546879;
+}
+.patient-modern .patient-card {
+  border: 1px solid #dfe7e7;
+  border-radius: 10px;
+  background: white;
+  padding: 16px;
+  min-width: 0;
+}
+.patient-modern .patient-heading {
+  font-size: 18px;
+  font-weight: 750;
+  line-height: 1.4;
+}
+.patient-modern .patient-section {
+  margin-top: 24px;
+  min-width: 0;
+}
+.patient-modern .patient-primary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 48px;
+  padding: 12px 16px;
+  border-radius: 8px;
+  background: #005b55;
+  color: white;
+  font-weight: 700;
+  text-align: center;
+}
+.patient-modern .patient-primary:hover {
+  background: #073c39;
+}
+.patient-modern .patient-primary svg {
+  width: 21px;
+  height: 21px;
+  flex-shrink: 0;
+}
+.patient-modern .patient-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  min-height: 56px;
+}
+.patient-modern .patient-row > svg {
+  width: 24px;
+  height: 24px;
+  color: #005b55;
+  flex-shrink: 0;
+}
+.patient-modern .patient-row > div {
+  flex: 1;
+  min-width: 0;
+}
+.patient-modern .patient-row p {
+  overflow-wrap: anywhere;
+}
+.patient-modern .patient-date {
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  align-self: stretch;
+  min-width: 56px;
+  padding: 8px;
+  border-radius: 8px;
+  background: #edf7f5;
+  color: #005b55;
+  font-size: 13px;
+  font-weight: 700;
+}
+.patient-modern .patient-date strong {
+  font-size: 28px;
+  line-height: 1.2;
+}
+.patient-modern .patient-shortcuts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 16px;
+}
+.patient-modern .patient-shortcut {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 80px;
+  border: 1px solid #dfe7e7;
+  border-radius: 8px;
+  padding: 12px;
+  min-width: 0;
+  transition: background 0.15s;
+}
+.patient-modern .patient-shortcut:hover {
+  background: #f1f8f6;
+}
+.patient-modern .patient-shortcut > svg {
+  width: 25px;
+  height: 25px;
+  color: #005b55;
+  flex-shrink: 0;
+}
+.patient-modern .patient-shortcut span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.patient-modern .patient-shortcut strong {
+  display: block;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.patient-modern .patient-shortcut small {
+  display: block;
+  color: #546879;
+  font-size: 12px;
+  margin-top: 2px;
+}
+.patient-modern .patient-more {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-top: 20px;
+  border-top: 1px solid #e4eceb;
+  padding-top: 12px;
+}
+.patient-modern .patient-more a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  color: #005b55;
+  font-size: 14px;
+  font-weight: 650;
+}
+.patient-modern .patient-more svg {
+  width: 17px;
+  height: 17px;
+}
+.patient-modern .patient-visit-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 0;
+  border-top: 1px solid #edf1f1;
+  min-width: 0;
+}
+.patient-modern .patient-visit-row:first-child {
+  border-top: 0;
+}
+.patient-modern .patient-visit-row > div:nth-child(2) {
+  flex: 1;
+  min-width: 0;
+}
+.patient-modern .patient-visit-row p {
+  overflow-wrap: anywhere;
+}
+.patient-modern .patient-visit-row > svg {
+  width: 20px;
+  flex-shrink: 0;
+  color: #005b55;
+}
+.patient-modern .patient-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  border-radius: 8px;
+  padding: 12px;
+  background: #f0f7fc;
+  font-size: 13px;
+  line-height: 1.7;
+  color: #3d566c;
+  margin-top: 12px;
+}
+.patient-modern .patient-notice svg {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.patient-modern .patient-error {
+  background: #fff6e7;
+  color: #784a13;
+}
+.patient-modern .patient-error a,
+.patient-modern .patient-error button {
+  text-decoration: underline;
+  font-weight: 700;
+}
+.patient-modern .visit-context {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+  font-size: 14px;
+  line-height: 1.6;
+}
+.patient-modern .visit-context > div {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+}
+.patient-modern .visit-context svg {
+  color: #005b55;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+.patient-modern .visit-tabs {
+  display: flex;
+  overflow: auto;
+  border-bottom: 1px solid #dfe7e7;
+  margin: 20px 0 0;
+  scrollbar-width: thin;
+}
+.patient-modern .visit-tabs button {
+  background: transparent;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  padding: 12px 8px;
+  flex: 1;
+  white-space: nowrap;
+  min-height: 48px;
+  color: #546879;
+  font-size: 14px;
+  font-weight: 650;
+}
+.patient-modern .visit-tabs button[aria-selected="true"] {
+  color: #005b55;
+  border-bottom-color: #005b55;
+  font-weight: 750;
+}
+.patient-modern .visit-tab-content {
+  padding-top: 20px;
+  min-width: 0;
+}
+.patient-modern .visit-tab-content > section {
+  margin-bottom: 18px;
+}
+.patient-modern .visit-tab-content .rounded-md {
+  box-shadow: none;
+}
+.patient-modern .patient-lab-list {
+  margin: 8px 0 0;
+}
+.patient-modern .patient-lab-row {
+  padding: 16px 0;
+  border-bottom: 1px solid #e4eceb;
+  min-width: 0;
+}
+.patient-modern .patient-lab-row:last-child {
+  border-bottom: 0;
+}
+.patient-modern .patient-lab-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.patient-modern .patient-lab-top dt {
+  flex: 1;
+  min-width: 100px;
+  font-weight: 700;
+  font-size: 16px;
+  overflow-wrap: anywhere;
+}
+.patient-modern .patient-lab-top dd {
+  font-weight: 750;
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+.patient-modern .patient-reference {
+  margin-top: 6px;
+  color: #546879;
+  font-size: 14px;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+.patient-modern .patient-result-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 6px;
+  padding: 3px 8px;
+  background: #f1f5f5;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 700;
+}
+.patient-modern .patient-result-label[data-tone="high"] {
+  background: #fff0cc;
+  color: #805109;
+}
+.patient-modern .patient-result-label[data-tone="low"] {
+  background: #e7f3ff;
+  color: #175887;
+}
+.patient-modern .visit-related {
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+}
+.patient-modern .visit-related button {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 68px;
+  padding: 12px 14px;
+  border: 1px solid #dfe7e7;
+  border-radius: 8px;
+  background: #fff;
+  text-align: left;
+  width: 100%;
+}
+.patient-modern .visit-related button > span {
+  flex: 1;
+  min-width: 0;
+}
+.patient-modern .visit-related svg {
+  width: 23px;
+  height: 23px;
+  color: #005b55;
+  flex-shrink: 0;
+}
+.patient-modern .visit-related small {
+  display: block;
+  margin-top: 3px;
+  font-size: 13px;
+  color: #546879;
+}
+.patient-modern .visit-show-all {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid #8cbab4;
+  background: #fff;
+  color: #005b55;
+  font-weight: 700;
+  min-height: 48px;
+  border-radius: 8px;
+  width: 100%;
+  margin-top: 16px;
+}
+.patient-modern .visit-tab-content [id] {
+  scroll-margin-top: 20px;
+}
+.patient-modern .patient-summary dl {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.patient-modern .patient-summary dt {
+  font-size: 13px;
+  color: #546879;
+}
+.patient-modern .patient-summary dd {
+  font-size: 15px;
+  font-weight: 650;
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+}
+@media (min-width: 768px) {
+  .patient-modern .patient-home-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 24px;
+  }
+  .patient-modern .patient-shortcuts {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .patient-modern .patient-shortcut {
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    min-height: 100px;
+  }
+  .patient-modern .patient-card {
+    padding: 20px;
+  }
+  .patient-modern .patient-lab-top dt,
+  .patient-modern .patient-lab-top dd {
+    font-size: 17px;
+  }
+}
+@media (max-width: 359px) {
+  .patient-modern .patient-mobile-header > div:last-child {
+    flex-basis: 100%;
+    justify-content: flex-end;
+  }
+  .patient-modern .patient-shortcut {
+    padding: 10px;
+    gap: 7px;
+  }
+  .patient-modern .patient-shortcut > svg {
+    width: 22px;
+    height: 22px;
+  }
+  .patient-modern .visit-tabs button {
+    font-size: 13px;
+    padding-inline: 6px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .patient-modern * {
+    scroll-behavior: auto !important;
+    transition: none !important;
+    animation: none !important;
+  }
+}

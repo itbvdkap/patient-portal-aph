@@ -32,6 +32,7 @@ import { InstallAppButton } from "@/components/install-app-button";
 import { AccessibilityTextToggle } from "@/components/accessibility-text-toggle";
 import { hospitalHotlines, hospitalZaloUrl } from "@/lib/content/hospital-info";
 import type { PatientSessionProfile } from "@/lib/auth/session";
+import "./patient-modern.css";
 
 type NavItem = {
   href: string;
@@ -93,6 +94,7 @@ export function AppShell({
   const accountItem = decoratedMoreItems.find((item) => item.href === "/profile") ?? moreItems[moreItems.length - 1];
   const showBackButton = pathname !== "/dashboard";
   const showHeaderUtilities = pathname === "/dashboard";
+  const modern = pathname === "/dashboard" || /^\/visits\/[^/]+\/?$/.test(pathname);
 
   async function logout() {
     await fetch("/api/auth/logout", { method: "POST" }).catch(() => undefined);
@@ -110,7 +112,7 @@ export function AppShell({
   }
 
   return (
-    <div className="min-h-screen">
+    <div className={`min-h-screen ${modern ? "patient-modern" : ""}`}>
       <DemoBanner />
       <div className="mx-auto flex min-h-[calc(100vh-40px)] max-w-[1440px]">
         <aside className="hidden w-64 shrink-0 border-r border-cream-200 bg-cream-50/95 px-3 py-5 shadow-[0_8px_22px_rgba(7,60,57,0.055)] lg:block">
@@ -136,9 +138,9 @@ export function AppShell({
         </aside>
 
         <main className="w-full min-w-0 px-3 pb-24 pt-3 sm:px-5 lg:px-7 lg:pb-8 lg:pt-5">
-          <div className="mb-3 flex min-h-14 items-center justify-between gap-2 rounded-md border border-cream-200 bg-cream-50 px-2.5 py-2 shadow-[0_8px_22px_rgba(7,60,57,0.055)] sm:px-3 lg:hidden">
+          <div className="patient-mobile-header mb-3 flex min-h-14 items-center justify-between gap-2 rounded-md border border-cream-200 bg-cream-50 px-2.5 py-2 shadow-[0_8px_22px_rgba(7,60,57,0.055)] sm:px-3 lg:hidden">
             <div className="flex min-w-0 shrink-0 items-center gap-1.5">
-              {showBackButton && (
+              {showBackButton && !modern && (
                 <button
                   type="button"
                   onClick={goBack}
@@ -149,7 +151,7 @@ export function AppShell({
                   <ArrowLeft aria-hidden="true" className="h-5 w-5" />
                 </button>
               )}
-              <Brand compact />
+              <Brand compact modern={modern} />
             </div>
             <div className="flex min-w-0 flex-1 items-center justify-end gap-1">
               {showHeaderUtilities && (
@@ -326,12 +328,12 @@ function ProfileQuickSwitch({
   );
 }
 
-function Brand({ compact = false }: { compact?: boolean }) {
+function Brand({ compact = false, modern = false }: { compact?: boolean; modern?: boolean }) {
   return (
     <div className="flex items-center gap-3">
       <BrandLogo size={compact ? 34 : 44} />
-      <div className={`min-w-0 ${compact ? "hidden min-[520px]:block" : ""}`}>
-        <p className="truncate text-sm font-bold text-ink">Bệnh viện Đa khoa An Phú</p>
+      <div className={`min-w-0 ${compact && !modern ? "hidden min-[520px]:block" : ""}`}>
+        <p className="truncate text-sm font-bold text-ink">{modern ? "AnPhuCare" : "Bệnh viện Đa khoa An Phú"}</p>
         {!compact && <p className="mt-0.5 text-xs font-semibold uppercase text-primary-700">Cổng thông tin bệnh nhân</p>}
       </div>
     </div>

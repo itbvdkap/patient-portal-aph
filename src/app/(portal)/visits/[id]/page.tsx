@@ -1,13 +1,32 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowDown, ArrowUp, ChevronDown } from "lucide-react";
-import { Badge, EmptyState, Field, PageHeader, Panel, SectionHeader, SecureDataNotice } from "@/components/ui";
+import {
+  ArrowDown,
+  ArrowUp,
+  ArrowLeft,
+  CalendarDays,
+  ChevronDown,
+  Info,
+  Stethoscope,
+  UserRound,
+} from "lucide-react";
+import { Badge, EmptyState, SectionHeader } from "@/components/ui";
+import { PatientVisitTabs } from "@/components/patient-visit-tabs";
 import { createPatientRepository } from "@/lib/data";
-import type { ImagingResult, LabResult, PrescriptionItem, Service } from "@/types/patient";
+import type {
+  ImagingResult,
+  LabResult,
+  PrescriptionItem,
+  Service,
+} from "@/types/patient";
 import { formatDate, formatDateTime } from "@/utils/format";
 import { normalizeDisplayText } from "@anphu/patient-domain";
 
-export default async function VisitDetailPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function VisitDetailPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
   const { id } = await params;
   const repository = createPatientRepository();
   const patient = await repository.getCurrentPatient();
@@ -20,156 +39,279 @@ export default async function VisitDetailPage({ params }: { params: Promise<{ id
   const labGroups = groupLabResults(visit.labResults);
   const imagingGroups = groupByDate(visit.imagingResults, (item) => item.date);
   const serviceGroups = groupByDate(visit.services, (item) => item.performedAt);
-  const prescriptionGroups = groupPrescriptionItems(visit.prescription?.items ?? []);
+  const prescriptionGroups = groupPrescriptionItems(
+    visit.prescription?.items ?? [],
+  );
   const hasVitalSigns = Boolean(
     visit.vitalSigns.bloodPressure ||
-      visit.vitalSigns.pulse ||
-      visit.vitalSigns.temperature ||
-      visit.vitalSigns.weight ||
-      visit.vitalSigns.height ||
-      visit.vitalSigns.bmi,
+    visit.vitalSigns.pulse ||
+    visit.vitalSigns.temperature ||
+    visit.vitalSigns.weight ||
+    visit.vitalSigns.height ||
+    visit.vitalSigns.bmi,
   );
 
-  return (
-    <>
-      <Link href="/visits" className="mb-3 inline-flex min-h-9 items-center rounded-md border border-cream-200 bg-cream-50 px-3 text-sm font-bold text-slate-700 shadow-sm hover:bg-cream-100">
-        ← Quay lại lịch sử khám
-      </Link>
-      <PageHeader
-        title="Chi tiết lần khám"
-        description={`${formatDateTime(visit.visitDate)} - ${visit.departmentName || "Tiếp đón/KCB"}`}
-        actions={<Badge tone="blue">{visit.status || "Đã ghi nhận"}</Badge>}
-      />
-      <SecureDataNotice label="Hồ sơ khám bệnh được bảo vệ trong phiên đăng nhập" />
-
-      <div className="space-y-4">
-        <Panel>
+  const sections = {
+    overview: (
+      <>
+        <section className="patient-card patient-summary">
           <SectionHeader title="Tổng quan" />
-          <dl className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-            <Field label="Ngày khám" value={formatDateTime(visit.visitDate)} />
-            <Field label="Phòng" value={emptyText(visit.departmentName)} />
-            <Field label="Bác sĩ" value={emptyText(normalizeDisplayText(visit.doctorName))} />
-            <Field label="Mã lượt" value={visit.hisVisitId} />
-            <Field label="Hẹn tái khám" value={visit.followUpDate ? formatDate(visit.followUpDate) : "Chưa ghi nhận"} />
-          </dl>
-        </Panel>
-
-        <Panel>
-          <SectionHeader title="Chẩn đoán" />
-          <div className="space-y-2">
-            <InfoLine label="CD ra viện" value={visit.primaryDiagnosis} />
-            {visit.secondaryDiagnosis && <InfoLine label="Chẩn đoán kèm theo" value={visit.secondaryDiagnosis} />}
-          </div>
-          {visit.notes && <p className="mt-3 whitespace-pre-line rounded-md bg-slate-50 p-3 text-sm leading-6 text-slate-700">{visit.notes}</p>}
-        </Panel>
-
-        {hasVitalSigns && (
-          <Panel>
-            <SectionHeader title="Dấu hiệu sinh tồn" />
-            <dl className="grid gap-2 sm:grid-cols-3">
-              <Field label="Huyết áp" value={emptyText(visit.vitalSigns.bloodPressure)} />
-              <Field label="Mạch" value={visit.vitalSigns.pulse ? `${visit.vitalSigns.pulse} lần/phút` : "Chưa ghi nhận"} />
-              <Field label="Nhiệt độ" value={visit.vitalSigns.temperature ? `${visit.vitalSigns.temperature}°C` : "Chưa ghi nhận"} />
-              <Field label="Cân nặng" value={visit.vitalSigns.weight ? `${visit.vitalSigns.weight} kg` : "Chưa ghi nhận"} />
-              <Field label="Chiều cao" value={visit.vitalSigns.height ? `${visit.vitalSigns.height} cm` : "Chưa ghi nhận"} />
-              <Field label="BMI" value={visit.vitalSigns.bmi ? String(visit.vitalSigns.bmi) : "Chưa ghi nhận"} />
-            </dl>
-          </Panel>
-        )}
-
-        <Panel>
-          <SectionHeader title="Chỉ định" meta={`${visit.services.length} dịch vụ`} />
-          {serviceGroups.length > 0 ? (
-            <div className="space-y-3">
-              {serviceGroups.map((group) => (
-                <section key={group.dateKey}>
-                  <p className="mb-2 text-sm font-bold text-slate-700">{group.title}</p>
-                  <div className="space-y-2">
-                    {group.items.map((service) => (
-                      <ServiceRow key={service.id} service={service} />
-                    ))}
-                  </div>
-                </section>
-              ))}
+          <dl>
+            <div>
+              <dt>Ngày khám</dt>
+              <dd>{formatDateTime(visit.visitDate)}</dd>
             </div>
+            <div>
+              <dt>Phòng khám</dt>
+              <dd>{emptyText(visit.departmentName)}</dd>
+            </div>
+            <div>
+              <dt>Bác sĩ</dt>
+              <dd>{emptyText(normalizeDisplayText(visit.doctorName))}</dd>
+            </div>
+            <div>
+              <dt>Mã lượt</dt>
+              <dd>{visit.hisVisitId}</dd>
+            </div>
+            <div>
+              <dt>Hẹn tái khám</dt>
+              <dd>
+                {visit.followUpDate
+                  ? formatDate(visit.followUpDate)
+                  : "Chưa ghi nhận"}
+              </dd>
+            </div>
+          </dl>
+        </section>
+        <section className="patient-card">
+          <SectionHeader title="Chẩn đoán" />
+          <InfoLine label="Chẩn đoán ra viện" value={visit.primaryDiagnosis} />
+          {visit.secondaryDiagnosis && (
+            <InfoLine
+              label="Chẩn đoán kèm theo"
+              value={visit.secondaryDiagnosis}
+            />
+          )}
+          {visit.notes && (
+            <p className="mt-3 whitespace-pre-line text-sm leading-7">
+              {visit.notes}
+            </p>
+          )}
+        </section>
+        {hasVitalSigns && (
+          <section className="patient-card patient-summary">
+            <SectionHeader title="Dấu hiệu sinh tồn" />
+            <dl>
+              <div>
+                <dt>Huyết áp</dt>
+                <dd>{emptyText(visit.vitalSigns.bloodPressure)}</dd>
+              </div>
+              <div>
+                <dt>Mạch</dt>
+                <dd>
+                  {visit.vitalSigns.pulse
+                    ? `${visit.vitalSigns.pulse} lần/phút`
+                    : "Chưa ghi nhận"}
+                </dd>
+              </div>
+              <div>
+                <dt>Nhiệt độ</dt>
+                <dd>
+                  {visit.vitalSigns.temperature
+                    ? `${visit.vitalSigns.temperature}°C`
+                    : "Chưa ghi nhận"}
+                </dd>
+              </div>
+              <div>
+                <dt>Cân nặng</dt>
+                <dd>
+                  {visit.vitalSigns.weight
+                    ? `${visit.vitalSigns.weight} kg`
+                    : "Chưa ghi nhận"}
+                </dd>
+              </div>
+              <div>
+                <dt>Chiều cao</dt>
+                <dd>
+                  {visit.vitalSigns.height
+                    ? `${visit.vitalSigns.height} cm`
+                    : "Chưa ghi nhận"}
+                </dd>
+              </div>
+              <div>
+                <dt>BMI</dt>
+                <dd>
+                  {visit.vitalSigns.bmi
+                    ? String(visit.vitalSigns.bmi)
+                    : "Chưa ghi nhận"}
+                </dd>
+              </div>
+            </dl>
+          </section>
+        )}
+        <section className="patient-card">
+          <SectionHeader
+            title="Chỉ định"
+            meta={`${visit.services.length} dịch vụ`}
+          />
+          {serviceGroups.length ? (
+            serviceGroups.map((group) => (
+              <div key={group.dateKey} className="mb-4">
+                <p className="patient-subtitle mb-2">{group.title}</p>
+                <div className="space-y-2">
+                  {group.items.map((service) => (
+                    <ServiceRow key={service.id} service={service} />
+                  ))}
+                </div>
+              </div>
+            ))
           ) : (
             <EmptyState text="Chưa có chỉ định dịch vụ." />
           )}
-        </Panel>
-
-        <Panel>
-          <SectionHeader title="Kết quả xét nghiệm" meta={`${labGroups.length} phiếu`} />
-          {labGroups.length > 0 ? (
-            <div className="space-y-2">
-              {labGroups.map((group) => (
-                <details key={group.key} className="group rounded-md border border-slate-200 bg-white">
-                  <summary className="flex cursor-pointer list-none items-start justify-between gap-3 p-3">
-                    <span className="min-w-0">
-                      <span className="block font-bold text-ink">{group.serviceName}</span>
-                      <span className="mt-1 block text-sm text-slate-600">
-                        {formatDateTime(group.performedAt)} · {group.items.length} chỉ số
-                      </span>
-                    </span>
-                    <span className="flex shrink-0 flex-col items-end gap-1">
-                      {group.abnormalCount > 0 && <Badge tone="amber">{group.abnormalCount} bất thường</Badge>}
-                      <span className="text-xs font-bold text-primary-700 group-open:hidden">Xem</span>
-                      <span className="hidden text-xs font-bold text-primary-700 group-open:inline">Thu gọn</span>
-                    </span>
-                  </summary>
-                  <div className="details-reveal">
-                    <LabResultTable items={group.items} />
-                  </div>
-                </details>
-              ))}
-            </div>
+        </section>
+        <section className="patient-card">
+          <SectionHeader title="Lời dặn bác sĩ" />
+          {visit.doctorAdvice ? (
+            <p className="whitespace-pre-line text-sm leading-7">
+              {visit.doctorAdvice}
+            </p>
           ) : (
-            <EmptyState text="Chưa có kết quả xét nghiệm trong lần khám này." />
+            <EmptyState text="Chưa có lời dặn." />
           )}
-        </Panel>
-
-        <Panel>
-          <SectionHeader title="Chẩn đoán hình ảnh" meta={`${visit.imagingResults.length} kết quả`} />
-          {imagingGroups.length > 0 ? (
-            <div className="space-y-3">
-              {imagingGroups.map((group) => (
-                <section key={group.dateKey}>
-                  <p className="mb-2 text-sm font-bold text-slate-700">{group.title}</p>
-                  <div className="space-y-2">
-                    {group.items.map((item) => (
-                      <ImagingDetails key={item.id} item={item} />
-                    ))}
-                  </div>
-                </section>
-              ))}
+        </section>
+      </>
+    ),
+    labs: (
+      <section aria-label="Kết quả xét nghiệm">
+        <h2 className="patient-heading mb-2">Kết quả xét nghiệm</h2>
+        {labGroups.length ? (
+          labGroups.map((group) => (
+            <details
+              key={group.key}
+              open={labGroups.length === 1}
+              className="group border-b border-slate-200"
+            >
+              <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-3 py-3">
+                <span>
+                  <span className="block text-sm font-semibold">
+                    {group.serviceName}
+                  </span>
+                  <span className="patient-subtitle">
+                    {formatDateTime(group.performedAt)} · {group.items.length}{" "}
+                    chỉ số
+                  </span>
+                </span>
+                <ChevronDown
+                  aria-hidden="true"
+                  className="h-5 w-5 shrink-0 text-primary-700 transition group-open:rotate-180"
+                />
+              </summary>
+              <LabResultList items={group.items} />
+            </details>
+          ))
+        ) : (
+          <EmptyState text="Chưa có kết quả xét nghiệm trong lần khám này." />
+        )}
+        {labGroups.length > 0 && (
+          <p className="patient-notice">
+            <Info aria-hidden="true" />
+            <span>
+              Cờ theo phiếu xét nghiệm. Trao đổi với bác sĩ để được giải thích.
+            </span>
+          </p>
+        )}
+      </section>
+    ),
+    imaging: (
+      <section aria-label="Kết quả chẩn đoán hình ảnh">
+        <h2 className="patient-heading mb-3">Chẩn đoán hình ảnh</h2>
+        {imagingGroups.length ? (
+          imagingGroups.map((group) => (
+            <div key={group.dateKey} className="mb-4">
+              <p className="patient-subtitle mb-2">{group.title}</p>
+              <div className="space-y-3">
+                {group.items.map((item) => (
+                  <ImagingDetails key={item.id} item={item} />
+                ))}
+              </div>
             </div>
-          ) : (
-            <EmptyState text="Chưa có kết quả chẩn đoán hình ảnh trong lần khám này." />
-          )}
-        </Panel>
-
-        <Panel>
-          <SectionHeader title="Đơn thuốc" meta={visit.prescription ? `${visit.prescription.items.length} thuốc` : undefined} />
-          {visit.prescription && visit.prescription.items.length > 0 ? (
-            <div className="space-y-4">
-              <p className="text-sm text-slate-600">
-                Ngày kê: {formatDateTime(visit.prescription.prescribedAt)}
-                {visit.prescription.doctorName ? ` - ${visit.prescription.doctorName}` : ""}
-              </p>
+          ))
+        ) : (
+          <EmptyState text="Chưa có kết quả chẩn đoán hình ảnh trong lần khám này." />
+        )}
+      </section>
+    ),
+    medications: (
+      <section aria-label="Đơn thuốc của lần khám">
+        <h2 className="patient-heading mb-3">
+          Đơn thuốc
+          {visit.prescription?.items.length
+            ? ` · ${visit.prescription.items.length} thuốc`
+            : ""}
+        </h2>
+        {visit.prescription?.items.length ? (
+          <>
+            <p className="patient-subtitle mb-4">
+              Ngày kê: {formatDateTime(visit.prescription.prescribedAt)}
+              {visit.prescription.doctorName
+                ? ` · ${visit.prescription.doctorName}`
+                : ""}
+            </p>
+            <div className="space-y-5">
               {prescriptionGroups.map((group) => (
                 <PrescriptionGroup key={group.key} group={group} />
               ))}
             </div>
-          ) : (
-            <EmptyState text="Không có đơn thuốc trong lần khám này." />
-          )}
-        </Panel>
-
-        <Panel>
-          <SectionHeader title="Lời dặn bác sĩ" />
-          {visit.doctorAdvice ? <p className="whitespace-pre-line text-sm leading-6 text-slate-700">{visit.doctorAdvice}</p> : <EmptyState text="Chưa có lời dặn." />}
-        </Panel>
+          </>
+        ) : (
+          <EmptyState text="Không có đơn thuốc trong lần khám này." />
+        )}
+      </section>
+    ),
+  };
+  return (
+    <article aria-label="Chi tiết lần khám của bệnh nhân">
+      <div className="flex items-center gap-3">
+        <Link
+          href="/visits"
+          aria-label="Quay lại lịch sử khám"
+          className="inline-flex h-11 w-11 shrink-0 items-center justify-center text-primary-700"
+        >
+          <ArrowLeft aria-hidden="true" className="h-6 w-6" />
+        </Link>
+        <h1 className="patient-title">Chi tiết lần khám</h1>
       </div>
-    </>
+      <header className="patient-card mt-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="font-bold text-lg break-words">{patient.fullName}</p>
+            <p className="patient-subtitle mt-1">BN {patient.hisPatientCode}</p>
+          </div>
+          <Badge tone="blue">{visit.status || "Đã ghi nhận"}</Badge>
+        </div>
+        <div className="visit-context border-t border-slate-100 pt-3">
+          <div>
+            <CalendarDays aria-hidden="true" />
+            <span>{formatDateTime(visit.visitDate)}</span>
+          </div>
+          <div>
+            <Stethoscope aria-hidden="true" />
+            <span>{visit.departmentName || "Chưa ghi nhận phòng khám"}</span>
+          </div>
+          <div>
+            <UserRound aria-hidden="true" />
+            <span>{emptyText(normalizeDisplayText(visit.doctorName))}</span>
+          </div>
+        </div>
+      </header>
+      <PatientVisitTabs
+        key={visit.id}
+        sections={sections}
+        hasLabs={labGroups.length > 0}
+        imagingCount={visit.imagingResults.length}
+        medicineCount={visit.prescription?.items.length ?? 0}
+      />
+    </article>
   );
 }
 
@@ -177,7 +319,9 @@ function InfoLine({ label, value }: { label: string; value?: string }) {
   return (
     <div className="rounded-md bg-slate-50 p-3">
       <p className="text-xs font-bold uppercase text-slate-500">{label}</p>
-      <p className="mt-1 text-sm font-semibold leading-6 text-ink">{emptyText(value)}</p>
+      <p className="mt-1 text-sm font-semibold leading-6 text-ink">
+        {emptyText(value)}
+      </p>
     </div>
   );
 }
@@ -186,51 +330,42 @@ function ServiceRow({ service }: { service: Service }) {
   return (
     <div className="flex items-start justify-between gap-2 rounded-md border border-slate-200 p-3">
       <div className="min-w-0">
-        <p className="font-semibold leading-6 text-ink">{service.serviceName}</p>
-        <p className="mt-1 text-xs text-slate-500">{formatDateTime(service.performedAt)}</p>
+        <p className="font-semibold leading-6 text-ink">
+          {service.serviceName}
+        </p>
+        <p className="mt-1 text-xs text-slate-500">
+          {formatDateTime(service.performedAt)}
+        </p>
       </div>
-      <Badge tone={service.status === "Có kết quả" ? "green" : "slate"}>{service.status}</Badge>
+      <Badge tone={service.status === "Có kết quả" ? "green" : "slate"}>
+        {service.status}
+      </Badge>
     </div>
   );
 }
 
-function LabResultTable({ items }: { items: LabResult[] }) {
+function LabResultList({ items }: { items: LabResult[] }) {
   return (
-    <div className="overflow-x-auto border-t border-slate-100">
-      <table className="min-w-[680px] text-left text-sm sm:min-w-full">
-        <thead className="border-b border-cream-200 bg-cream-100 text-xs uppercase text-slate-500">
-          <tr>
-            <th className="px-3 py-2 font-bold">Tên chỉ số</th>
-            <th className="px-3 py-2 font-bold">Kết quả</th>
-            <th className="px-3 py-2 font-bold">Tham chiếu</th>
-            <th className="px-3 py-2 font-bold">Đánh giá</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-slate-100">
-          {items.map((item) => {
-            const flagTone = getLabFlagTone(item.flag);
-
-            return (
-            <tr key={item.id} className={`align-top ${flagTone === "normal" ? "" : flagTone === "low" ? "bg-sky-50/70" : "bg-rose-50/70"}`}>
-              <td className="px-3 py-2 font-semibold leading-5 text-ink">
-                <span className="flex items-start gap-2">
-                  {flagTone !== "normal" && <span className={`mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full ${flagTone === "low" ? "bg-sky-500" : "bg-rose-500"}`} aria-hidden="true" />}
-                  <span>{item.testName}</span>
-                </span>
-              </td>
-              <td className={`clinical-mono px-3 py-2 font-semibold ${flagTone === "normal" ? "text-slate-700" : flagTone === "low" ? "text-sky-900" : "text-rose-900"}`}>
-                {item.result} {item.unit || ""}
-              </td>
-              <td className="clinical-mono px-3 py-2 text-slate-600">{item.referenceRange || "-"}</td>
-              <td className="px-3 py-2">
-                <LabFlagBadge flag={item.flag} />
-              </td>
-            </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
+    <dl className="patient-lab-list">
+      {items.map((item) => (
+        <div key={item.id} className="patient-lab-row">
+          <div className="patient-lab-top">
+            <dt>{item.testName}</dt>
+            <dd>
+              {item.result}
+              <span className="font-medium">
+                {item.unit ? ` ${item.unit}` : ""}
+              </span>
+            </dd>
+            {item.flag && <LabFlagBadge flag={item.flag} />}
+          </div>
+          <div className="patient-reference">
+            <span>Tham chiếu: </span>
+            {item.referenceRange || "Chưa ghi nhận"}
+          </div>
+        </div>
+      ))}
+    </dl>
   );
 }
 
@@ -239,20 +374,34 @@ function PrescriptionGroup({ group }: { group: PrescriptionGroupData }) {
     <section className="space-y-2">
       <div className="flex items-center justify-between gap-3">
         <h3 className="text-sm font-bold text-ink">{group.title}</h3>
-        <Badge tone={group.key === "bhyt" ? "green" : "slate"}>{group.items.length} thuốc</Badge>
+        <Badge tone={group.key === "bhyt" ? "green" : "slate"}>
+          {group.items.length} thuốc
+        </Badge>
       </div>
       <div className="space-y-2">
         {group.items.map((item) => (
           <div key={item.id} className="rounded-md border border-slate-200 p-3">
             <div className="flex flex-wrap items-start justify-between gap-2">
               <p className="font-bold text-ink">{item.medicineName}</p>
-              {item.payerType && <Badge tone={group.key === "bhyt" ? "green" : "slate"}>{item.payerType}</Badge>}
+              {item.payerType && (
+                <Badge tone={group.key === "bhyt" ? "green" : "slate"}>
+                  {item.payerType}
+                </Badge>
+              )}
             </div>
             {(item.activeIngredient || item.strength || item.route) && (
-              <p className="mt-1 text-sm text-slate-600">{[item.activeIngredient, item.strength, item.route].filter(Boolean).join(" · ")}</p>
+              <p className="mt-1 text-sm text-slate-600">
+                {[item.activeIngredient, item.strength, item.route]
+                  .filter(Boolean)
+                  .join(" · ")}
+              </p>
             )}
-            <p className="mt-2 text-sm font-semibold text-ink">SL: {emptyText(item.quantity)}</p>
-            <p className="mt-1 text-sm leading-6 text-slate-700">{item.instruction || item.dosage || "Chưa ghi nhận cách dùng"}</p>
+            <p className="mt-2 text-sm font-semibold text-ink">
+              SL: {emptyText(item.quantity)}
+            </p>
+            <p className="mt-1 text-sm leading-6 text-slate-700">
+              {item.instruction || item.dosage || "Chưa ghi nhận cách dùng"}
+            </p>
           </div>
         ))}
       </div>
@@ -261,8 +410,6 @@ function PrescriptionGroup({ group }: { group: PrescriptionGroupData }) {
 }
 
 function ImagingDetails({ item }: { item: ImagingResult }) {
-  const hasNotableConclusion = isNotableImagingConclusion(item.conclusion);
-
   return (
     <details className="group rounded-md border border-slate-200 bg-white">
       <summary className="flex cursor-pointer list-none items-start justify-between gap-3 p-3">
@@ -276,7 +423,10 @@ function ImagingDetails({ item }: { item: ImagingResult }) {
         <span className="inline-flex shrink-0 items-center gap-1 text-xs font-bold text-primary-700">
           <span className="group-open:hidden">Xem</span>
           <span className="hidden group-open:inline">Thu gọn</span>
-          <ChevronDown aria-hidden="true" className="h-4 w-4 transition group-open:rotate-180" />
+          <ChevronDown
+            aria-hidden="true"
+            className="h-4 w-4 transition group-open:rotate-180"
+          />
         </span>
       </summary>
       <div className="details-reveal border-t border-slate-100">
@@ -284,20 +434,19 @@ function ImagingDetails({ item }: { item: ImagingResult }) {
           {item.description && (
             <div>
               <p className="font-bold text-slate-600">Mô tả</p>
-              <p className="mt-1 whitespace-pre-line text-slate-700">{item.description}</p>
+              <p className="mt-1 whitespace-pre-line text-slate-700">
+                {item.description}
+              </p>
             </div>
           )}
           {item.conclusion && (
             <div>
               <p className="font-bold text-slate-600">Kết luận</p>
-              <p className="mt-1 whitespace-pre-line font-semibold text-ink">{normalizeDisplayText(item.conclusion)}</p>
-              {hasNotableConclusion && (
-                <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 p-2 text-sm font-semibold leading-6 text-amber-900">
-                  Có phát hiện cần lưu ý. Vui lòng trao đổi thêm với bác sĩ khi tái khám hoặc khi có triệu chứng bất thường.
-                </p>
-              )}
+              <p className="mt-1 whitespace-pre-line font-semibold text-ink">
+                {normalizeDisplayText(item.conclusion)}
+              </p>
             </div>
-            )}
+          )}
         </div>
       </div>
     </details>
@@ -305,12 +454,19 @@ function ImagingDetails({ item }: { item: ImagingResult }) {
 }
 
 function groupByDate<T>(items: T[], getDate: (item: T) => string) {
-  const groups = new Map<string, { dateKey: string; title: string; items: T[] }>();
+  const groups = new Map<
+    string,
+    { dateKey: string; title: string; items: T[] }
+  >();
 
   for (const item of items) {
     const value = getDate(item);
     const dateKey = formatDate(value);
-    const current = groups.get(dateKey) ?? { dateKey, title: dateKey, items: [] };
+    const current = groups.get(dateKey) ?? {
+      dateKey,
+      title: dateKey,
+      items: [],
+    };
     current.items.push(item);
     groups.set(dateKey, current);
   }
@@ -319,12 +475,27 @@ function groupByDate<T>(items: T[], getDate: (item: T) => string) {
 }
 
 function groupLabResults(items: LabResult[]) {
-  const groups = new Map<string, { key: string; serviceName: string; performedAt: string; abnormalCount: number; items: LabResult[] }>();
+  const groups = new Map<
+    string,
+    {
+      key: string;
+      serviceName: string;
+      performedAt: string;
+      abnormalCount: number;
+      items: LabResult[];
+    }
+  >();
 
   for (const item of items) {
     const serviceName = item.serviceName || "Xét nghiệm";
     const key = `${formatDateTime(item.performedAt)}-${serviceName}`;
-    const current = groups.get(key) ?? { key, serviceName, performedAt: item.performedAt, abnormalCount: 0, items: [] };
+    const current = groups.get(key) ?? {
+      key,
+      serviceName,
+      performedAt: item.performedAt,
+      abnormalCount: 0,
+      items: [],
+    };
     current.items.push(item);
     if (!isNormalLabFlag(item.flag)) {
       current.abnormalCount += 1;
@@ -341,7 +512,9 @@ interface PrescriptionGroupData {
   items: PrescriptionItem[];
 }
 
-function groupPrescriptionItems(items: PrescriptionItem[]): PrescriptionGroupData[] {
+function groupPrescriptionItems(
+  items: PrescriptionItem[],
+): PrescriptionGroupData[] {
   const bhytItems = items.filter((item) => isBhytPayer(item.payerType));
   const serviceItems = items.filter((item) => !isBhytPayer(item.payerType));
   const groups: PrescriptionGroupData[] = [];
@@ -351,7 +524,11 @@ function groupPrescriptionItems(items: PrescriptionItem[]): PrescriptionGroupDat
   }
 
   if (serviceItems.length > 0) {
-    groups.push({ key: "service", title: "Đơn thuốc thu phí", items: serviceItems });
+    groups.push({
+      key: "service",
+      title: "Đơn thuốc thu phí",
+      items: serviceItems,
+    });
   }
 
   return groups;
@@ -366,19 +543,14 @@ function isNormalLabFlag(value: LabResult["flag"] | string) {
 }
 
 function LabFlagBadge({ flag }: { flag: LabResult["flag"] | string }) {
-  if (isNormalLabFlag(flag)) {
-    return <Badge tone="green">Bình thường</Badge>;
-  }
-
   const tone = getLabFlagTone(flag);
-  const isLow = tone === "low";
-  const Icon = isLow ? ArrowDown : ArrowUp;
-
   return (
-    <span className={`inline-flex w-fit items-center gap-1 rounded-md px-2 py-1 text-xs font-black ${
-      isLow ? "bg-sky-100 text-sky-900" : "bg-rose-100 text-rose-900"
-    }`}>
-      <Icon aria-hidden="true" className="h-3.5 w-3.5" />
+    <span className="patient-result-label" data-tone={tone}>
+      {tone === "low" ? (
+        <ArrowDown aria-hidden="true" className="h-3 w-3" />
+      ) : tone === "high" ? (
+        <ArrowUp aria-hidden="true" className="h-3 w-3" />
+      ) : null}
       {flag}
     </span>
   );
@@ -387,19 +559,10 @@ function LabFlagBadge({ flag }: { flag: LabResult["flag"] | string }) {
 function getLabFlagTone(flag: LabResult["flag"] | string) {
   if (isNormalLabFlag(flag)) return "normal";
 
-  const text = String(flag ?? "").toLowerCase();
-  if (/(thấp|low|giảm|down|↓)/i.test(text)) return "low";
-  return "high";
-}
-
-function isNotableImagingConclusion(value?: string) {
-  const normalized = normalizeDisplayText(value ?? "").toLowerCase();
-
-  if (!normalized.trim()) {
-    return false;
-  }
-
-  return !/(bình thường|binh thuong|không phát hiện|khong phat hien|chưa phát hiện|chua phat hien)/i.test(normalized);
+  const text = String(flag ?? "").trim().toLocaleLowerCase("vi");
+  if (["thấp", "low", "↓"].includes(text)) return "low";
+  if (["cao", "high", "↑"].includes(text)) return "high";
+  return "unknown";
 }
 
 function emptyText(value?: string) {
