@@ -74,7 +74,7 @@ export interface PortalAccountAuthState {
   deletedAt?: string;
 }
 
-export async function getPortalAccountByPhone(phone: string): Promise<PortalAccountAuthState | null> {
+export async function getPortalAccountByPhone(phone: string, options: { failOnReadError?: boolean } = {}): Promise<PortalAccountAuthState | null> {
   const supabase = createSupabaseServiceClient();
   const { data, error } = await supabase
     .from("portal_accounts")
@@ -82,7 +82,11 @@ export async function getPortalAccountByPhone(phone: string): Promise<PortalAcco
     .eq("phone", phone)
     .maybeSingle();
 
-  if (error || !data) return null;
+  if (error) {
+    if (options.failOnReadError) throw new Error("Account lookup unavailable.");
+    return null;
+  }
+  if (!data) return null;
 
   return {
     accountId: data.id ?? accountIdFromPhone(phone),
@@ -209,7 +213,8 @@ export async function verifyPortalAccountPassword(phone: string, password: strin
     .eq("phone", phone)
     .maybeSingle();
 
-  if (error || !data || portalAccountAccessError({ status: data.status ?? "active", deletedAt: data.deleted_at ?? undefined })) {
+  if (error) throw new Error("Password verification unavailable.");
+  if (!data || portalAccountAccessError({ status: data.status ?? "active", deletedAt: data.deleted_at ?? undefined })) {
     return null;
   }
 

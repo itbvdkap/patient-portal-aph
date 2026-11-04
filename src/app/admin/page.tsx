@@ -33,6 +33,7 @@ export default async function AdminPage() {
   </AdminShell>;
 
   const data = await getAdminDashboardData();
+  const unavailable = (...sources: string[]) => sources.some((source) => data.unavailableSources.includes(source));
   const filterRows = (rows: AdminRow[]) =>
     rows.map((row) => ({
       ...row,
@@ -72,16 +73,16 @@ export default async function AdminPage() {
 
       <div className="mt-5 grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
         <div className="grid gap-5">
-          <AdminPanel href="/admin/accounts" title="Tài khoản gần đây" icon={UserRound} rows={filterRows(data.accounts)} empty="Chưa có tài khoản portal." />
-          <AdminPanel href="/admin/profiles" title="Hồ sơ y tế liên kết" icon={UsersRound} rows={filterRows(data.profiles)} empty="Chưa có hồ sơ liên kết." />
-          <AdminPanel href="/admin/bookings" title="Đăng ký khám mới" icon={CalendarCheck} rows={filterRows(data.bookings)} empty="Chưa đọc được dữ liệu đăng ký khám." />
+          <AdminPanel href="/admin/accounts" title="Tài khoản gần đây" icon={UserRound} rows={filterRows(data.accounts)} unavailable={unavailable("portal_accounts")} empty="Chưa có tài khoản portal." />
+          <AdminPanel href="/admin/profiles" title="Hồ sơ y tế liên kết" icon={UsersRound} rows={filterRows(data.profiles)} unavailable={unavailable("portal_account_profiles")} empty="Chưa có hồ sơ liên kết." />
+          <AdminPanel href="/admin/bookings" title="Đăng ký khám mới" icon={CalendarCheck} rows={filterRows(data.bookings)} unavailable={unavailable("portal.lich_hen_kham")} empty="Chưa có đăng ký khám." />
         </div>
 
         <div className="grid content-start gap-5">
-          <AdminPanel href="/admin/sync" title="Sync HIS / Oracle" icon={DatabaseZap} rows={filterRows(data.syncJobs)} empty="Chưa có job sync." />
+          <AdminPanel href="/admin/sync" title="Sync HIS / Oracle" icon={DatabaseZap} rows={filterRows(data.syncJobs)} unavailable={unavailable("portal_sync_jobs")} empty="Chưa có job sync." />
           <SettingsPanel settings={data.settings} />
-          <AdminPanel href="/admin/otp" title="Đăng nhập / OTP gần đây" icon={KeyRound} rows={data.loginEvents} empty="Chưa có log đăng nhập." />
-          <AdminPanel href="/admin/content" title="Cẩm nang / nội dung" icon={FileText} rows={filterRows(data.content)} empty="Chưa có bảng nội dung CMS." />
+          <AdminPanel href="/admin/otp" title="Đăng nhập / OTP gần đây" icon={KeyRound} rows={data.loginEvents} unavailable={unavailable("portal_login_events", "portal_otp_attempts")} empty="Chưa có log đăng nhập." />
+          <AdminPanel href="/admin/content" title="Cẩm nang / nội dung" icon={FileText} rows={filterRows(data.content)} unavailable={unavailable("portal_content_posts")} empty="Chưa có bảng nội dung CMS." />
         </div>
       </div>
 
@@ -128,12 +129,14 @@ function AdminPanel({
   icon: Icon,
   rows,
   empty,
+  unavailable = false,
 }: {
   href: string;
   title: string;
   icon: typeof Activity;
   rows: AdminRow[];
   empty: string;
+  unavailable?: boolean;
 }) {
   return (
     <section className="rounded-md border border-cream-200 bg-cream-50 shadow-[0_8px_22px_rgba(7,60,57,0.055)]">
@@ -143,10 +146,11 @@ function AdminPanel({
           {title}
         </Link>
         <Link href={href} className="clinical-mono rounded-md bg-cream-100 px-2 py-1 text-xs font-black text-slate-600 hover:bg-primary-50">
-          {rows.length}
+          {unavailable ? "—" : rows.length}
         </Link>
       </div>
 
+      {unavailable && <p role="status" className="px-4 py-3 text-sm text-amber-900">Chưa đọc được đầy đủ dữ liệu. Vui lòng thử lại sau.</p>}
       {rows.length ? (
         <div className="divide-y divide-cream-200">
           {rows.map((row, index) => (
@@ -178,9 +182,9 @@ function AdminPanel({
             </article>
           ))}
         </div>
-      ) : (
+      ) : !unavailable ? (
         <p className="px-4 py-6 text-center text-sm font-semibold text-slate-500">{empty}</p>
-      )}
+      ) : null}
     </section>
   );
 }

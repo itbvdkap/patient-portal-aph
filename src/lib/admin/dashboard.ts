@@ -44,6 +44,7 @@ export interface AdminDashboardData {
   settings: AdminSettingStatus[];
   content: AdminRow[];
   warnings: string[];
+  unavailableSources: string[];
 }
 
 let bookingPool: Pool | null = null;
@@ -112,22 +113,22 @@ export async function getAdminDashboardData(): Promise<AdminDashboardData> {
     ]);
 
   const metrics: AdminMetric[] = [
-    { label: "Tài khoản", value: formatCount(accountCount), hint: "Tài khoản portal", tone: "blue" },
-    { label: "Hồ sơ liên kết", value: formatCount(profileCount), hint: "MABN đã xác minh", tone: "green" },
-    { label: "Phiên đang mở", value: formatCount(activeSessionCount), hint: "Chưa đăng xuất", tone: "slate" },
+    countMetric("Tài khoản", accountCount, "Tài khoản người dùng", "blue"),
+    countMetric("Hồ sơ liên kết", profileCount, "Hồ sơ đã xác minh", "green"),
+    countMetric("Phiên đang mở", activeSessionCount, "Chưa đăng xuất", "slate"),
     {
       label: "Sync đang chờ",
       value: formatCount(syncPendingCount),
-      hint: "Job chờ agent xử lý",
-      tone: syncPendingCount ? "amber" : "green",
+      hint: syncPendingCount === null ? "Chưa đọc được" : "Đang chờ cập nhật",
+      tone: syncPendingCount === null ? "slate" : syncPendingCount ? "amber" : "green",
     },
     {
       label: "Sync lỗi",
       value: formatCount(syncFailedCount),
-      hint: "Cần kiểm tra agent/Oracle",
-      tone: syncFailedCount ? "red" : "green",
+      hint: syncFailedCount === null ? "Chưa đọc được" : "Cần kiểm tra đồng bộ",
+      tone: syncFailedCount === null ? "slate" : syncFailedCount ? "red" : "green",
     },
-    { label: "Đăng ký khám", value: formatCount(bookings.count), hint: "Tổng trong booking DB", tone: "blue" },
+    countMetric("Đăng ký khám", bookings.count, "Tổng đăng ký khám", "blue"),
   ];
 
   return {
@@ -139,7 +140,8 @@ export async function getAdminDashboardData(): Promise<AdminDashboardData> {
     loginEvents: [...mapLoginEvents(loginEvents), ...mapOtpAttempts(otpAttempts)].slice(0, 10),
     settings: mapSettings(settings),
     content: mapContent(content),
-    warnings: unique(warnings),
+    unavailableSources: [...new Set(warnings.map((warning) => warning.split(":")[0]))],
+    warnings: unique(warnings.map((warning) => `${sourceLabels[warning.split(":")[0]] ?? "Dữ liệu"}: chưa đọc được. Vui lòng thử lại sau.`)),
   };
 }
 
@@ -155,12 +157,13 @@ async function countRows(
     const { count, error } = await query;
     if (error) {
       warnings.push(`${table}: ${error.message}`);
-      return 0;
+      return null;
     }
-    return count ?? 0;
+    if (count === null) warnings.push(`${table}: count unavailable`);
+    return count;
   } catch (error) {
     warnings.push(`${table}: ${error instanceof Error ? error.message : "Không đọc được dữ liệu"}`);
-    return 0;
+    return null;
   }
 }
 
@@ -184,11 +187,11 @@ async function recentRows(
   }
 }
 
-async function getRecentBookings(warnings: string[]): Promise<{ count: number; rows: AdminRow[] }> {
+async function getRecentBookings(warnings: string[]): Promise<{ count: number | null; rows: AdminRow[] }> {
   const connectionString = process.env.BOOKING_DATABASE_URL;
   if (!connectionString) {
-    warnings.push("BOOKING_DATABASE_URL chưa cấu hình nên chưa đọc được đăng ký khám.");
-    return { count: 0, rows: [] as AdminRow[] };
+    warnings.push("portal.lich_hen_kham: chưa cấu hình");
+    return { count: null, rows: [] as AdminRow[] };
   }
 
   try {
@@ -243,7 +246,7 @@ async function getRecentBookings(warnings: string[]): Promise<{ count: number; r
     };
   } catch (error) {
     warnings.push(`portal.lich_hen_kham: ${error instanceof Error ? error.message : "Không đọc được booking DB"}`);
-    return { count: 0, rows: [] as AdminRow[] };
+    return { count: null, rows: [] as AdminRow[] };
   }
 }
 
@@ -363,8 +366,24 @@ function maskPhone(value: unknown) {
   return `${text.slice(0, 3)}****${text.slice(-3)}`;
 }
 
-function formatCount(value: number) {
-  return new Intl.NumberFormat("vi-VN").format(value);
+const sourceLabels: Record<string, string> = {
+  portal_accounts: "Tài khoản",
+  portal_account_profiles: "Hồ sơ liên kết",
+  portal_account_sessions: "Phiên đăng nhập",
+  portal_sync_jobs: "Đồng bộ hồ sơ",
+  portal_login_events: "Lịch sử đăng nhập",
+  portal_otp_attempts: "Mã xác thực",
+  portal_content_posts: "Bài viết",
+  portal_app_settings: "Cấu hình đã lưu",
+  "portal.lich_hen_kham": "Đăng ký khám",
+};
+
+function formatCount(value: number | null) {
+  return value === null ? "—" : new Intl.NumberFormat("vi-VN").format(value);
+}
+
+function countMetric(label: string, count: number | null, hint: string, tone: AdminMetric["tone"]): AdminMetric {
+  return { label, value: formatCount(count), hint: count === null ? "Chưa đọc được" : hint, tone: count === null ? "slate" : tone };
 }
 
 function formatDate(value: unknown) {
